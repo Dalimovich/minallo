@@ -85,3 +85,59 @@ def test_source_not_ready(monkeypatch):
     monkeypatch.setattr(gp, "_load_source_text", lambda *_: (_ for _ in ()).throw(gp.SourceNotReadyError("x")))
     with pytest.raises(gp.SourceNotReadyError):
         gp.generate_practice(user_id="u", module="grammar", level="B1", topic="t", count=5, source_document_ids=["d"])
+
+
+# ── validator rejection reasons (safe codes only) ──────────────────────────
+
+def test_rejection_reasons_are_content_free_codes():
+    from app.services import german_practice as gp
+
+    def reason(raw, check=gp._check_vocab):
+        try:
+            check(raw)
+        except gp._Reject as r:
+            return r.code
+        return None
+
+    good_note = {"focus": "f", "think": "t", "why": "w", "mainRule": "m", "example": "e"}
+    assert reason({"type": "context", "promptHtml": "Er ___ Brot.", "accepted": ["isst"], "hints": ["a"]}) == "missing_note"
+    assert reason({"type": "context", "note": {**good_note, "think": ""}, "promptHtml": "x ___", "accepted": ["a"], "hints": ["a"]}) == "missing_note_think"
+    assert reason({"type": "context", "note": good_note, "promptHtml": "kein Blank", "accepted": ["a"], "hints": ["a"]}) == "invalid_gap_count"
+    assert reason({"type": "context", "note": good_note, "promptHtml": "x ___", "accepted": ["a"]}) == "missing_hints"
+    assert reason({"type": "bogus", "note": good_note, "hints": ["h"]}) == "unknown_type"
+    assert reason({"type": "choice", "note": good_note, "promptHtml": "x ___", "options": ["a", "b", "c"], "answerIndex": 0, "hints": ["h"]}) == "invalid_options_count"
+    assert reason({"type": "choice", "note": good_note, "promptHtml": "x ___", "options": ["a", "a", "b", "c"], "answerIndex": 0, "hints": ["h"]}) == "duplicate_options"
+    assert reason({"type": "choice", "note": good_note, "promptHtml": "x ___", "options": ["a", "b", "c", "d"], "answerIndex": 9, "hints": ["h"]}) == "invalid_answer_index"
+    assert reason({"type": "gap", "rule": {**good_note, "why": ""}, "hints": ["h"]}, gp._check_grammar) == "missing_rule_why"
+    assert reason({"type": "order", "rule": good_note, "hints": ["h"], "words": ["a", "b"], "answer": "a b"}, gp._check_grammar) == "invalid_order_words"
+
+
+def test_generation_records_aggregated_rejections_without_content(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import gen_timing, german_practice as gp
+
+    bad = {"type": "context", "promptHtml": "Er ___ Brot.", "accepted": ["isst"], "hints": ["a"], "note": {"focus": "f"}}
+    monkeypatch.setattr(gp, "chat_json", lambda **kw: SimpleNamespace(data={"items": [bad] * 5}))
+    with gen_timing.timed_request("vocabulary", budget_s=30) as timer:
+        try:
+            gp.generate_practice(user_id="u", module="vocabulary", level="B2", topic="t", count=5)
+        except gp.PracticeError:
+            pass
+        summary = timer.summary("invalid_output")
+    assert summary["validation"][0]["rawItems"] == 5 and summary["validation"][0]["validItems"] == 0
+    assert summary["validation"][0]["rejected"] == {"missing_note_think": 5}
+    assert "Brot" not in str(summary)
+
+
+def test_failure_response_is_structured_json_with_reference():
+    import json
+
+    from app.services import gen_timing
+
+    with gen_timing.timed_request("vocabulary", budget_s=30) as timer:
+        resp = gen_timing.failure_response(timer, "invalid_output", 502, "Could not create enough valid exercises.")
+    body = json.loads(resp.body)
+    assert resp.status_code == 502 and resp.media_type == "application/json"
+    assert body["requestId"] == timer.request_id and f"(ref {timer.request_id})" in body["detail"]
+    assert body["diagnostics"]["outcome"] == "invalid_output"

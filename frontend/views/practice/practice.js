@@ -798,7 +798,7 @@
       try { data = await resp.json(); } catch (e) { /* non-JSON error body */ }
       if (!resp.ok || !data || data.schema !== 'german-practice-v1' || !Array.isArray(data.items) || !data.items.length) {
         var err = new Error('Could not create practice.');
-        err.status = resp.status;
+        err.status = (data && data.upstreamStatus) || resp.status;
         err.reference = _glRefFromBody(data);
         err.userMessage = resp.status === 422 && data && (data.error || data.detail) ? String(data.error || data.detail) : '';
         throw err;
@@ -864,7 +864,7 @@
           }
           return resp.json().catch(function () { return null; }).then(function (b) {
             var e = new Error('generate_http_' + resp.status);
-            e.status = resp.status;
+            e.status = (b && b.upstreamStatus) || resp.status;
             e.reference = _glRefFromBody(b);
             throw e;
           });

@@ -39,7 +39,7 @@ class GeneratePracticeRequest(BaseModel):
 
 
 @router.post("/german-practice/generate")
-def generate_practice_endpoint(payload: GeneratePracticeRequest) -> dict[str, Any]:
+def generate_practice_endpoint(payload: GeneratePracticeRequest):
     if payload.module not in MODULES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid module")
     override = (payload.sessionLevelOverride or "").strip()
@@ -76,21 +76,12 @@ def generate_practice_endpoint(payload: GeneratePracticeRequest) -> dict[str, An
             gen_timing.finish(timer, "source_not_ready")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
         except PracticeError as exc:
-            gen_timing.finish(timer, "invalid_output")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=f"{exc} (ref {timer.request_id})"
-            ) from exc
+            return gen_timing.failure_response(timer, "invalid_output", status.HTTP_502_BAD_GATEWAY, str(exc))
         except Exception as exc:  # noqa: BLE001
             if isinstance(exc, gen_timing.GenerationBudgetExceeded) or timer.expired():
-                gen_timing.finish(timer, "budget_exceeded")
-                raise HTTPException(
-                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail=f"Generation took too long (ref {timer.request_id})",
-                ) from exc
+                return gen_timing.failure_response(
+                    timer, "budget_exceeded", status.HTTP_504_GATEWAY_TIMEOUT, "Generation took too long")
             log.exception("german-practice generation failed request_id=%s", timer.request_id)
-            gen_timing.finish(timer, "error")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Generation failed (ref {timer.request_id})"
-            ) from exc
+            return gen_timing.failure_response(timer, "error", status.HTTP_502_BAD_GATEWAY, "Generation failed")
         result["diagnostics"] = gen_timing.finish(timer, "ok")
         return result

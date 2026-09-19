@@ -55,6 +55,7 @@ class GenTimer:
         self._lock = threading.Lock()
         self.calls: list[dict[str, Any]] = []
         self.stages: dict[str, float] = {}
+        self.validation: list[dict[str, Any]] = []
 
     def remaining_s(self) -> float:
         return self.budget_s - (time.perf_counter() - self.started)
@@ -74,6 +75,11 @@ class GenTimer:
                 "completionTokens": int(completion_tokens), "reasoningTokens": int(reasoning_tokens),
                 "estimatedCostUsd": cost,  # None = model has no price entry
             })
+
+    def add_validation(self, entry: dict[str, Any]) -> None:
+        """Content-free validator outcome (reason codes and counts only)."""
+        with self._lock:
+            self.validation.append(entry)
 
     def add_stage(self, name: str, ms: float) -> None:
         with self._lock:
@@ -118,6 +124,7 @@ class GenTimer:
             "reasoningTokens": sum(c["reasoningTokens"] for c in calls),
             "estimatedCostUsd": round(sum(c["estimatedCostUsd"] or 0.0 for c in calls), 6),
             "unpricedModels": unpriced,
+            "validation": list(self.validation),
             "byCaller": by_caller,
             # Per-call detail: counts and timings only, no prompts, completions or user data.
             "calls": [{k: c[k] for k in ("caller", "model", "effort", "providerMs", "slotWaitMs", "ok",
@@ -168,3 +175,16 @@ class ContextThreadPoolExecutor(ThreadPoolExecutor):
     def submit(self, fn, /, *args, **kwargs):  # type: ignore[override]
         ctx = contextvars.copy_context()
         return super().submit(ctx.run, fn, *args, **kwargs)
+
+
+def failure_response(timer: "GenTimer", outcome: str, status_code: int, message: str):
+    """Structured JSON failure: message + reference + the safe diagnostics summary
+    (reason codes, timings, token/cost counts — never content)."""
+    from fastapi.responses import JSONResponse  # noqa: WPS433
+
+    summary = finish(timer, outcome)
+    text = f"{message} (ref {timer.request_id})"
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": text, "error": text, "requestId": timer.request_id, "diagnostics": summary},
+    )

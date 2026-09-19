@@ -34,6 +34,14 @@ _MAX_SOURCE_CHARS = 12000
 _MAX_SOURCE_CHUNKS = 60
 
 
+class _Reject(Exception):
+    """An item failed validation; ``code`` is a safe, content-free reason."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
 class PracticeError(Exception):
     """Generation could not produce enough valid items."""
 
@@ -60,22 +68,24 @@ def _str_list(v: Any, max_items: int = 6) -> list[str]:
     return out[:max_items]
 
 
-def _note(v: Any) -> dict[str, str] | None:
+def _note(v: Any, label: str = "note") -> dict[str, str]:
     if not isinstance(v, dict):
-        return None
+        raise _Reject(f"missing_{label}")
     out = {}
     for k in ("focus", "think", "why", "mainRule", "example"):
         s = _str(v.get(k), 600)
         if not s:
-            return None
+            raise _Reject(f"missing_{label}_{k}")
         out[k] = s
     return out
 
 
-def _gap_prompt(v: Any) -> str | None:
+def _gap_prompt(v: Any) -> str:
     s = _str(v, 500)
-    if not s or s.count("___") != 1:
-        return None
+    if not s:
+        raise _Reject("missing_prompt")
+    if s.count("___") != 1:
+        raise _Reject("invalid_gap_count")
     return s
 
 
@@ -85,15 +95,19 @@ def _accepted(v: Any) -> list[str]:
         n = _norm(a)
         if n and n not in seen:
             seen.append(n)
+    if not seen:
+        raise _Reject("missing_accepted")
     return seen
 
 
-def _options(v: Any, answer_index: Any) -> tuple[list[str], int] | None:
+def _options(v: Any, answer_index: Any) -> tuple[list[str], int]:
     opts = _str_list(v, 4)
-    if len(opts) != 4 or len({_norm(o) for o in opts}) != 4:
-        return None
+    if len(opts) != 4:
+        raise _Reject("invalid_options_count")
+    if len({_norm(o) for o in opts}) != 4:
+        raise _Reject("duplicate_options")
     if not isinstance(answer_index, int) or isinstance(answer_index, bool) or not 0 <= answer_index < 4:
-        return None
+        raise _Reject("invalid_answer_index")
     return opts, answer_index
 
 
@@ -102,71 +116,82 @@ def _safe_strong(s: str) -> str:
     return html.escape(s, quote=False).replace("&lt;strong&gt;", "<strong>").replace("&lt;/strong&gt;", "</strong>")
 
 
-def _validate_vocab(raw: dict[str, Any]) -> dict[str, Any] | None:
+def _check_vocab(raw: dict[str, Any]) -> dict[str, Any]:
     t = raw.get("type")
-    note, hints = _note(raw.get("note")), _str_list(raw.get("hints"), 3)
-    if not note or not hints:
-        return None
+    if t not in ("context", "choice", "use"):
+        raise _Reject("unknown_type")
+    note = _note(raw.get("note"), "note")
+    hints = _str_list(raw.get("hints"), 3)
+    if not hints:
+        raise _Reject("missing_hints")
     if t == "context":
         prompt, acc = _gap_prompt(raw.get("promptHtml")), _accepted(raw.get("accepted"))
-        if not prompt or not acc:
-            return None
         return {"type": t, "promptHtml": html.escape(prompt, quote=False), "accepted": acc, "note": note, "hints": hints}
     if t == "choice":
         prompt, oa = _gap_prompt(raw.get("promptHtml")), _options(raw.get("options"), raw.get("answerIndex"))
-        if not prompt or not oa:
-            return None
         return {"type": t, "promptHtml": html.escape(prompt, quote=False), "options": oa[0], "answerIndex": oa[1], "note": note, "hints": hints}
-    if t == "use":
-        word, meaning, prompt = _str(raw.get("word"), 80), _str(raw.get("meaning"), 120), _str(raw.get("promptHtml"), 300)
-        if not (word and meaning and prompt):
-            return None
-        # 'use' prompts are rendered escaped by the client, so stay plain text.
-        return {"type": t, "word": word, "meaning": meaning, "promptHtml": prompt, "note": note, "hints": hints}
-    return None
+    word, meaning, prompt = _str(raw.get("word"), 80), _str(raw.get("meaning"), 120), _str(raw.get("promptHtml"), 300)
+    if not (word and meaning and prompt):
+        raise _Reject("missing_type_field")
+    # 'use' prompts are rendered escaped by the client, so stay plain text.
+    return {"type": t, "word": word, "meaning": meaning, "promptHtml": prompt, "note": note, "hints": hints}
 
 
-def _validate_grammar(raw: dict[str, Any]) -> dict[str, Any] | None:
-    t = raw.get("type")
-    rule, hints = _note(raw.get("rule")), _str_list(raw.get("hints"), 3)
-    if not rule or not hints:
+def _validate_vocab(raw: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return _check_vocab(raw)
+    except _Reject:
         return None
+
+
+def _check_grammar(raw: dict[str, Any]) -> dict[str, Any]:
+    t = raw.get("type")
+    if t not in ("order", "choice", "gap", "transform", "combine", "correct"):
+        raise _Reject("unknown_type")
+    rule = _note(raw.get("rule"), "rule")
+    hints = _str_list(raw.get("hints"), 3)
+    if not hints:
+        raise _Reject("missing_hints")
     base: dict[str, Any] = {"type": t, "rule": rule, "hints": hints}
     if t == "order":
         words, answer = _str_list(raw.get("words"), 16), _str(raw.get("answer"), 300)
-        if len(words) < 3 or not answer:
-            return None
+        if len(words) < 3:
+            raise _Reject("invalid_order_words")
+        if not answer:
+            raise _Reject("missing_type_field")
         if sorted(_norm(" ".join(words)).split()) != sorted(_norm(answer).split()):
-            return None
+            raise _Reject("order_answer_mismatch")
         return {**base, "words": words, "answer": _norm(answer)}
     if t == "choice":
         prompt, oa = _gap_prompt(raw.get("promptHtml")), _options(raw.get("options"), raw.get("answerIndex"))
-        if not prompt or not oa:
-            return None
         return {**base, "promptHtml": html.escape(prompt, quote=False), "options": oa[0], "answerIndex": oa[1]}
     if t == "gap":
         prompt, acc = _gap_prompt(raw.get("promptHtml")), _accepted(raw.get("accepted"))
-        if not prompt or not acc:
-            return None
         return {**base, "promptHtml": html.escape(prompt, quote=False), "accepted": acc}
     if t == "transform":
         lines, prefix = _str_list(raw.get("originalLines"), 2), _str(raw.get("promptPrefix"), 200)
         acc, better = _accepted(raw.get("accepted")), _str(raw.get("betterAnswer"), 300)
-        if not (lines and prefix and acc and better):
-            return None
+        if not (lines and prefix and better):
+            raise _Reject("missing_type_field")
         return {**base, "originalLines": lines, "promptPrefix": prefix, "accepted": acc, "betterAnswer": better}
     if t == "combine":
         a, b, conn = _str(raw.get("sentenceA"), 300), _str(raw.get("sentenceB"), 300), _str(raw.get("connector"), 60)
         acc, display = _accepted(raw.get("accepted")), _str(raw.get("display"), 400)
-        if not (a and b and conn and acc and display):
-            return None
+        if not (a and b and conn and display):
+            raise _Reject("missing_type_field")
         return {**base, "sentenceA": a, "sentenceB": b, "connector": conn, "accepted": acc, "display": display}
-    if t == "correct":
-        wrong, acc, hc = _str(raw.get("sentenceWrong"), 300), _accepted(raw.get("accepted")), _str(raw.get("highlightCorrect"), 500)
-        if not (wrong and acc and hc):
-            return None
-        return {**base, "sentenceWrong": wrong, "accepted": acc, "highlightCorrect": _safe_strong(hc)}
-    return None
+    wrong, hc = _str(raw.get("sentenceWrong"), 300), _str(raw.get("highlightCorrect"), 500)
+    acc = _accepted(raw.get("accepted"))
+    if not (wrong and hc):
+        raise _Reject("missing_type_field")
+    return {**base, "sentenceWrong": wrong, "accepted": acc, "highlightCorrect": _safe_strong(hc)}
+
+
+def _validate_grammar(raw: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return _check_grammar(raw)
+    except _Reject:
+        return None
 
 
 def _load_source_text(user_id: str, document_ids: list[str]) -> str:
@@ -244,6 +269,17 @@ def _build_prompts(module: str, level: str, topic: str, count: int, source: str 
     return system, "\n\n".join(parts)
 
 
+def _record_validation(module: str, attempt: int, raw_items: int, valid: int, rejected: dict[str, int]) -> None:
+    """Aggregated, content-free validation outcome for one attempt."""
+    from . import gen_timing  # noqa: WPS433
+    entry = {"module": module, "attempt": attempt + 1, "rawItems": raw_items,
+             "validItems": valid, "rejected": dict(sorted(rejected.items()))}
+    log.info("german_practice_validation %s", entry)
+    timer = gen_timing.current()
+    if timer is not None:
+        timer.add_validation(entry)
+
+
 def generate_practice(
     *, user_id: str, module: str, level: str, topic: str, count: int,
     source_document_ids: list[str] | None = None,
@@ -253,7 +289,7 @@ def generate_practice(
         raise PracticeError("unsupported module")
     count = max(3, min(int(count), 15))
     source = _load_source_text(user_id, source_document_ids) if source_document_ids else None
-    validate = _validate_vocab if module == "vocabulary" else _validate_grammar
+    check = _check_vocab if module == "vocabulary" else _check_grammar
     avoid = [a for a in (avoid_prompts or []) if isinstance(a, str)]
     avoid_norm = {_norm(a) for a in avoid}
     kept: list[dict[str, Any]] = []
@@ -263,20 +299,30 @@ def generate_practice(
         system, user = _build_prompts(module, level, topic, need + 2, source, avoid + [_prompt_key(k) for k in kept], weak_areas or [])
         result = chat_json(system=system, user=user, max_tokens=6000)
         raw_items = result.data.get("items") if isinstance(result.data, dict) else None
+        rejected: dict[str, int] = {}
         if not isinstance(raw_items, list):
+            _record_validation(module, attempt, 0, 0, {"items_not_a_list": 1})
             continue
+        valid_this_attempt = 0
         for raw in raw_items:
-            item = validate(raw) if isinstance(raw, dict) else None
-            if not item:
+            try:
+                if not isinstance(raw, dict):
+                    raise _Reject("item_not_object")
+                item = check(raw)
+            except _Reject as rej:
+                rejected[rej.code] = rejected.get(rej.code, 0) + 1
                 continue
             key = _norm(_prompt_key(item))
             if key in seen:
+                rejected["duplicate_prompt"] = rejected.get("duplicate_prompt", 0) + 1
                 continue
+            valid_this_attempt += 1
             seen.add(key)
             item["id"] = uuid.uuid4().hex[:12]
             kept.append(item)
             if len(kept) >= count:
                 break
+        _record_validation(module, attempt, len(raw_items), valid_this_attempt, rejected)
         if len(kept) >= count:
             break
     if len(kept) < max(3, count // 2):

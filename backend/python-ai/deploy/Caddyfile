@@ -21,8 +21,17 @@
 		}
 	}
 
+	# Access logs must never contain credentials: X-Internal-Token (the shared
+	# python-ai secret), Authorization and cookies are deleted before encoding.
 	log {
 		output stdout
-		format json
+		format filter {
+			request>headers>X-Internal-Token delete
+			request>headers>Authorization delete
+			request>headers>Cookie delete
+			request>headers>Proxy-Authorization delete
+			resp_headers>Set-Cookie delete
+			wrap json
+		}
 	}
 }

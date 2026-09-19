@@ -71,17 +71,10 @@ def generate_exam_task_endpoint(payload: GenerateExamTaskRequest) -> dict[str, A
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
             if isinstance(exc, gen_timing.GenerationBudgetExceeded) or timer.expired():
-                gen_timing.finish(timer, "budget_exceeded")
-                raise HTTPException(
-                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                    detail=f"Generation took too long (ref {timer.request_id})",
-                ) from exc
+                return gen_timing.failure_response(
+                    timer, "budget_exceeded", status.HTTP_504_GATEWAY_TIMEOUT, "Generation took too long")
             log.exception("german-exam generation failed request_id=%s", timer.request_id)
-            gen_timing.finish(timer, "error")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Generation failed (ref {timer.request_id})",
-            ) from exc
+            return gen_timing.failure_response(timer, "error", status.HTTP_502_BAD_GATEWAY, "Generation failed")
         diagnostics = gen_timing.finish(timer, "ok")
         if isinstance(result, dict):
             result["diagnostics"] = diagnostics

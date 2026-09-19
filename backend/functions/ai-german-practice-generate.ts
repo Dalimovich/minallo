@@ -3,7 +3,7 @@
 // required, so a learner at any level can use it. userId always comes from the
 // verified token, never from the request body.
 
-import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { jsonResponse, fail, handleOptions, upstreamFailureResponse } from '../lib/responses';
 import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
@@ -107,6 +107,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     },
     UPSTREAM_TIMEOUT_MS
   );
-  if (!upstream.ok) return jsonResponse(upstream.status, upstream.body);
+  if (!upstream.ok) return upstreamFailureResponse(upstream.status, upstream.body);
   return jsonResponse(200, upstream.body);
 };
