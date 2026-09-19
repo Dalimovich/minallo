@@ -17,7 +17,8 @@ import { clearActivePdfViewerState } from '../pdf-viewer/active-pdf-context.js';
 import { parsePersistedChats, type PersistedChat, type SavedRepliesChangedDetail } from './chat-store-format.js';
 import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 import {
-  listLearnerFiles, getLearnerFileStorageScope, uploadLearnerFile, indexLearnerFile,
+  listCanonicalLearnerFiles, listLearnerFilesForScope, getLegacyLearnerScopes, dedupeLearnerFiles,
+  getLearnerFileStorageScope, uploadLearnerFile, indexLearnerFile,
   refreshLearnerFile, deleteLearnerFile, openLearnerFile, type LearnerFile,
 } from '../german/learner-files.js';
 
@@ -1096,7 +1097,7 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
     '<div class="ncb-upload-status" role="status" aria-live="polite" hidden></div>' +
     '<div class="ncb-library-group ncb-root-drop" data-drop-folder="">' +
     '<div class="ncb-drop-hint"><strong>Drop files here to upload</strong><span>PDF, DOCX, TXT, PNG, JPG</span></div>' +
-    '<div class="ncb-learner-file-list"><div class="ncb-library-status">Loading your files&hellip;</div></div>' +
+    '<div class="ncb-learner-file-list">' + learnerFilesLoadingHtml() + '</div>' +
     '</div>' +
     '</div>';
 
@@ -1131,30 +1132,99 @@ export async function renderLearnerFiles(panel: HTMLElement, force = false): Pro
   });
 
   const list = dropTarget.querySelector<HTMLElement>('.ncb-learner-file-list')!;
+  // Explicit states: canonical_loading → canonical_ready → legacy_loading →
+  // complete | error. Files are appended as each scope arrives; nothing that
+  // is already on screen is ever cleared or re-rendered.
+  type FilesState = 'canonical_loading' | 'canonical_ready' | 'legacy_loading' | 'complete' | 'error';
+  let currentLoad = 0;
   async function loadList(force: boolean): Promise<void> {
-    let entries: LearnerFile[];
+    const token = ++currentLoad;
+    const uid = String(window._currentUser?.id || window._currentUser?.sub || '');
+    const stale = (): boolean => token !== currentLoad || !dropTarget.isConnected ||
+      String(window._currentUser?.id || window._currentUser?.sub || '') !== uid;
+    // Keep pending-upload rows across a retry; drop only previously hydrated ones.
+    list.querySelectorAll('[data-hydrated]').forEach((row) => row.remove());
+    const status = document.createElement('div');
+    status.className = 'ncb-files-status';
+    list.querySelectorAll('.ncb-files-status, .ncb-files-loading, .ncb-file-skeleton').forEach((el) => el.remove());
+    list.appendChild(status);
+    const shown = new Set<string>();
+    const rowCount = (): number => dropTarget.querySelectorAll('.ncb-file-row').length;
+    const setState = (state: FilesState, failed: { canonical: boolean; legacy: boolean } = { canonical: false, legacy: false }): void => {
+      if (stale()) return;
+      status.dataset.state = state;
+      if (state === 'canonical_loading') status.innerHTML = learnerFilesLoadingHtml();
+      else if (state === 'legacy_loading' || state === 'canonical_ready') {
+        status.innerHTML = rowCount()
+          ? '<div class="ncb-files-more" aria-live="polite"><span class="ncb-files-spinner ncb-files-spinner-sm"></span>Loading older files&hellip;</div>'
+          : learnerFilesLoadingHtml('Loading older files…', 'Checking your earlier uploads.');
+      } else if (state === 'error') {
+        status.innerHTML = '<div class="ncb-library-status">' +
+          (failed.canonical ? 'Couldn’t load your files.' : 'Some older files couldn’t be loaded.') +
+          ' <button type="button" class="ncb-library-retry">Retry</button></div>';
+        status.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void loadList(true); });
+      } else {
+        status.innerHTML = rowCount() ? '' :
+          '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>';
+      }
+    };
+    const addFiles = (files: LearnerFile[]): void => {
+      if (stale()) return;
+      const pendingKeys = new Set(Array.from(dropTarget.querySelectorAll<HTMLElement>('[data-learner-file-key]'))
+        .map((row) => row.dataset.learnerFileKey));
+      dedupeLearnerFiles(files).forEach((file) => {
+        const key = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
+        if (shown.has(file.id) || shown.has(key) || pendingKeys.has(key)) return;
+        shown.add(file.id); shown.add(key);
+        const row = learnerFileRow(file);
+        row.dataset.hydrated = '1';
+        list.insertBefore(row, status);
+      });
+    };
+
+    setState('canonical_loading');
+    const t0 = performance.now();
+    const timing: Record<string, number | null> = { canonicalLoadMs: null, legacyLoadMs: null, firstFileVisibleMs: null, allFilesCompleteMs: null };
+    (window as unknown as { __learnerFilesTiming?: unknown }).__learnerFilesTiming = timing;
+    const failed = { canonical: false, legacy: false };
     try {
-      entries = await listLearnerFiles({ force });
+      addFiles(await listCanonicalLearnerFiles({ force }));
     } catch {
-      if (!dropTarget.isConnected) return;
-      list.innerHTML =
-        '<div class="ncb-library-status">Couldn’t load your files. <button type="button" class="ncb-library-retry">Retry</button></div>';
-      list.querySelector<HTMLButtonElement>('.ncb-library-retry')?.addEventListener('click', () => { void loadList(true); });
-      return;
+      failed.canonical = true;
     }
-    if (!dropTarget.isConnected) return;
-    list.replaceChildren();
-    const pendingKeys = new Set(Array.from(dropTarget.querySelectorAll<HTMLElement>('[data-learner-file-key]'))
-      .map((row) => row.dataset.learnerFileKey));
-    entries.forEach((file) => {
-      const key = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
-      if (!pendingKeys.has(key)) list.appendChild(learnerFileRow(file));
-    });
-    if (!dropTarget.querySelector('.ncb-file-row')) {
-      list.innerHTML = '<p class="ncb-library-muted">No German files yet. Upload a PDF or document to use it in your practice.</p>';
-    }
+    if (stale()) return;
+    timing.canonicalLoadMs = Math.round(performance.now() - t0);
+    if (rowCount() && timing.firstFileVisibleMs === null) timing.firstFileVisibleMs = timing.canonicalLoadMs;
+    setState('legacy_loading');
+
+    // Legacy buckets load in the background, a few at a time, AFTER the
+    // canonical scope so they never compete with it for connections.
+    const legacyStart = performance.now();
+    const queue = getLegacyLearnerScopes();
+    await Promise.all(Array.from({ length: 3 }, async () => {
+      while (queue.length && !stale()) {
+        const scopeId = queue.shift()!;
+        try {
+          addFiles(await listLearnerFilesForScope(scopeId, { force }));
+          if (rowCount() && timing.firstFileVisibleMs === null) timing.firstFileVisibleMs = Math.round(performance.now() - t0);
+        } catch {
+          failed.legacy = true;
+        }
+      }
+    }));
+    if (stale()) return;
+    timing.legacyLoadMs = Math.round(performance.now() - legacyStart);
+    timing.allFilesCompleteMs = Math.round(performance.now() - t0);
+    setState(failed.canonical || failed.legacy ? 'error' : 'complete', failed);
   }
   await loadList(force);
+}
+
+function learnerFilesLoadingHtml(title = 'Loading your files…', sub = 'Your uploaded material will appear here.'): string {
+  return '<div class="ncb-files-loading" aria-live="polite" aria-busy="true">' +
+    '<span class="ncb-files-spinner" aria-hidden="true"></span>' +
+    `<div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(sub)}</span></div></div>` +
+    '<div class="ncb-file-skeleton" aria-hidden="true"><i></i><div><b></b><b></b></div></div>';
 }
 
 // Exported so course-files-workspace.ts (the "Files" study-tool popup opened

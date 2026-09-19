@@ -6908,3 +6908,53 @@ body.ncb-pdf-workspace-open #drDrawer {
 @media (prefers-reduced-motion: reduce) {
   .ncb-learner-mode .ncb-card > :is(.ncb-center, .ncb-context, .ncb-writing-coach-panel, .ncb-practice-panel) { transition: none; }
 }
+
+/* Learner Files: obvious loading state + skeleton, shown under the drop zone. */
+.ncb-files-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px 8px;
+  color: #cbd5e1;
+}
+.ncb-files-loading strong { display: block; font-size: 0.86rem; color: #e2e8f0; }
+.ncb-files-loading span:not(.ncb-files-spinner) { display: block; font-size: 0.74rem; color: #8194ae; margin-top: 2px; }
+.ncb-files-spinner {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(148, 163, 184, 0.25);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: ncb-files-spin 0.8s linear infinite;
+}
+.ncb-files-spinner-sm { width: 12px; height: 12px; border-width: 2px; }
+.ncb-files-more {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  font-size: 0.74rem;
+  color: #8194ae;
+}
+.ncb-file-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 14px;
+  background: rgba(148, 163, 184, 0.05);
+}
+.ncb-file-skeleton i { width: 40px; height: 40px; border-radius: 10px; background: rgba(148, 163, 184, 0.14); }
+.ncb-file-skeleton div { flex: 1; display: grid; gap: 8px; }
+.ncb-file-skeleton b { height: 10px; border-radius: 6px; background: rgba(148, 163, 184, 0.14); animation: ncb-files-pulse 1.3s ease-in-out infinite; }
+.ncb-file-skeleton b:first-child { width: 62%; }
+.ncb-file-skeleton b:last-child { width: 38%; }
+.ncb-file-skeleton i { animation: ncb-files-pulse 1.3s ease-in-out infinite; }
+@keyframes ncb-files-spin { to { transform: rotate(360deg); } }
+@keyframes ncb-files-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  .ncb-files-spinner, .ncb-file-skeleton b, .ncb-file-skeleton i { animation: none; }
+}

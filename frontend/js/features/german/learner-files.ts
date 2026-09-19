@@ -67,25 +67,45 @@ function entry(uid: string, scope: string, file: StorageFile, docs: CourseDocume
 }
 
 /** Storage keys stay internal: no SEMS registry or active university course is consulted. */
-export async function listLearnerFiles(options: { force?: boolean } = {}): Promise<LearnerFile[]> {
+export async function listLearnerFilesForScope(id: string, options: { force?: boolean } = {}): Promise<LearnerFile[]> {
   const uid = userId();
   if (!window._ufMerge) throw new Error('File storage is still loading. Please retry.');
-  const groups = await Promise.all(SCOPES.map(async (id) => {
-    const scope = { id, short: id, name: 'German Files' } as StorageScope;
-    await window._ufMerge!(scope);
-    if (!scope.files) throw new Error('Could not load your files. Please retry.');
-    const docs = await listCourseDocuments(id, { force: options.force ?? true });
-    const files = [...scope.files, ...((scope.userFolders || []) as Array<{ name: string; files?: StorageFile[] }>).flatMap((folder) =>
-      (folder.files || []).map((file) => ({ ...file, _folder: folder.name })))];
-    return files.map((file) => entry(uid, id, file, docs));
-  }));
+  const scope = { id, short: id, name: 'German Files' } as StorageScope;
+  await window._ufMerge(scope);
+  if (!scope.files) throw new Error('Could not load your files. Please retry.');
+  const docs = await listCourseDocuments(id, { force: options.force ?? true });
+  const files = [...scope.files, ...((scope.userFolders || []) as Array<{ name: string; files?: StorageFile[] }>).flatMap((folder) =>
+    (folder.files || []).map((file) => ({ ...file, _folder: folder.name })))];
   if (uid !== userId()) throw new Error('Your account changed. Please reload your files.');
+  return files.map((file) => entry(uid, id, file, docs));
+}
+
+/** New uploads always live in german-files, so this is the first-paint list. */
+export function listCanonicalLearnerFiles(options: { force?: boolean } = {}): Promise<LearnerFile[]> {
+  return listLearnerFilesForScope(CANONICAL_SCOPE, options);
+}
+
+/** Old german-<skill> buckets, kept only for backward compatibility. */
+export function getLegacyLearnerScopes(): string[] {
+  return LEGACY_SCOPES.slice();
+}
+
+/** Dedupe by document id first (ids fall back to the storage path when unindexed). */
+export function dedupeLearnerFiles(files: LearnerFile[]): LearnerFile[] {
   const seen = new Set<string>();
-  return groups.flat().filter((file) => {
+  return files.filter((file) => {
     if (seen.has(file.id)) return false;
     seen.add(file.id);
     return true;
   });
+}
+
+/** Fully aggregated list, for callers that need everything at once. */
+export async function listLearnerFiles(options: { force?: boolean } = {}): Promise<LearnerFile[]> {
+  const uid = userId();
+  const groups = await Promise.all(SCOPES.map((id) => listLearnerFilesForScope(id, options)));
+  if (uid !== userId()) throw new Error('Your account changed. Please reload your files.');
+  return dedupeLearnerFiles(groups.flat());
 }
 
 export async function getLearnerFile(id: string): Promise<LearnerFile> {

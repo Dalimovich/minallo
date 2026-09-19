@@ -117,7 +117,7 @@ test('learner Files: upload button and drag-drop zone render immediately, not ga
   const uploadMarkupIdx = learnerFilesSection.indexOf('ncb-course-upload');
   const dropZoneIdx = learnerFilesSection.indexOf('ncb-root-drop');
   const dragEnterWiringIdx = learnerFilesSection.indexOf("addEventListener('dragenter'");
-  const hydrationCallIdx = learnerFilesSection.indexOf('await listLearnerFiles(');
+  const hydrationCallIdx = learnerFilesSection.indexOf('await loadList(');
   assert.ok(uploadMarkupIdx > -1 && uploadMarkupIdx < hydrationCallIdx,
     'the Upload button markup must be written before awaiting loadLearnerFiles()');
   assert.ok(dropZoneIdx > -1 && dropZoneIdx < hydrationCallIdx,
