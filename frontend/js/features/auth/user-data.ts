@@ -27,7 +27,7 @@ const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; le
   { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
 ];
 
-function resolveGermanExamProfileIdClient(test: string | undefined, level: string | undefined): string | null {
+export function resolveGermanExamProfileIdClient(test: string | undefined, level: string | undefined): string | null {
   const familyNorm = (test || '').trim().toLowerCase();
   const levelNorm = (level || '').trim();
   if (!familyNorm || !levelNorm) return null;
@@ -605,7 +605,7 @@ export function applyUserTypeUI(): void {
   document.querySelectorAll<HTMLElement>('.pf-learner-field').forEach((el) => {
     el.style.display = resolved && isLearner ? '' : 'none';
   });
-  const gt = document.getElementById('profileGermanTest') as HTMLInputElement | null;
+  const gt = document.getElementById('profileGermanTest') as HTMLSelectElement | null;
   const gl = document.getElementById('profileGermanLevel') as HTMLInputElement | null;
   if (gt && germanTest) gt.value = germanTest;
   if (gl && germanLevel) gl.value = germanLevel;

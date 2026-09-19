@@ -36,12 +36,26 @@ async function saveProfile() {
     german_level: glSel ? glSel.value || '' : '',
     updated_at: new Date().toISOString()
   };
+  // Learners edit their exam family here too. A blank select means "not
+  // chosen", never "clear it", so it's omitted rather than written as ''.
+  var gtSel = document.getElementById('profileGermanTest');
+  if (gtSel && gtSel.value) data.german_test = gtSel.value;
+  if (window._userType === 'learner' && typeof window._resolveGermanExamProfileId === 'function') {
+    // Recompute now instead of trusting a stale persisted id: applyProfile()
+    // prefers the persisted column over re-deriving, so a changed test/level
+    // must overwrite it (null when the pair no longer maps to a profile).
+    data.german_exam_profile_id = window._resolveGermanExamProfileId(
+      data.german_test !== undefined ? data.german_test : window._germanTest,
+      data.german_level
+    );
+  }
   try {
     var _pr = await _sb.from('profiles').upsert(data);
     if (_pr && _pr.error) {
       var _fb = Object.assign({}, data);
       delete _fb.vertiefung;
-      await _sb.from('profiles').upsert(_fb);
+      var _pr2 = await _sb.from('profiles').upsert(_fb);
+      if (_pr2 && _pr2.error) throw new Error(_pr2.error.message || 'save failed');
     }
     showToast(_t('toast_profile_saved'), _t('toast_profile_saved_sub'));
     if (data.vertiefung) {

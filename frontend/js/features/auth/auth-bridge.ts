@@ -7,6 +7,7 @@ import {
   beginProfileResolution,
   resetProfileResolution,
   ensureUserProfile,
+  resolveGermanExamProfileIdClient,
 } from './user-data.js';
 
 export interface AuthBridgeOptions {
@@ -99,6 +100,7 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   window._beginProfileResolution = beginProfileResolution;
   window._resetProfileResolution = resetProfileResolution;
   window._ensureUserProfile = ensureUserProfile;
+  window._resolveGermanExamProfileId = resolveGermanExamProfileIdClient;
 
   return {
     showAuthModal: (mode) => authModal.showAuthModal(mode),

@@ -62,14 +62,15 @@
     </div>
     <div class="pf-group pf-learner-field" style="display: none">
       <label class="pf-label" data-i18n="profile_german_test">German Test</label>
-      <input
-        class="pf-input"
-        id="profileGermanTest"
-        type="text"
-        data-i18n-ph="profile_ph_german_test"
-        placeholder="e.g. TestDaF"
-        readonly
-      />
+      <select class="pf-input" id="profileGermanTest">
+        <option value="">Select your exam…</option>
+        <option value="TestDaF">TestDaF</option>
+        <option value="DSH">DSH</option>
+        <option value="Goethe">Goethe</option>
+        <option value="telc">telc</option>
+        <option value="OESD">ÖSD</option>
+        <option value="DSD">DSD</option>
+      </select>
     </div>
     <div class="pf-group pf-learner-field" style="display: none">
       <label class="pf-label" data-i18n="profile_target_level">Target Level</label>

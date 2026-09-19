@@ -3430,7 +3430,10 @@
       // same way: only fires if this view was actually left waiting and is
       // still the open skill, so it can never cause a duplicate generate call.
       window.addEventListener('ss-profile-updated', function () {
-        if (!sb._awaitingProfile) return;
+        // An open "unsupported" card also recovers once a Profile save makes
+        // the profile resolve — no hard refresh needed.
+        var recoverFromUnsupported = sb.uiState === 'unsupported' && !!sbResolveProfileId();
+        if (!sb._awaitingProfile && !recoverFromUnsupported) return;
         sb._awaitingProfile = false;
         if (_glActiveSkill !== 'sprachbausteine') return;
         window._glOpenSprachbausteineView();

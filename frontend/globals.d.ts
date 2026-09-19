@@ -160,6 +160,7 @@ declare global {
       opts?: { authoritative?: boolean }
     ) => unknown;
     _applyUserTypeUI?: () => void;
+    _resolveGermanExamProfileId?: (test: string | undefined, level: string | undefined) => string | null;
     _adminShowIfEligible?: (user: { id?: string } | null) => void;
     _showOnboarding?: (email?: string) => void;
     landShowAuth?: (mode?: 'signin' | 'signup') => void;
