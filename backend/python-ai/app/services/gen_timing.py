@@ -87,16 +87,18 @@ class GenTimer:
             stages = {k: round(v) for k, v in self.stages.items()}
         for c in calls:
             agg = by_caller.setdefault(c["caller"], {
-                "calls": 0, "providerMs": 0, "slotWaitMs": 0, "promptTokens": 0, "cachedTokens": 0,
-                "completionTokens": 0, "reasoningTokens": 0, "estimatedCostUsd": 0.0,
+                "calls": 0, "models": set(), "providerMs": 0, "slotWaitMs": 0, "promptTokens": 0,
+                "cachedTokens": 0, "completionTokens": 0, "reasoningTokens": 0, "estimatedCostUsd": 0.0,
             })
             agg["calls"] += 1
+            agg["models"].add(f"{c['model']}:{c['effort'] or 'default'}")
             agg["providerMs"] += c["providerMs"]
             agg["slotWaitMs"] += c["slotWaitMs"]
             for k in ("promptTokens", "cachedTokens", "completionTokens", "reasoningTokens"):
                 agg[k] += c[k]
             agg["estimatedCostUsd"] += c["estimatedCostUsd"] or 0.0
         for agg in by_caller.values():
+            agg["models"] = sorted(agg["models"])
             agg["estimatedCostUsd"] = round(agg["estimatedCostUsd"], 6)
         unpriced = sorted({c["model"] for c in calls if c["ok"] and c["estimatedCostUsd"] is None})
         return {

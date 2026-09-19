@@ -186,6 +186,19 @@ class LlmResult:
     completion_tokens: int | None
 
 
+def _caller_label() -> str:
+    """'module.function' of chat_json's caller, e.g.
+    german_exam_language_elements._call_stage_b. Finer than _caller_feature() so
+    per-stage time and cost are separable in timing diagnostics; the usage-meter
+    feature label is deliberately unchanged."""
+    try:
+        frame = sys._getframe(2)
+        module = (frame.f_globals.get("__name__", "") or "").rsplit(".", 1)[-1] or "llm_json"
+        return f"{module}.{frame.f_code.co_name}"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def _caller_feature() -> str:
     """Usage-meter feature label from the calling module's name, so every
     chat_json user (cheatsheet, quiz, flashcards, deep_learn, planner, …) is
@@ -233,7 +246,7 @@ def chat_json(
     # The interactive stream path doesn't use chat_json, so it's never blocked.
     resp = None
     timer = gen_timing.current()
-    caller = _caller_feature() if timer is not None else ""
+    caller = _caller_label() if timer is not None else ""
     for attempt in range(6):
         try:
             if timer is not None and timer.remaining_s() <= 1:
