@@ -138,6 +138,101 @@ def test_failure_response_is_structured_json_with_reference():
     with gen_timing.timed_request("vocabulary", budget_s=30) as timer:
         resp = gen_timing.failure_response(timer, "invalid_output", 502, "Could not create enough valid exercises.")
     body = json.loads(resp.body)
-    assert resp.status_code == 502 and resp.media_type == "application/json"
+    assert resp.status_code == 500 and resp.media_type == "application/json"
+    assert json.loads(resp.body)["upstreamStatus"] == 502
     assert body["requestId"] == timer.request_id and f"(ref {timer.request_id})" in body["detail"]
     assert body["diagnostics"]["outcome"] == "invalid_output"
+
+
+# ── strict schema <-> validator agreement ──────────────────────────────────
+
+def _sample(variant):
+    """A schema-conforming sample built purely from the schema itself."""
+    def val(spec, key=""):
+        t = spec["type"]
+        if t == "object":
+            return {k: val(v, k) for k, v in spec["properties"].items()}
+        if t == "array":
+            if key == "options":
+                return ["Apfel", "Birne", "Kirsche", "Pflaume"]
+            if key == "words":
+                return ["Ich", "gehe", "heute", "schwimmen"]
+            return ["ein Wert"]
+        if t == "integer":
+            return 1
+        if "enum" in spec:
+            return spec["enum"][0]
+        return {"promptHtml": "Ich ___ heute.", "answer": "ich gehe heute schwimmen",
+                "highlightCorrect": "Er <strong>geht</strong> heim."}.get(key, "ein Wert")
+    return val(variant)
+
+
+def _variants(schema):
+    return schema["properties"]["items"]["items"]["anyOf"]
+
+
+def test_strict_schemas_are_openai_strict_compatible():
+    from app.services import german_practice as gp
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node.get("additionalProperties") is False
+                assert set(node["required"]) == set(node["properties"]), "strict mode needs every property required"
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(gp.VOCAB_SCHEMA)
+    walk(gp.GRAMMAR_SCHEMA)
+
+
+def test_every_schema_variant_sample_passes_its_validator():
+    from app.services import german_practice as gp
+
+    for variant in _variants(gp.VOCAB_SCHEMA):
+        gp._check_vocab(_sample(variant))
+    for variant in _variants(gp.GRAMMAR_SCHEMA):
+        gp._check_grammar(_sample(variant))
+
+
+def test_schema_type_names_are_exactly_the_validator_types():
+    from app.services import german_practice as gp
+
+    assert [v["properties"]["type"]["enum"][0] for v in _variants(gp.VOCAB_SCHEMA)] == ["context", "choice", "use"]
+    assert [v["properties"]["type"]["enum"][0] for v in _variants(gp.GRAMMAR_SCHEMA)] == [
+        "order", "choice", "gap", "transform", "combine", "correct"]
+
+
+def test_schema_covers_every_field_the_validators_read():
+    import inspect
+    import re as _re
+
+    from app.services import german_practice as gp
+
+    read = set(_re.findall(r'raw\.get\("(\w+)"\)', inspect.getsource(gp._check_vocab)))
+    schema_keys = {k for v in _variants(gp.VOCAB_SCHEMA) for k in v["properties"]}
+    assert read <= schema_keys
+    read_g = set(_re.findall(r'raw\.get\("(\w+)"\)', inspect.getsource(gp._check_grammar)))
+    assert read_g <= {k for v in _variants(gp.GRAMMAR_SCHEMA) for k in v["properties"]}
+
+
+def test_generation_sends_the_schema(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import german_practice as gp
+
+    seen = {}
+
+    def fake(**kw):
+        seen.update(kw)
+        return SimpleNamespace(data={"items": []})
+
+    monkeypatch.setattr(gp, "chat_json", fake)
+    try:
+        gp.generate_practice(user_id="u", module="grammar", level="B2", topic="t", count=5)
+    except gp.PracticeError:
+        pass
+    assert seen["json_schema"] is gp.GRAMMAR_SCHEMA

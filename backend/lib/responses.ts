@@ -29,8 +29,10 @@ export function upstreamFailureResponse(status: number, body: unknown): LambdaRe
       : {};
   const rawDetail = obj.detail ?? obj.error;
   const detail = typeof rawDetail === 'string' && rawDetail ? rawDetail : 'The AI service could not complete this request.';
-  const outStatus = status === 502 || status === 504 ? 500 : status;
-  return jsonResponse(outStatus, { ...obj, detail, error: detail, upstreamStatus: status });
+  // python-ai already sends its 502/504 as HTTP 500 with the real status in the body.
+  const real = Number(obj.upstreamStatus) || status;
+  const outStatus = real === 502 || real === 504 ? 500 : status;
+  return jsonResponse(outStatus, { ...obj, detail, error: detail, upstreamStatus: real });
 }
 
 export function fail(statusCode: number, message: string): LambdaResponse {

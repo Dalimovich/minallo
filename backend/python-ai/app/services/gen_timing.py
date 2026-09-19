@@ -184,7 +184,12 @@ def failure_response(timer: "GenTimer", outcome: str, status_code: int, message:
 
     summary = finish(timer, outcome)
     text = f"{message} (ref {timer.request_id})"
+    # Cloudflare (which fronts the Worker -> python-ai hop) replaces any 502/504
+    # response body with its generic HTML page, dropping the reference. Send
+    # those as HTTP 500 and carry the real status in the body.
+    http_status = 500 if status_code in (502, 504) else status_code
     return JSONResponse(
-        status_code=status_code,
-        content={"detail": text, "error": text, "requestId": timer.request_id, "diagnostics": summary},
+        status_code=http_status,
+        content={"detail": text, "error": text, "requestId": timer.request_id,
+                 "upstreamStatus": status_code, "diagnostics": summary},
     )

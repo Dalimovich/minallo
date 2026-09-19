@@ -222,22 +222,70 @@ def _load_source_text(user_id: str, document_ids: list[str]) -> str:
     return text[:_MAX_SOURCE_CHARS]
 
 
+# ── Strict output schemas ────────────────────────────────────────────────────
+# Shape enforcement lives HERE (OpenAI strict structured output); the
+# _check_* validators remain the semantic/safety layer. A production failure
+# (every item rejected as unknown_type) came from the prompt only saying
+# {"type", ...} without the literal type names, so the model invented its own.
+# tests/test_german_practice.py keeps schema and validators in agreement.
+_STR = {"type": "string"}
+_STR_LIST = {"type": "array", "items": {"type": "string"}}
+_NOTE_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["focus", "think", "why", "mainRule", "example"],
+    "properties": {k: {"type": "string"} for k in ("focus", "think", "why", "mainRule", "example")},
+}
+
+
+def _variant(type_name: str, fields: dict[str, Any]) -> dict[str, Any]:
+    props: dict[str, Any] = {"type": {"type": "string", "enum": [type_name]}}
+    props.update(fields)
+    return {"type": "object", "additionalProperties": False, "required": list(props), "properties": props}
+
+
+def _items_schema(name: str, variants: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "type": "object", "additionalProperties": False, "required": ["items"],
+        "properties": {"items": {"type": "array", "items": {"anyOf": variants}}},
+        "title": name,
+    }
+
+
+_INT = {"type": "integer"}
+_VOCAB_TAIL = {"note": _NOTE_SCHEMA, "hints": _STR_LIST}
+_GRAMMAR_TAIL = {"rule": _NOTE_SCHEMA, "hints": _STR_LIST}
+VOCAB_SCHEMA = _items_schema("vocabulary_items", [
+    _variant("context", {"promptHtml": _STR, "accepted": _STR_LIST, **_VOCAB_TAIL}),
+    _variant("choice", {"promptHtml": _STR, "options": _STR_LIST, "answerIndex": _INT, **_VOCAB_TAIL}),
+    _variant("use", {"word": _STR, "meaning": _STR, "promptHtml": _STR, **_VOCAB_TAIL}),
+])
+GRAMMAR_SCHEMA = _items_schema("grammar_items", [
+    _variant("order", {"words": _STR_LIST, "answer": _STR, **_GRAMMAR_TAIL}),
+    _variant("choice", {"promptHtml": _STR, "options": _STR_LIST, "answerIndex": _INT, **_GRAMMAR_TAIL}),
+    _variant("gap", {"promptHtml": _STR, "accepted": _STR_LIST, **_GRAMMAR_TAIL}),
+    _variant("transform", {"originalLines": _STR_LIST, "promptPrefix": _STR, "accepted": _STR_LIST,
+                           "betterAnswer": _STR, **_GRAMMAR_TAIL}),
+    _variant("combine", {"sentenceA": _STR, "sentenceB": _STR, "connector": _STR, "accepted": _STR_LIST,
+                         "display": _STR, **_GRAMMAR_TAIL}),
+    _variant("correct", {"sentenceWrong": _STR, "accepted": _STR_LIST, "highlightCorrect": _STR, **_GRAMMAR_TAIL}),
+])
+
 _VOCAB_SPEC = (
     'Item types (use a varied mix):\n'
-    '- "context": {"type","promptHtml" (German sentence with exactly one ___),"accepted" (array of lowercase answers),"note","hints"}\n'
-    '- "choice": {"type","promptHtml" (exactly one ___),"options" (4 distinct German words),"answerIndex" (0-3),"note","hints"}\n'
-    '- "use": {"type","word" (target German word),"meaning" (short English gloss),"promptHtml" (English instruction to write a sentence with it),"note","hints"}\n'
+    '- "context": {"type":"context","promptHtml" (German sentence with exactly one ___),"accepted" (array of lowercase answers),"note","hints"}\n'
+    '- "choice": {"type":"choice","promptHtml" (exactly one ___),"options" (4 distinct German words),"answerIndex" (0-3),"note","hints"}\n'
+    '- "use": {"type":"use","word" (target German word),"meaning" (short English gloss),"promptHtml" (English instruction to write a sentence with it),"note","hints"}\n'
     '"note" = {"focus","think","why","mainRule","example"} (all short strings, explanations in English, example in German). '
     '"hints" = 2 short English strings.'
 )
 _GRAMMAR_SPEC = (
     'Item types (use a varied mix):\n'
-    '- "order": {"type","words" (the sentence words, shuffled),"answer" (correct word order, space-joined),"rule","hints"}\n'
-    '- "choice": {"type","promptHtml" (exactly one ___),"options" (4 distinct),"answerIndex" (0-3),"rule","hints"}\n'
-    '- "gap": {"type","promptHtml" (exactly one ___),"accepted" (array, lowercase),"rule","hints"}\n'
-    '- "transform": {"type","originalLines" (1-2 sentences),"promptPrefix" (start of the new sentence),"accepted" (lowercase full sentences),"betterAnswer","rule","hints"}\n'
-    '- "combine": {"type","sentenceA","sentenceB","connector","accepted" (lowercase),"display","rule","hints"}\n'
-    '- "correct": {"type","sentenceWrong" (one error),"accepted" (lowercase corrected sentence),"highlightCorrect" (corrected sentence, changed word in <strong>),"rule","hints"}\n'
+    '- "order": {"type":"order","words" (the sentence words, shuffled),"answer" (correct word order, space-joined),"rule","hints"}\n'
+    '- "choice": {"type":"choice","promptHtml" (exactly one ___),"options" (4 distinct),"answerIndex" (0-3),"rule","hints"}\n'
+    '- "gap": {"type":"gap","promptHtml" (exactly one ___),"accepted" (array, lowercase),"rule","hints"}\n'
+    '- "transform": {"type":"transform","originalLines" (1-2 sentences),"promptPrefix" (start of the new sentence),"accepted" (lowercase full sentences),"betterAnswer","rule","hints"}\n'
+    '- "combine": {"type":"combine","sentenceA","sentenceB","connector","accepted" (lowercase),"display","rule","hints"}\n'
+    '- "correct": {"type":"correct","sentenceWrong" (one error),"accepted" (lowercase corrected sentence),"highlightCorrect" (corrected sentence, changed word in <strong>),"rule","hints"}\n'
     '"rule" = {"focus","think","why","mainRule","example"} (short; explanations in English, example in German). '
     '"hints" = 2 short English strings. "accepted" entries must have no punctuation.'
 )
@@ -297,7 +345,10 @@ def generate_practice(
     for attempt in range(_MAX_ATTEMPTS):
         need = count - len(kept)
         system, user = _build_prompts(module, level, topic, need + 2, source, avoid + [_prompt_key(k) for k in kept], weak_areas or [])
-        result = chat_json(system=system, user=user, max_tokens=6000)
+        result = chat_json(
+            system=system, user=user, max_tokens=6000,
+            json_schema=VOCAB_SCHEMA if module == "vocabulary" else GRAMMAR_SCHEMA,
+        )
         raw_items = result.data.get("items") if isinstance(result.data, dict) else None
         rejected: dict[str, int] = {}
         if not isinstance(raw_items, list):

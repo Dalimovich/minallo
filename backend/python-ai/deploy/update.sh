@@ -50,6 +50,15 @@ export MINALLO_REVISION="$DEPLOY_TAG"
 "${COMPOSE[@]}" build --pull api
 "${COMPOSE[@]}" up -d --remove-orphans
 
+# Caddyfile is a single-file bind mount; a git pull replaces the file (new
+# inode), so a running Caddy keeps serving the OLD config until it restarts.
+# This is how the internal-token log redaction sat unapplied. Restart only when
+# the Caddyfile actually changed in this pull.
+if ! git diff --quiet ORIG_HEAD HEAD -- deploy/Caddyfile 2>/dev/null; then
+  echo "Caddyfile changed; restarting caddy to apply it."
+  "${COMPOSE[@]}" restart caddy
+fi
+
 DOMAIN="$(sed -n 's/^AI_DOMAIN=//p' .env | tail -1 | tr -d '\r')"
 echo "Waiting for https://${DOMAIN}/health ..."
 healthy=false

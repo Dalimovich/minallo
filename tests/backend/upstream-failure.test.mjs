@@ -26,3 +26,11 @@ test('other statuses pass through unchanged and HTML/raw upstream bodies never l
   assert.doesNotMatch(r.body, /<html>/);
   assert.equal(typeof b.detail, 'string');
 });
+
+test('python-ai already sends 502/504 as HTTP 500; the real status in the body is preserved', () => {
+  const r = upstreamFailureResponse(500, { detail: 'Generation took too long (ref 0123456789ab)', requestId: '0123456789ab', upstreamStatus: 504 });
+  const b = JSON.parse(r.body);
+  assert.equal(r.statusCode, 500);
+  assert.equal(b.upstreamStatus, 504);
+  assert.equal(b.requestId, '0123456789ab');
+});
