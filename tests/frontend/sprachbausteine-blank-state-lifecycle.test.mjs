@@ -41,24 +41,25 @@ test('withTimeout resolves null on a query rejection, not just a timeout', () =>
   );
 });
 
-test('loadUserData promotes _germanProfileLoaded when the profile fetch returns null', () => {
+test('loadUserData surfaces a null profile fetch as a retryable error state, never a silent authoritative promotion', () => {
   const successPathIdx = USER_DATA_TS.indexOf("if (profile) {");
   assert.ok(successPathIdx >= 0, 'profile success branch not found');
-  const elseIdx = USER_DATA_TS.indexOf('} else if (window.applyProfile) {', successPathIdx);
-  assert.ok(
-    elseIdx >= 0 && elseIdx < successPathIdx + 600,
-    'a null profile must still call applyProfile({}, {authoritative: true}) so _germanProfileLoaded is not left unset forever'
-  );
-  const elseBlock = USER_DATA_TS.slice(elseIdx, elseIdx + 1000);
-  assert.match(elseBlock, /applyProfile\(\{\},\s*\{\s*authoritative:\s*true\s*\}\)/);
+  const elseIdx = USER_DATA_TS.indexOf('} else {', successPathIdx);
+  assert.ok(elseIdx >= 0, 'null-profile branch not found');
+  const elseBlock = USER_DATA_TS.slice(elseIdx, elseIdx + 1500);
+  assert.match(elseBlock, /_profileResolutionState = 'error'/);
+  assert.match(elseBlock, /scheduleProfileRetry\(uid\)/);
+  const code = elseBlock.split(String.fromCharCode(10)).filter((l) => !l.trim().startsWith('//')).join(String.fromCharCode(10));
+  assert.doesNotMatch(code, /applyProfile\(\{\},\s*\{\s*authoritative:\s*true\s*\}\)/);
 });
 
-test('loadUserData promotes _germanProfileLoaded even on an unexpected throw', () => {
+test('loadUserData also surfaces an unexpected throw as a retryable error state', () => {
   const catchIdx = USER_DATA_TS.indexOf("} catch (e: unknown) {");
   assert.ok(catchIdx >= 0, 'outer catch block not found');
-  const catchBlock = USER_DATA_TS.slice(catchIdx, catchIdx + 600);
+  const catchBlock = USER_DATA_TS.slice(catchIdx, catchIdx + 900);
   assert.match(catchBlock, /console\.warn\('loadUserData error:', e\)/);
-  assert.match(catchBlock, /applyProfile\(\{\},\s*\{\s*authoritative:\s*true\s*\}\)/);
+  assert.match(catchBlock, /_profileResolutionState = 'error'/);
+  assert.match(catchBlock, /scheduleProfileRetry\(uid\)/);
 });
 
 // ── Sprachbausteine must never leave the workspace silently blank ─────────

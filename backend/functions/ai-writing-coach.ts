@@ -1,7 +1,11 @@
 // POST /api/ai/writing-coach — proxy to Python /writing-coach-analyse.
 //
-// Auth: Supabase JWT. Body: { text, profileLevel, taskType?, explanationLanguage? }.
+// Auth: Supabase JWT. Body: { text, profileLevel?, taskType?, explanationLanguage? }.
 // userId is taken from the verified token; never trusted from the client.
+// The grading LEVEL is not taken from the body either: python-ai reads the
+// authenticated user's saved profile (profiles.german_level). `profileLevel`
+// is accepted for diagnostics only, so a stale browser can never cause a
+// "profileLevel is invalid" rejection or grade against the wrong target.
 
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
 import { optionalEnv, requireEnv } from '../lib/env';
@@ -27,7 +31,6 @@ const ALLOWED_TASK_TYPES = new Set([
   'motivationsschreiben',
   'freier_text'
 ]);
-const ALLOWED_LEVELS = new Set(['A1', 'A2', 'B1', 'B2', 'C1', 'C1 Hochschule', 'C2']);
 const ALLOWED_EXPLANATION_LANGUAGES = new Set(['English', 'German', 'Simple']);
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
@@ -66,8 +69,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!text) return fail(400, 'text is required');
   if (text.length > MAX_TEXT_CHARS) return fail(400, 'text is too long');
 
-  const profileLevel = typeof body.profileLevel === 'string' ? body.profileLevel : '';
-  if (!ALLOWED_LEVELS.has(profileLevel)) return fail(400, 'profileLevel is invalid');
+  const clientProfileLevel =
+    typeof body.profileLevel === 'string' ? body.profileLevel.slice(0, 40) : '';
 
   const rawTask = typeof body.taskType === 'string' ? body.taskType : 'freier_text';
   const taskType = ALLOWED_TASK_TYPES.has(rawTask) ? rawTask : 'freier_text';
@@ -77,7 +80,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const explanationLanguage = ALLOWED_EXPLANATION_LANGUAGES.has(rawLang) ? rawLang : 'English';
 
   await logSecurityEvent(serviceKey, user.id, 'writing_coach_analyse', {
-    profile_level: profileLevel,
+    client_profile_level: clientProfileLevel,
     task_type: taskType,
     char_count: text.length
   });
@@ -85,7 +88,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const upstream = await forwardToPython('writing-coach-analyse', {
     userId: user.id,
     text,
-    profileLevel,
+    profileLevel: clientProfileLevel || null,
     taskType,
     explanationLanguage
   });

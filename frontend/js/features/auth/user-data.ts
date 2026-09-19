@@ -1,5 +1,6 @@
 import { checkAdminStatus } from '../../services/admin-service.js';
 import { authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
+import { resolveGermanExamProfileIdClient, populateGermanLevelSelect } from './german-profile.js';
 
 interface ProfileRow {
   full_name?: string;
@@ -17,25 +18,7 @@ interface ProfileRow {
   [k: string]: unknown;
 }
 
-// German Exam Engine profile registry, client-side mirror of the backend's
-// resolve_profile_id() in backend/python-ai/app/services/german_exam_profiles.py.
-// Table-driven (not a hardcoded if-chain) so adding a profile is one entry
-// here + one entry in the backend registry, not another branch — this
-// matters once TestDaF digital/paper or more telc variants exist and a
-// single (family, level) pair no longer maps unambiguously.
-const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; legacyLevelValues: string[] }> = [
-  { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
-];
-
-export function resolveGermanExamProfileIdClient(test: string | undefined, level: string | undefined): string | null {
-  const familyNorm = (test || '').trim().toLowerCase();
-  const levelNorm = (level || '').trim();
-  if (!familyNorm || !levelNorm) return null;
-  const matches = GERMAN_EXAM_PROFILES_CLIENT.filter(
-    (p) => p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1
-  );
-  return matches.length === 1 ? matches[0]?.profileId ?? null : null;
-}
+export { resolveGermanExamProfileIdClient };
 
 interface SettingsRow {
   [k: string]: unknown;
@@ -422,6 +405,30 @@ export async function loadUserData(uid: string): Promise<void> {
   }
 }
 
+// Make a just-saved, server-confirmed profiles row the authoritative runtime
+// profile (onboarding completion, Profile save). Mirrors the boot-time
+// authoritative path in loadUserData: cache is written FIRST from the real
+// row, resolution flips to 'ready' before applyProfile dispatches
+// 'ss-profile-updated', so every open surface reacts immediately.
+export function applySavedProfile(row: ProfileRow): void {
+  const uid = window._currentProfileUid || window._currentUser?.id || '';
+  if (!uid || !row) return;
+  try {
+    localStorage.setItem('profile_cache_' + uid, JSON.stringify(row));
+  } catch {
+    /* quota */
+  }
+  _resolvedProfileUid = uid;
+  window._currentProfileUid = uid;
+  window._profileResolutionState = 'ready';
+  _profileRetryAttempt = 0;
+  if (_profileRetryTimer) {
+    clearTimeout(_profileRetryTimer);
+    _profileRetryTimer = null;
+  }
+  applyProfile(row);
+}
+
 function applyAffiliateAccess(p: ProfileRow | null | undefined): void {
   if (!p) return;
   const affiliateLink = document.getElementById('psbAffiliate');
@@ -500,42 +507,52 @@ export function applyProfile(
   window._userType = hasUserType
     ? p.user_type || localStorage.getItem('ss_user_type_' + uid) || 'enrolled'
     : window._userType || localStorage.getItem('ss_user_type_' + uid) || 'enrolled';
+  // An authoritative row is the DB truth: a null/empty german_test|level there
+  // means "not chosen", and an old localStorage value must NOT fill it in (a
+  // stale cached B2 would otherwise mask a newer server value). Only a
+  // non-authoritative (cache-sourced) apply may fall back to the per-uid keys.
+  const cachedGerman = (key: string): string => (authoritative ? '' : localStorage.getItem(key + uid) || '');
   window._germanTest = hasGermanTest
-    ? p.german_test || localStorage.getItem('ss_german_test_' + uid) || ''
-    : window._germanTest || localStorage.getItem('ss_german_test_' + uid) || '';
+    ? p.german_test || cachedGerman('ss_german_test_')
+    : window._germanTest || cachedGerman('ss_german_test_');
   window._germanLevel = hasGermanLevel
-    ? p.german_level || localStorage.getItem('ss_german_level_' + uid) || ''
-    : window._germanLevel || localStorage.getItem('ss_german_level_' + uid) || '';
+    ? p.german_level || cachedGerman('ss_german_level_')
+    : window._germanLevel || cachedGerman('ss_german_level_');
   if (uid) {
     localStorage.setItem('ss_user_type_' + uid, window._userType);
     localStorage.setItem('ss_german_test_' + uid, window._germanTest);
     localStorage.setItem('ss_german_level_' + uid, window._germanLevel);
   }
 
-  // Canonical German Exam Engine profile id: prefer the persisted column
-  // (authoritative once written), else derive it client-side and persist it
-  // lazily so future reads (and the backend, which also derives it) agree.
-  // A stale localStorage cache alone is intentionally never trusted here —
-  // only the freshly-fetched profiles row or a fresh derivation are. A
-  // partial object that never carried this column falls back to the
-  // already-resolved in-memory id instead of being treated as "cleared",
-  // for the same reason as german_test/german_level above.
+  // Canonical German Exam Engine profile id: always DERIVED from the applied
+  // (test, level) pair — the persisted column is just a cache of that
+  // derivation, so a stale/contradictory persisted value (e.g. left over from
+  // a level change made by an older client) never wins. When it differs from
+  // the derivation, the column is corrected best-effort below.
   const persistedProfileId = hasGermanExamProfileId
     ? p.german_exam_profile_id || null
     : window._germanExamProfileId || null;
-  const derivedProfileId = persistedProfileId || resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel);
+  const derivedProfileId = resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel);
   window._germanExamProfileId = derivedProfileId;
   if (uid) localStorage.setItem('ss_german_exam_profile_id_' + uid, derivedProfileId || '');
-  if (!persistedProfileId && derivedProfileId && window._currentUser) {
-    const sb = window._sb as { from: (t: string) => { update: (v: Record<string, unknown>) => { eq: (k: string, v: unknown) => Promise<{ error?: unknown }> } } } | undefined;
-    if (sb) {
-      sb.from('profiles')
-        .update({ german_exam_profile_id: derivedProfileId })
-        .eq('id', window._currentUser.id)
-        .catch(() => {
-          /* best-effort cache write; resolution still works next load either way */
-        });
-    }
+  if (
+    authoritative &&
+    hasGermanExamProfileId &&
+    persistedProfileId !== derivedProfileId &&
+    uid
+  ) {
+    // The REST wrapper (window._sb) has no update(); PATCH like the heartbeat.
+    authenticatedSupabaseFetch(
+      (window.SUPA_URL || '') + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ german_exam_profile_id: derivedProfileId }),
+      },
+      { safeToRetry: true }
+    ).catch(() => {
+      /* best-effort cache write; derivation still agrees on every load */
+    });
   }
   applyUserTypeUI();
   // Only an authoritative apply (a fresh profiles-row fetch, or a just-saved
@@ -606,7 +623,9 @@ export function applyUserTypeUI(): void {
     el.style.display = resolved && isLearner ? '' : 'none';
   });
   const gt = document.getElementById('profileGermanTest') as HTMLSelectElement | null;
-  const gl = document.getElementById('profileGermanLevel') as HTMLInputElement | null;
-  if (gt && germanTest) gt.value = germanTest;
-  if (gl && germanLevel) gl.value = germanLevel;
+  const gl = document.getElementById('profileGermanLevel') as HTMLSelectElement | null;
+  if (gt) gt.value = germanTest;
+  // Level options depend on the chosen test family, so repopulate them here
+  // instead of relying on a static list that could disagree with onboarding.
+  if (gl) populateGermanLevelSelect(gl, germanTest, germanLevel);
 }

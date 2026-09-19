@@ -1,4 +1,10 @@
 import { HOCHSCHULEN, type Hochschule } from '../../data/hochschulen.js';
+import {
+  GERMAN_TEST_LEVELS,
+  isValidGermanTestLevel,
+  resolveGermanExamProfileIdClient,
+} from './german-profile.js';
+import { applySavedProfile } from './user-data.js';
 
 declare global {
   interface Window {
@@ -22,6 +28,9 @@ interface ObSupabaseResult {
 interface ObSupabaseClient {
   from: (table: string) => {
     upsert: (row: Record<string, unknown>) => Promise<ObSupabaseResult>;
+    select: (cols: string) => {
+      eq: (col: string, val: unknown) => { single: () => Promise<Record<string, unknown> | null> };
+    };
   };
 }
 
@@ -40,23 +49,9 @@ interface ProfilePayload {
   user_type?: string;
   german_test?: string;
   german_level?: string;
+  german_exam_profile_id?: string | null;
   age?: number | null;
   updated_at?: string;
-}
-
-interface CachePayload {
-  full_name: string;
-  email: string;
-  university?: string;
-  university_name?: string;
-  university_state?: string;
-  university_type?: string;
-  programme?: string;
-  vertiefung?: string;
-  matrikel?: string;
-  user_type: string;
-  german_test?: string;
-  german_level?: string;
 }
 
 import { listSuggestions, submitSuggestion } from '../../services/suggestions-service.js';
@@ -136,15 +131,6 @@ function _obApplyVertiefungVisibility(major: string): void {
   if (major) void _loadVertSuggestions(major);
 }
 
-const _obTestLevels: Record<string, string[]> = {
-  TestDaF: ['TDN 3', 'TDN 4', 'TDN 5'],
-  DSH: ['DSH-1', 'DSH-2', 'DSH-3'],
-  Goethe: ['B1', 'B2', 'C1', 'C2'],
-  telc: ['B2', 'C1', 'C1 Hochschule', 'C2'],
-  OESD: ['B2', 'C1', 'C2'],
-  DSD: ['DSD I (B1/B2)', 'DSD II (C1)'],
-};
-
 function _obT(key: string): string {
   try {
     return typeof window._t === 'function' ? window._t(key) : key;
@@ -218,48 +204,91 @@ function _obBaseInfo(): { first: string; last: string; age: string; email: strin
   };
 }
 
+// Fields that older database schemas may not have. If the save fails, these —
+// and ONLY these — may be dropped for a retry. user_type / german_test /
+// german_level are learner identity and are never dropped: a save without them
+// is a failed save, not a partial success.
+const OB_OPTIONAL_COMPAT_FIELDS = ['vertiefung', 'german_exam_profile_id'] as const;
+
+// Persist the profile, then read the real row back and confirm the identity
+// fields actually landed. Returns the saved row, or an error message.
+async function _obPersistProfile(
+  sb: ObSupabaseClient,
+  uid: string,
+  profilePayload: ProfilePayload
+): Promise<{ row: Record<string, unknown> } | { error: string }> {
+  try {
+    const rowIn = profilePayload as unknown as Record<string, unknown>;
+    let res = await sb.from('profiles').upsert(rowIn);
+    if (res && res.error) {
+      const retry: Record<string, unknown> = Object.assign({}, rowIn);
+      OB_OPTIONAL_COMPAT_FIELDS.forEach((k) => {
+        delete retry[k];
+      });
+      console.warn('Profile save failed, retrying without optional fields:', res.error);
+      res = await sb.from('profiles').upsert(retry);
+      if (res && res.error) {
+        console.error('Profile save error (both attempts failed):', res.error);
+        return { error: res.error.message || 'Could not save your profile.' };
+      }
+    }
+    const row = await sb.from('profiles').select('*').eq('id', uid).single();
+    if (!row) return { error: 'Could not confirm your saved profile. Please try again.' };
+    const identityOk =
+      row['user_type'] === profilePayload.user_type &&
+      (profilePayload.user_type !== 'learner' ||
+        (row['german_test'] === profilePayload.german_test &&
+          row['german_level'] === profilePayload.german_level));
+    if (!identityOk) {
+      console.error('Profile save did not persist identity fields', {
+        wanted: { t: profilePayload.user_type, g: profilePayload.german_test, l: profilePayload.german_level },
+        got: { t: row['user_type'], g: row['german_test'], l: row['german_level'] },
+      });
+      return { error: 'Your profile was not saved completely. Please try again.' };
+    }
+    return { row };
+  } catch (e: unknown) {
+    console.error('Profile save error:', e);
+    return { error: e instanceof Error ? e.message : 'Could not save your profile.' };
+  }
+}
+
 async function _obSaveAndClose(
   profilePayload: ProfilePayload,
-  cachePayload: CachePayload,
   onError?: (msg: string) => void
 ): Promise<void> {
   const _currentUser = window._currentUser;
-  if (_currentUser) {
-    const sb = window._sb as ObSupabaseClient | undefined;
-    if (sb) {
-      try {
-        const res = await sb.from('profiles').upsert(profilePayload as unknown as Record<string, unknown>);
-        if (res && res.error) {
-          const fallback: Partial<ProfilePayload> = Object.assign({}, profilePayload);
-          delete fallback.vertiefung;
-          delete fallback.german_test;
-          delete fallback.german_level;
-          delete fallback.user_type;
-          const fallbackRes = await sb
-            .from('profiles')
-            .upsert(fallback as unknown as Record<string, unknown>);
-          if (fallbackRes && fallbackRes.error) {
-            console.error('Profile save error (both attempts failed):', fallbackRes.error);
-            const msg = fallbackRes.error.message || 'Could not save your profile.';
-            if (typeof onError === 'function') onError(msg);
-            return;
-          }
-          console.warn('Profile partial save:', res.error);
-        }
-      } catch (e: unknown) {
-        console.error('Profile save error:', e);
-        const msg = e instanceof Error ? e.message : 'Could not save your profile.';
-        if (typeof onError === 'function') onError(msg);
-        return;
-      }
-    }
-    try {
-      const uid = _currentUser.id;
-      if (uid) {
-        localStorage.setItem('profile_cache_' + uid, JSON.stringify(cachePayload));
-      }
-    } catch {
-      /* ignore */
+  const sb = window._sb as ObSupabaseClient | undefined;
+  const fail = (msg: string): void => {
+    if (typeof onError === 'function') onError(msg);
+  };
+  if (!_currentUser || !_currentUser.id || !sb) {
+    fail('You are not signed in. Please reload and sign in again.');
+    return;
+  }
+  const saved = await _obPersistProfile(sb, _currentUser.id, profilePayload);
+  if ('error' in saved) {
+    // Onboarding stays open: no ob_done flag, no partially-created learner.
+    fail(saved.error);
+    return;
+  }
+  // Make the just-saved row the authoritative runtime profile NOW (cache is
+  // written from the real row, in server → runtime → cache order), so every
+  // surface reacts without a refresh.
+  applySavedProfile(saved.row as Parameters<typeof applySavedProfile>[0]);
+  if (profilePayload.user_type === 'learner') {
+    const w = window;
+    const ok =
+      w._profileResolutionState === 'ready' &&
+      w._userType === 'learner' &&
+      w._germanTest === profilePayload.german_test &&
+      w._germanLevel === profilePayload.german_level &&
+      (w._germanExamProfileId || null) === (profilePayload.german_exam_profile_id || null) &&
+      w._germanProfileLoaded === true;
+    if (!ok) {
+      console.error('Runtime profile does not match the saved onboarding profile');
+      fail('Your profile was saved but could not be applied. Please reload the page.');
+      return;
     }
   }
   const pName = document.getElementById('profileName') as HTMLInputElement | null;
@@ -721,7 +750,7 @@ export function initOnboarding(): void {
     const wrap = document.getElementById('obLevelWrap');
     const grid = document.getElementById('obLevelGrid');
     if (!wrap || !grid) return;
-    const levels = _obTestLevels[_obTest] || [];
+    const levels = GERMAN_TEST_LEVELS[_obTest] || [];
     grid.innerHTML = levels
       .map((l) => '<button class="ob-level-btn" data-level="' + l + '">' + l + '</button>')
       .join('');
@@ -854,22 +883,7 @@ export function initOnboarding(): void {
       age: parseInt(info.age) || null,
       updated_at: new Date().toISOString(),
     };
-    await _obSaveAndClose(
-      payload,
-      {
-        full_name: fullName,
-        email: info.email,
-        university: hs.short,
-        university_name: hs.name,
-        university_state: hs.state,
-        university_type: hs.type,
-        programme: programmeStr,
-        vertiefung: vertiefung,
-        matrikel: matrikel,
-        user_type: 'enrolled',
-      },
-      _reEnableFinish
-    );
+    await _obSaveAndClose(payload, _reEnableFinish);
   };
 
   window._obFinishLearner = async function () {
@@ -881,6 +895,11 @@ export function initOnboarding(): void {
       return;
     }
     if (!_obLevel) {
+      err.textContent = _obT('ob_err_select_level');
+      err.style.display = 'block';
+      return;
+    }
+    if (!isValidGermanTestLevel(_obTest, _obLevel)) {
       err.textContent = _obT('ob_err_select_level');
       err.style.display = 'block';
       return;
@@ -905,13 +924,6 @@ export function initOnboarding(): void {
     const info = _obBaseInfo();
     const fullName = info.first + ' ' + info.last;
     const _currentUser = window._currentUser;
-    const _uid = _currentUser?.id || '';
-    if (_uid) {
-      localStorage.setItem('ss_user_type_' + _uid, 'learner');
-      localStorage.setItem('ss_german_test_' + _uid, _obTest);
-      localStorage.setItem('ss_german_level_' + _uid, _obLevel);
-    }
-    localStorage.setItem('ss_user_type', 'learner');
 
     const payload: ProfilePayload = {
       id: _currentUser?.id,
@@ -921,20 +933,11 @@ export function initOnboarding(): void {
       user_type: 'learner',
       german_test: _obTest,
       german_level: _obLevel,
+      german_exam_profile_id: resolveGermanExamProfileIdClient(_obTest, _obLevel),
       age: parseInt(info.age) || null,
       updated_at: new Date().toISOString(),
     };
-    await _obSaveAndClose(
-      payload,
-      {
-        full_name: fullName,
-        email: info.email,
-        user_type: 'learner',
-        german_test: _obTest,
-        german_level: _obLevel,
-      },
-      _reEnableFinishLearner
-    );
+    await _obSaveAndClose(payload, _reEnableFinishLearner);
   };
 
   // initOnboarding is called from main.ts via runIdle(), which usually fires

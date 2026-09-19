@@ -81,22 +81,24 @@ test('applyProfile guards german_test/german_level/german_exam_profile_id with h
   }
 });
 
-// ── profile.js save must not clobber the full profile cache with a partial ─
+// ── profile.js save: server first, then runtime, then cache ────────────────
 
-test('profile.js saveProfile merges onto the existing profile_cache_<uid> instead of overwriting it', () => {
-  assert.match(
-    PROFILE_JS,
-    /Object\.assign\(\{\},\s*existingCache,\s*data\)/,
-    'saveProfile must merge its partial `data` onto the existing full cache before writing profile_cache_<uid>'
-  );
+test('profile.js saveProfile persists german_test + german_level + exam profile id together', () => {
+  assert.match(PROFILE_JS, /data\.german_test\s*=\s*test/, 'saveProfile must write german_test');
+  assert.match(PROFILE_JS, /data\.german_level\s*=\s*level/, 'saveProfile must write german_level');
+  assert.match(PROFILE_JS, /data\.german_exam_profile_id\s*=/, 'saveProfile must re-resolve german_exam_profile_id');
 });
 
-test('profile.js saveProfile calls applyProfile with the merged cache, not the raw partial data', () => {
-  assert.match(
-    PROFILE_JS,
-    /window\.applyProfile\(mergedCache\)/,
-    'saveProfile must pass the merged (full) object to applyProfile, not the bare partial `data`'
-  );
+test('profile.js saveProfile applies the real saved row via _applySavedProfile (no partial data, no direct global writes)', () => {
+  assert.match(PROFILE_JS, /\.select\('\*'\)\.eq\('id',\s*_currentUser\.id\)\.single\(\)/, 'saveProfile must read the saved row back');
+  assert.match(PROFILE_JS, /window\._applySavedProfile\(saved\)/, 'saveProfile must apply the saved server row');
+  assert.doesNotMatch(PROFILE_JS, /window\._germanLevel\s*=/, 'saveProfile must not write runtime globals directly');
+  assert.doesNotMatch(PROFILE_JS, /localStorage\.setItem\('ss_german_level_/, 'saveProfile must not write the german level cache itself');
+});
+
+test('profile.js compat retry never drops german_test / german_level', () => {
+  assert.doesNotMatch(PROFILE_JS, /delete\s+_fb\.german_(test|level)/);
+  assert.doesNotMatch(PROFILE_JS, /delete\s+_fb\.user_type/);
 });
 
 // ── loadUserData dedup must not commit before a real fetch can start ───────

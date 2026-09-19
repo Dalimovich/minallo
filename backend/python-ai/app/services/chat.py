@@ -180,6 +180,17 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
         except Exception:
             log.exception("account workspace block failed (non-fatal)")
             account_block = ""
+        # The learner's German target (server-read from profiles, never from
+        # the request) so the generic chat answers at the right level without
+        # the browser having to repeat it.
+        try:
+            from .german_learner_profile import (  # noqa: WPS433
+                format_learner_profile_block,
+                get_german_learner_profile,
+            )
+            account_block += format_learner_profile_block(get_german_learner_profile(user_id))
+        except Exception:
+            log.exception("german learner profile block failed (non-fatal)")
         if account_block:
             if messages and messages[0].get("role") == "system":
                 messages[0] = {

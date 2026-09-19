@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from .llm_json import chat_json
+from .german_learner_profile import ALL_PROFILE_LEVELS
 from ..config import get_settings
 
 log = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ MIN_WORDS_FOR_FULL_GRADING = 120
 
 ARGUMENTATIVE_TASK_TYPES = {"stellungnahme", "argumentation", "motivationsschreiben"}
 
-ALLOWED_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C1 Hochschule", "C2"}
+# Every level the Profile/onboarding UI can save (TDN n, DSH-n, DSD …) plus
+# plain CEFR — a legitimate profile value must never be rejected here.
+ALLOWED_LEVELS = set(ALL_PROFILE_LEVELS)
 ALLOWED_TASK_TYPES = {
     "email",
     "stellungnahme",
@@ -75,6 +78,7 @@ Judgment by profile level:
 - A1 / A2: basic correctness only. Do not flag simple vocabulary as bad. Simple explanations. Focus on word order, articles, verb forms.
 - B1: sentence structure, articles, prepositions, verb conjugation, common vocabulary. Practical, not academic.
 - B2: connectors, argument structure, natural wording, precise vocabulary.
+- Exam-specific targets (TDN 3-5, DSH-1-3, DSD I / DSD II): the student is preparing for that exact exam. Judge against that target directly — do not convert it to a CEFR level unless the target itself names one (e.g. "DSD II (C1)").
 - C1 / C1 Hochschule: academic / university German. Mark grammatically-correct-but-too-simple wording as `vocabulary` or `style` upgrades. Suggest formal connectors, nominal style, precise wording. Do not reward Nominalstil for its own sake — clarity over complication.
 
 Judgment by task type:
@@ -369,7 +373,10 @@ def analyse_writing(
     # upgrade — gpt-4o-mini handles A1–B2 fine but blurs the line at academic
     # German. A1–B2 stay on the cheaper default model.
     settings = get_settings()
-    strong_levels = {"C1", "C1 Hochschule", "C2"}
+    # Model routing only (not a level conversion): advanced / academic targets.
+    strong_levels = {
+        "C1", "C1 Hochschule", "C2", "DSD II (C1)", "TDN 4", "TDN 5", "DSH-2", "DSH-3",
+    }
     chosen_model = (
         getattr(settings, "openai_generate_model_strong", None)
         if profile_level in strong_levels

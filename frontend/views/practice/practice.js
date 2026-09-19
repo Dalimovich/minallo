@@ -132,6 +132,54 @@
     }
     _glRefreshHero();
 
+    // ── Learner level: ONE source (profile) for every practice module ──────
+    // The level selects default to the learner's saved target level
+    // (profiles.german_level via getGermanLearnerProfile), never a hard-coded
+    // one. Changing a select is a SESSION-ONLY override — it never writes the
+    // profile. When the profile itself changes (Profile page save), overrides
+    // are dropped and the NEXT generation uses the new level; an exercise that
+    // is already on screen is not mutated mid-question.
+    function _glProfileLevel() {
+      var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+      return p && p.state === 'ready' ? p.targetLevel : '';
+    }
+    // Only explicitly advanced levels; never guess a CEFR mapping for
+    // exam-specific levels (TDN n, DSH-n).
+    function _glIsAdvancedLevel(l) {
+      return ['C1', 'C1 Hochschule', 'C2', 'DSD II (C1)'].indexOf(l) !== -1;
+    }
+    function _glLevelOptionsHtml() {
+      return window.germanLevelOptionsHtml ? window.germanLevelOptionsHtml() : '<option value="" selected>…</option>';
+    }
+    var _glLastSyncedLevel = null;
+    var _glLevelSelectIds = ['glReadingLevel', 'glGramLevel', 'glVocabLevel', 'glListenLevel'];
+    // Modules (Grammatik, Wortschatz) register a callback to re-read their
+    // level after every sync; they live in inner scopes this helper can't see.
+    var _glOnLevelSync = [];
+    function _glSyncLevelSelects() {
+      var profileLevel = _glProfileLevel();
+      var profileChanged = profileLevel !== _glLastSyncedLevel;
+      _glLevelSelectIds.forEach(function (id) {
+        var sel = document.getElementById(id);
+        if (!sel) return;
+        var keep = !profileChanged && sel._glSessionOverride ? sel.value : '';
+        sel.innerHTML = _glLevelOptionsHtml();
+        if (keep && Array.prototype.some.call(sel.options, function (o) { return o.value === keep; })) sel.value = keep;
+        else sel._glSessionOverride = false;
+        if (!sel._glOverrideWired) {
+          sel._glOverrideWired = true;
+          sel.addEventListener('change', function () { sel._glSessionOverride = true; });
+        }
+      });
+      _glOnLevelSync.forEach(function (fn) {
+        try { fn(profileChanged); } catch (e) { /* module not built yet */ }
+      });
+      _glLastSyncedLevel = profileLevel;
+    }
+    window.addEventListener('ss-profile-updated', function () {
+      try { _glSyncLevelSelects(); } catch (e) { /* views not built yet */ }
+    });
+
     // Learner home (the default landing subview for the "Home" sidebar item)
     // greets the user and hands off to the existing Practice/Writing Coach
     // subviews below — kept inside #psec-german alongside them rather than
@@ -721,6 +769,38 @@
 
     function _glLearnerFiles() {
       return import('/js/features/german/learner-files.js');
+    }
+
+    // General Wortschatz/Grammatik practice — independent of any exam profile.
+    // Throws with .status/.userMessage when nothing valid could be produced.
+    // Level for generation requests: the learner's profile target (the server
+    // re-derives it from the authenticated profile regardless). `fallback` is
+    // only used while the profile is not ready.
+    function _glLearnerLevel(fallback) {
+      return _glProfileLevel() || fallback || '';
+    }
+    async function _glGeneratePractice(payload) {
+      // The server derives the level from the authenticated profile. Only a
+      // level that differs from the profile the browser knows is sent, as an
+      // explicit session-only override — a stale tab's cached level equals its
+      // own stale profile, so it is never mistaken for an override.
+      var chosenLevel = payload.level;
+      delete payload.level;
+      if (chosenLevel && chosenLevel !== _glProfileLevel()) payload.sessionLevelOverride = chosenLevel;
+      var resp = await _authFetch(BACKEND_URL + '/api/ai/german-practice/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = null;
+      try { data = await resp.json(); } catch (e) { /* non-JSON error body */ }
+      if (!resp.ok || !data || data.schema !== 'german-practice-v1' || !Array.isArray(data.items) || !data.items.length) {
+        var err = new Error('Could not create practice.');
+        err.status = resp.status;
+        err.userMessage = resp.status === 422 && data && (data.error || data.detail) ? String(data.error || data.detail) : '';
+        throw err;
+      }
+      return data;
     }
 
     // Saved quiz/card keys retain compatibility without changing university course state.
@@ -1661,18 +1741,11 @@
       // fallback table in sync with LS_GERMAN_EXAM_PROFILES_FALLBACK (below,
       // in the Hören section), GERMAN_EXAM_PROFILES_CLIENT in user-data.ts,
       // and the backend's GERMAN_EXAM_PROFILES registry.
-      var RD_GERMAN_EXAM_PROFILES_FALLBACK = [
-        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
-      ];
+      // Single source: the shared accessor derives the id from the
+      // authoritative (test, level) pair — no per-module resolver/table.
       function rdResolveProfileId() {
-        if (window._germanExamProfileId) return window._germanExamProfileId;
-        var familyNorm = (window._germanTest || '').trim().toLowerCase();
-        var levelNorm = (window._germanLevel || '').trim();
-        if (!familyNorm || !levelNorm) return null;
-        var matches = RD_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
-          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
-        });
-        return matches.length === 1 ? matches[0].profileId : null;
+        var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+        return (p && p.examProfileId) || null;
       }
 
       var RD_PART_LABELS = {
@@ -2192,6 +2265,7 @@
       }
 
       window._glOpenReadingView = function () {
+        try { _glSyncLevelSelects(); } catch (e) { /* non-fatal */ }
         rd.tab = 'practice';
         rdRenderTabs();
         rdRenderFilesPanel(false);
@@ -2787,7 +2861,7 @@
           '<div id="glReadingFileList">' + listHtml + '</div>' +
           '<div class="gl-reading-files-config">' +
           '<label>Questions<select id="glReadingCfgCount"><option>3</option><option selected>5</option><option>8</option></select></label>' +
-          '<label>Difficulty<select id="glReadingCfgLevel"><option>A1</option><option>A2</option><option>B1</option><option selected>B2</option><option>C1</option></select></label>' +
+          '<label>Difficulty<select id="glReadingCfgLevel">' + _glLevelOptionsHtml() + '</select></label>' +
           '<label>Question mix<select id="glReadingCfgMix"><option selected>Mixed</option><option>Multiple choice only</option><option>Focus on inference</option></select></label>' +
           '<button type="button" class="gl-reading-start-btn" id="glReadingStartBtn">Start reading</button>' +
           '</div>';
@@ -2806,7 +2880,7 @@
         var file = files.find(function (item) { return item.id === chosen.value; });
         if (!file) return;
         var fname = file.documentName;
-        var level = rdEl('glReadingCfgLevel') ? rdEl('glReadingCfgLevel').value : 'B2';
+        var level = rdEl('glReadingCfgLevel') && rdEl('glReadingCfgLevel').value ? rdEl('glReadingCfgLevel').value : _glProfileLevel();
         var count = rdEl('glReadingCfgCount') ? rdEl('glReadingCfgCount').value : '5';
         var startBtn = rdEl('glReadingStartBtn');
         // Baseline token: if the user navigates away/resets before this
@@ -2978,18 +3052,11 @@
       // path. Keep this fallback table in sync with the other two, with
       // GERMAN_EXAM_PROFILES_CLIENT in user-data.ts, and with the backend's
       // GERMAN_EXAM_PROFILES registry.
-      var SB_GERMAN_EXAM_PROFILES_FALLBACK = [
-        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
-      ];
+      // Single source: the shared accessor derives the id from the
+      // authoritative (test, level) pair — no per-module resolver/table.
       function sbResolveProfileId() {
-        if (window._germanExamProfileId) return window._germanExamProfileId;
-        var familyNorm = (window._germanTest || '').trim().toLowerCase();
-        var levelNorm = (window._germanLevel || '').trim();
-        if (!familyNorm || !levelNorm) return null;
-        var matches = SB_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
-          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
-        });
-        return matches.length === 1 ? matches[0].profileId : null;
+        var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+        return (p && p.examProfileId) || null;
       }
 
       function sbGeneratedHeader() {
@@ -3019,8 +3086,14 @@
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
         if (qPanel) {
-          qPanel.innerHTML = '<div class="gl-listen-weak-empty">Sprachbausteine practice is currently available for the ' +
-            'telc C1 Hochschule exam profile.</div>';
+          // Neutral product copy, not an error: no exam-format blueprint is
+          // registered for this (test, level) pair yet. Wortschatz, Grammatik,
+          // Writing Coach and file practice are unaffected.
+          var gp = window.getGermanLearnerProfile ? window.getGermanLearnerProfile() : null;
+          var gLabel = gp && gp.testFamily ? (gp.testFamily + (gp.targetLevel ? ' ' + gp.targetLevel : '')) : '';
+          qPanel.innerHTML = '<div class="gl-listen-weak-empty">' + (gLabel
+            ? 'Exam-format practice for ' + _glEscape(gLabel) + ' is not available yet.'
+            : 'Choose your exam and target level in Profile to unlock exam-format practice.') + '</div>';
         }
       }
 
@@ -3106,7 +3179,7 @@
           console.error('[Sprachbausteine] illegal blank state detected', {
             uiState: sb.uiState,
             profileLoaded: window._germanProfileLoaded,
-            profileId: window._germanExamProfileId,
+            profileId: sbResolveProfileId(),
             germanTest: window._germanTest,
             germanLevel: window._germanLevel,
             genRequestToken: sb._genRequestToken
@@ -3589,12 +3662,18 @@
       };
 
       var gm = {
-        tab: 'practice', topic: 'verbPosition', level: 'B2',
+        tab: 'practice', topic: 'verbPosition', level: _glProfileLevel(),
         queue: [], index: 0, score: 0, answers: {}, hintLevel: {}, tries: {},
-        orderBuilt: {}, orderPool: {}, selected: {}, _lastUser: {}
+        orderBuilt: {}, orderPool: {}, selected: {}, _lastUser: {},
+        sample: false, _gen: 0, _busy: false, seen: []
       };
 
       function gmEl(id) { return document.getElementById(id); }
+      _glOnLevelSync.push(function (profileChanged) {
+        var sel = gmEl('glGramLevel');
+        gm.level = sel && sel.value ? sel.value : _glProfileLevel();
+        if (profileChanged && gmEl('glGramTopic')) gmBuildTopicSelect();
+      });
 
       function gmNormalize(s) {
         return String(s == null ? '' : s).toLowerCase()
@@ -3642,7 +3721,7 @@
         var sel = gmEl('glGramTopic');
         if (!sel) return;
         var prev = gm.topic;
-        var list = GM_TOPICS.concat(gm.level === 'C1' ? GM_TOPICS_C1 : []);
+        var list = GM_TOPICS.concat(/^(C1|C2)/.test(gm.level) ? GM_TOPICS_C1 : []);
         sel.innerHTML = list.map(function (t) {
           return '<option value="' + t.id + '">' + _glEscape(t.label) + '</option>';
         }).join('');
@@ -3650,17 +3729,30 @@
         else { sel.value = list[0].id; gm.topic = list[0].id; }
       }
 
+      // Offline sample bank — only ever shown behind an explicit "sample practice"
+      // label, never as the normal AI-generated path.
       function gmPickExercises(topic, count) {
-        var pool = (GM_BANK[topic] || []).slice();
-        if (!pool.length) return [];
-        var out = [];
-        var i = 0;
-        while (out.length < count) { out.push(pool[i % pool.length]); i++; }
-        return out;
+        return (GM_BANK[topic] || []).slice(0, count);
       }
 
-      function gmStartQueue(topic, count) {
-        gm.queue = gmPickExercises(topic, count || 10);
+      function gmTopicLabel(id) {
+        return (GM_ALL_TOPICS.filter(function (t) { return t.id === id; })[0] || {}).label || id;
+      }
+
+      function gmExPrompt(ex) {
+        return ex.promptHtml || ex.answer || ex.sentenceWrong || ex.sentenceA || (ex.originalLines || []).join(' ') || '';
+      }
+
+      function gmWeakLabels() {
+        var stats = gmStatsLoad();
+        return Object.keys(stats).filter(function (t) {
+          return stats[t].total >= 2 && stats[t].correct / stats[t].total < 0.6;
+        }).map(gmTopicLabel).slice(0, 5);
+      }
+
+      function gmBeginQueue(items, sample) {
+        gm.queue = items;
+        gm.sample = !!sample;
         gm.index = 0;
         gm.score = 0;
         gm.answers = {};
@@ -3670,17 +3762,73 @@
         gm.orderPool = {};
         gm.selected = {};
         gm._lastUser = {};
+        if (!sample) gm.seen = gm.seen.concat(items.map(gmExPrompt)).slice(-40);
         gmEl('glGramEnd').style.display = 'none';
         gmEl('glGramWorkspace').style.display = '';
         gmRenderExercise();
       }
 
+      function gmShowPanel(html) {
+        gm.queue = [];
+        gmEl('glGramEnd').style.display = 'none';
+        gmEl('glGramWorkspace').style.display = '';
+        var label = gmEl('glGramProgressLabel');
+        var fill = gmEl('glGramProgressFill');
+        if (label) label.textContent = '';
+        if (fill) fill.style.width = '0%';
+        gmEl('glGramExercise').innerHTML = html;
+        gmEl('glGramFeedback').innerHTML = '';
+      }
+
+      function gmShowStart() {
+        gm._gen++;
+        gm._busy = false;
+        gmShowPanel('<div class="gl-gram-files-empty"><div class="gl-gram-ex-eyebrow">Grammatik</div>' +
+          '<p class="gl-gram-ex-prompt">' + _glEscape(gmTopicLabel(gm.topic)) + ' · ' + _glEscape(gm.level) + '</p>' +
+          '<div class="gl-gram-ex-actions"><button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramStartBtn">Start practice</button></div></div>');
+        gmEl('glGramStartBtn').addEventListener('click', function () { gmStartQueue(gm.topic, 10); });
+      }
+
+      // Generates a fresh AI set. opts.documentIds / opts.topicLabel switch to "From my files".
+      async function gmStartQueue(topic, count, opts) {
+        var token = ++gm._gen;
+        gm._busy = true;
+        gmShowPanel('<div class="gl-gram-files-empty" id="glGramCreating">Creating your practice…</div>');
+        try {
+          var data = await _glGeneratePractice({
+            module: 'grammar', level: gm.level, count: count || 10,
+            topic: opts && opts.topicLabel ? opts.topicLabel : gmTopicLabel(topic),
+            sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
+            avoidPrompts: gm.seen.slice(-30), weakAreas: gmWeakLabels()
+          });
+          if (token !== gm._gen) return;
+          gm._busy = false;
+          gmBeginQueue(data.items, false);
+        } catch (e) {
+          if (token !== gm._gen) return;
+          gm._busy = false;
+          gmShowPanel('<div class="gl-gram-files-empty"><div class="gl-gram-fb-title">Couldn\'t create practice.</div>' +
+            (e && e.userMessage ? '<p>' + _glEscape(e.userMessage) + '</p>' : '') +
+            '<div class="gl-gram-ex-actions">' +
+            '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramRetryBtn">Retry</button>' +
+            (!opts && GM_BANK[topic] ? '<button type="button" class="gl-gram-btn gl-gram-btn-ghost" id="glGramSampleBtn">Use sample practice</button>' : '') +
+            '</div></div>');
+          gmEl('glGramRetryBtn').addEventListener('click', function () { gmStartQueue(topic, count, opts); });
+          var sb2 = gmEl('glGramSampleBtn');
+          if (sb2) sb2.addEventListener('click', function () { gmBeginQueue(gmPickExercises(topic, count || 10), true); });
+        }
+      }
+
       window._glOpenGrammarView = function () {
+        try { _glSyncLevelSelects(); } catch (e) { /* non-fatal */ }
         gm.tab = 'practice';
+        gm.level = _glLearnerLevel(gm.level);
+        var lvSel = gmEl('glGramLevel');
+        if (lvSel) lvSel.value = gm.level;
         gmBuildTopicSelect();
         gmRenderTabs();
         gmSetTabView('practice');
-        gmStartQueue(gm.topic, 10);
+        gmShowStart();
         gmWireHeader();
       };
 
@@ -3700,7 +3848,7 @@
           topicSel._gmWired = true;
           topicSel.addEventListener('change', function () {
             gm.topic = topicSel.value;
-            if (gm.tab === 'practice') gmStartQueue(gm.topic, 10);
+            if (gm.tab === 'practice') gmShowStart();
           });
         }
         if (levelSel && !levelSel._gmWired) {
@@ -3708,7 +3856,7 @@
           levelSel.addEventListener('change', function () {
             gm.level = levelSel.value;
             gmBuildTopicSelect();
-            if (gm.tab === 'practice') gmStartQueue(gm.topic, 10);
+            if (gm.tab === 'practice') gmShowStart();
           });
         }
       }
@@ -3728,7 +3876,7 @@
         gmEl('glGramWeak').style.display = tab === 'weak' ? '' : 'none';
         gmEl('glGramFiles').style.display = tab === 'files' ? '' : 'none';
         if (tab === 'practice') {
-          if (!gm.queue.length) gmStartQueue(gm.topic, 10);
+          if (!gm.queue.length && !gm._busy && !gmEl('glGramRetryBtn')) gmShowStart();
         } else if (tab === 'weak') {
           gmRenderWeak();
         } else if (tab === 'files') {
@@ -3750,7 +3898,7 @@
         if (!ex) return;
         gmProgress();
         var answer = gm.answers[gm.index];
-        gmEl('glGramExercise').innerHTML = gmExerciseHtml(ex, answer);
+        gmEl('glGramExercise').innerHTML = (gm.sample ? '<div class="gl-sample-banner">Sample practice — AI generation unavailable</div>' : '') + gmExerciseHtml(ex, answer);
         gmWireExercise(ex, answer);
         gmEl('glGramFeedback').innerHTML = answer ? gmFeedbackAfterHtml(ex, answer) : gmFeedbackBeforeHtml(ex);
         gmWireFeedback(ex, answer);
@@ -4034,7 +4182,7 @@
 
       function gmExplainRule(ex) {
         var topicLabel = (GM_ALL_TOPICS.filter(function (t) { return t.id === gm.topic; })[0] || {}).label || gm.topic;
-        var prompt = 'Explain this German grammar rule in a short, clear way for a ' + gm.level + ' learner: "' + ex.rule.focus + '". ' +
+        var prompt = 'Explain this German grammar rule in a short, clear way for a ' + (gm.level || 'German') + ' learner: "' + ex.rule.focus + '". ' +
           ex.rule.why + ' Rule: ' + ex.rule.mainRule + '. Example: ' + ex.rule.example;
         window._glAsk(prompt, 'Grammatik — ' + topicLabel);
       }
@@ -4173,7 +4321,7 @@
           '</div>' +
           '<div class="gl-gram-files-detect" id="glGramDetect" style="display:none"></div>' +
           '<div class="gl-gram-files-config">' +
-          '<label>Difficulty<select id="glGramCfgLevel"><option>A1</option><option>A2</option><option>B1</option><option selected>B2</option><option>C1</option></select></label>' +
+          '<label>Difficulty<select id="glGramCfgLevel">' + _glLevelOptionsHtml() + '</select></label>' +
           '<label>Exercises<select id="glGramCfgCount"><option>5</option><option selected>10</option><option>15</option></select></label>' +
           '<button type="button" class="gl-gram-start-btn" id="glGramFilesStart" disabled>Start practice</button>' +
           '</div>';
@@ -4231,89 +4379,22 @@
         }
       }
 
-      function gmGeneratePrompt(level, count, topics) {
-        return 'Based on this German document, write ' + count + ' grammar practice exercises for a ' + level +
-          ' learner, focused on these grammar topics: ' + topics.join(', ') + '. Use sentences or structures inspired by the document where possible, not meaningless copies. ' +
-          'Reply with ONLY this JSON array, no other text, no markdown fences: ' +
-          '[{"type":"gap","promptHtml":"Sentence with ___ for the gap","accepted":["lowercase accepted answer(s), punctuation-free"],"rule":{"focus":"...","think":"...","why":"...","mainRule":"...","example":"..."},"hints":["hint1","hint2"]}]. ' +
-          'Valid "type" values and their extra fields: ' +
-          '"order" needs "words" (array of the sentence\'s words, unordered) and "answer" (lowercase, space-joined correct order); ' +
-          '"choice" needs "options" (array of 4 short strings) and "answerIndex" (0-based number); ' +
-          '"gap" needs "promptHtml" (containing ___) and "accepted" (array); ' +
-          '"transform" needs "originalLines" (array of 1-2 sentences), "promptPrefix", "accepted" (array, lowercase punctuation-free), "betterAnswer" (nicely cased sentence); ' +
-          '"combine" needs "sentenceA", "sentenceB", "connector", "accepted" (array, lowercase punctuation-free), "display" (nicely cased combined sentence); ' +
-          '"correct" needs "sentenceWrong", "accepted" (array, lowercase punctuation-free), "highlightCorrect" (nicely cased corrected sentence with the fixed word wrapped in <strong>). ' +
-          'Every exercise object needs "type", "rule" (with focus/think/why/mainRule/example) and "hints" (array of exactly 2 short strings), formatted as in the example above.';
-      }
-
-      function gmParseGenerated(text) {
-        try {
-          var cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-          var arr = JSON.parse(cleaned);
-          if (!Array.isArray(arr) || !arr.length) return null;
-          return arr.filter(function (ex) { return ex && ex.type && ex.rule; });
-        } catch (e) {
-          return null;
-        }
-      }
-
+      // Generation runs server-side from the file Minallo already indexed —
+      // the browser only sends the document id, never the file bytes.
       async function gmStartFromFile(file) {
-        var fname = file.documentName;
-        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
-        var level = gmEl('glGramCfgLevel') ? gmEl('glGramCfgLevel').value : 'B2';
-        var count = gmEl('glGramCfgCount') ? gmEl('glGramCfgCount').value : '10';
-        var startBtn = gmEl('glGramFilesStart');
-        if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
-
-        try {
-          var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
-          var ext = (fname.split('.').pop() || '').toLowerCase();
-          var messageContent;
-          if (ext === 'pdf') {
-            var b64 = '';
-            var chunkSize = 8192;
-            for (var i = 0; i < bytes.length; i += chunkSize) b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-            b64 = btoa(b64);
-            messageContent = [
-              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-              { type: 'text', text: gmGeneratePrompt(level, count, gmChosenTopics) }
-            ];
-          } else if (['txt', 'md'].indexOf(ext) !== -1) {
-            var textContent = new TextDecoder().decode(bytes);
-            messageContent = [{ type: 'text', text: 'DOCUMENT CONTENT:\n' + textContent + '\n\n' + gmGeneratePrompt(level, count, gmChosenTopics) }];
-          } else {
-            if (typeof showToast === 'function') showToast('Unsupported file', 'Only PDF and text files can be turned into grammar exercises right now.');
-            if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
-            return;
-          }
-
-          var resp = await _authFetch(BACKEND_URL + '/api/ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-6',
-              max_tokens: 2200,
-              system: 'You are a German grammar exercise generator. Reply with ONLY valid JSON, no markdown fences, no commentary.',
-              messages: [{ role: 'user', content: messageContent }]
-            })
-          });
-          var data = await resp.json();
-          var text = data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '';
-          var parsed = gmParseGenerated(text);
-          if (!parsed) throw new Error('Could not generate grammar exercises from this file.');
-
-          gm.queue = parsed;
-          gm.index = 0; gm.score = 0; gm.answers = {}; gm.hintLevel = {}; gm.tries = {};
-          gm.orderBuilt = {}; gm.orderPool = {}; gm.selected = {}; gm._lastUser = {};
-          gmSetTabView('practice');
-          gmEl('glGramEnd').style.display = 'none';
-          gmEl('glGramWorkspace').style.display = '';
-          gmRenderExercise();
-        } catch (e) {
-          if (typeof showToast === 'function') showToast('Could not generate exercises', e.message || 'Try a different file.');
-        } finally {
-          if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+        var level = gmEl('glGramCfgLevel') ? gmEl('glGramCfgLevel').value : gm.level;
+        var count = parseInt(gmEl('glGramCfgCount') ? gmEl('glGramCfgCount').value : '10', 10) || 10;
+        if (!file.documentId) {
+          if (typeof showToast === 'function') showToast('File not indexed yet', 'Open Files and let this file finish indexing first.');
+          return;
         }
+        gm.level = level;
+        var labels = gmChosenTopics.map(gmTopicLabel).join(', ');
+        gmSetTabView('practice');
+        await gmStartQueue(gm.topic, count, {
+          documentIds: [file.documentId],
+          topicLabel: labels ? 'Grammar from the learner\'s own document, focusing on: ' + labels : 'Grammar from the learner\'s own document'
+        });
       }
     })();
 
@@ -4410,11 +4491,17 @@
       };
 
       var vc = {
-        tab: 'practice', topic: 'everyday', level: 'B2',
-        queue: [], index: 0, score: 0, answers: {}, hintLevel: {}, tries: {}, _lastUser: {}
+        tab: 'practice', topic: 'everyday', level: _glProfileLevel(),
+        queue: [], index: 0, score: 0, answers: {}, hintLevel: {}, tries: {}, _lastUser: {},
+        sample: false, _gen: 0, _busy: false, seen: []
       };
 
       function vcEl(id) { return document.getElementById(id); }
+      _glOnLevelSync.push(function (profileChanged) {
+        var sel = vcEl('glVocabLevel');
+        vc.level = sel && sel.value ? sel.value : _glProfileLevel();
+        if (profileChanged && vcEl('glVocabTopic')) vcBuildTopicSelect();
+      });
 
       function vcNormalize(s) {
         return String(s == null ? '' : s).toLowerCase()
@@ -4447,7 +4534,7 @@
         var sel = vcEl('glVocabTopic');
         if (!sel) return;
         var prev = vc.topic;
-        var list = VC_TOPICS.concat(vc.level === 'C1' ? VC_TOPICS_C1 : []);
+        var list = VC_TOPICS.concat(_glIsAdvancedLevel(vc.level) ? VC_TOPICS_C1 : []);
         sel.innerHTML = list.map(function (t) {
           return '<option value="' + t.id + '">' + _glEscape(t.label) + '</option>';
         }).join('');
@@ -4455,34 +4542,102 @@
         else { sel.value = list[0].id; vc.topic = list[0].id; }
       }
 
+      // Offline sample bank — only ever shown behind an explicit "sample practice"
+      // label, never as the normal AI-generated path.
       function vcPickExercises(topic, count) {
-        var pool = (VC_BANK[topic] || []).slice();
-        if (!pool.length) return [];
-        var out = [];
-        var i = 0;
-        while (out.length < count) { out.push(pool[i % pool.length]); i++; }
-        return out;
+        return (VC_BANK[topic] || []).slice(0, count);
       }
 
-      function vcStartQueue(topic, count) {
-        vc.queue = vcPickExercises(topic, count || 10);
+      function vcTopicLabel(id) {
+        return (VC_ALL_TOPICS.filter(function (t) { return t.id === id; })[0] || {}).label || id;
+      }
+
+      function vcExPrompt(ex) { return ex.promptHtml || ex.word || ''; }
+
+      function vcWeakLabels() {
+        var stats = vcStatsLoad();
+        return Object.keys(stats).filter(function (t) {
+          return stats[t].total >= 2 && stats[t].correct / stats[t].total < 0.6;
+        }).map(vcTopicLabel).slice(0, 5);
+      }
+
+      function vcBeginQueue(items, sample) {
+        vc.queue = items;
+        vc.sample = !!sample;
         vc.index = 0;
         vc.score = 0;
         vc.answers = {};
         vc.hintLevel = {};
         vc.tries = {};
+        vc.selected = {};
         vc._lastUser = {};
+        if (!sample) vc.seen = vc.seen.concat(items.map(vcExPrompt)).slice(-40);
         vcEl('glVocabEnd').style.display = 'none';
         vcEl('glVocabWorkspace').style.display = '';
         vcRenderExercise();
       }
 
+      function vcShowPanel(html) {
+        vc.queue = [];
+        vcEl('glVocabEnd').style.display = 'none';
+        vcEl('glVocabWorkspace').style.display = '';
+        var label = vcEl('glVocabProgressLabel');
+        var fill = vcEl('glVocabProgressFill');
+        if (label) label.textContent = '';
+        if (fill) fill.style.width = '0%';
+        vcEl('glVocabExercise').innerHTML = html;
+        vcEl('glVocabFeedback').innerHTML = '';
+      }
+
+      function vcShowStart() {
+        vc._gen++;
+        vc._busy = false;
+        vcShowPanel('<div class="gl-vocab-files-empty"><div class="gl-vocab-ex-eyebrow">Wortschatz</div>' +
+          '<p class="gl-vocab-ex-prompt">' + _glEscape(vcTopicLabel(vc.topic)) + ' · ' + _glEscape(vc.level) + '</p>' +
+          '<div class="gl-vocab-ex-actions"><button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabStartBtn">Start practice</button></div></div>');
+        vcEl('glVocabStartBtn').addEventListener('click', function () { vcStartQueue(vc.topic, 10); });
+      }
+
+      // Generates a fresh AI set. opts.documentIds switches to "From my files".
+      async function vcStartQueue(topic, count, opts) {
+        var token = ++vc._gen;
+        vc._busy = true;
+        vcShowPanel('<div class="gl-vocab-files-empty" id="glVocabCreating">Creating your practice…</div>');
+        try {
+          var data = await _glGeneratePractice({
+            module: 'vocabulary', level: vc.level, count: count || 10,
+            topic: opts && opts.documentIds ? 'Vocabulary from the learner\'s own document' : vcTopicLabel(topic),
+            sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
+            avoidPrompts: vc.seen.slice(-30), weakAreas: vcWeakLabels()
+          });
+          if (token !== vc._gen) return;
+          vc._busy = false;
+          vcBeginQueue(data.items, false);
+        } catch (e) {
+          if (token !== vc._gen) return;
+          vc._busy = false;
+          vcShowPanel('<div class="gl-vocab-files-empty"><div class="gl-vocab-fb-title">Couldn\'t create practice.</div>' +
+            (e && e.userMessage ? '<p>' + _glEscape(e.userMessage) + '</p>' : '') +
+            '<div class="gl-vocab-ex-actions">' +
+            '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabRetryBtn">Retry</button>' +
+            (!opts && VC_BANK[topic] ? '<button type="button" class="gl-vocab-btn gl-vocab-btn-ghost" id="glVocabSampleBtn">Use sample practice</button>' : '') +
+            '</div></div>');
+          vcEl('glVocabRetryBtn').addEventListener('click', function () { vcStartQueue(topic, count, opts); });
+          var sb2 = vcEl('glVocabSampleBtn');
+          if (sb2) sb2.addEventListener('click', function () { vcBeginQueue(vcPickExercises(topic, count || 10), true); });
+        }
+      }
+
       window._glOpenVocabularyView = function () {
+        try { _glSyncLevelSelects(); } catch (e) { /* non-fatal */ }
         vc.tab = 'practice';
+        vc.level = _glLearnerLevel(vc.level);
+        var lvSel = vcEl('glVocabLevel');
+        if (lvSel) lvSel.value = vc.level;
         vcBuildTopicSelect();
         vcRenderTabs();
         vcSetTabView('practice');
-        vcStartQueue(vc.topic, 10);
+        vcShowStart();
         vcWireHeader();
       };
 
@@ -4502,7 +4657,7 @@
           topicSel._vcWired = true;
           topicSel.addEventListener('change', function () {
             vc.topic = topicSel.value;
-            if (vc.tab === 'practice') vcStartQueue(vc.topic, 10);
+            if (vc.tab === 'practice') vcShowStart();
           });
         }
         if (levelSel && !levelSel._vcWired) {
@@ -4510,7 +4665,7 @@
           levelSel.addEventListener('change', function () {
             vc.level = levelSel.value;
             vcBuildTopicSelect();
-            if (vc.tab === 'practice') vcStartQueue(vc.topic, 10);
+            if (vc.tab === 'practice') vcShowStart();
           });
         }
       }
@@ -4530,7 +4685,7 @@
         vcEl('glVocabWeak').style.display = tab === 'weak' ? '' : 'none';
         vcEl('glVocabFiles').style.display = tab === 'files' ? '' : 'none';
         if (tab === 'practice') {
-          if (!vc.queue.length) vcStartQueue(vc.topic, 10);
+          if (!vc.queue.length && !vc._busy && !vcEl('glVocabRetryBtn')) vcShowStart();
         } else if (tab === 'weak') {
           vcRenderWeak();
         } else if (tab === 'files') {
@@ -4552,7 +4707,7 @@
         if (!ex) return;
         vcProgress();
         var answer = vc.answers[vc.index];
-        vcEl('glVocabExercise').innerHTML = vcExerciseHtml(ex, answer);
+        vcEl('glVocabExercise').innerHTML = (vc.sample ? '<div class="gl-sample-banner">Sample practice — AI generation unavailable</div>' : '') + vcExerciseHtml(ex, answer);
         vcWireExercise(ex, answer);
         vcEl('glVocabFeedback').innerHTML = answer ? vcFeedbackAfterHtml(ex, answer) : vcFeedbackBeforeHtml(ex);
         vcWireFeedback(ex, answer);
@@ -4754,7 +4909,7 @@
 
       function vcExplainWord(ex) {
         var topicLabel = (VC_ALL_TOPICS.filter(function (t) { return t.id === vc.topic; })[0] || {}).label || vc.topic;
-        var prompt = 'Explain this German vocabulary item in a short, clear way for a ' + vc.level + ' learner: "' + ex.note.focus + '". ' +
+        var prompt = 'Explain this German vocabulary item in a short, clear way for a ' + (vc.level || 'German') + ' learner: "' + ex.note.focus + '". ' +
           ex.note.why + ' Usage: ' + ex.note.mainRule + '. Example: ' + ex.note.example;
         window._glAsk(prompt, 'Wortschatz — ' + topicLabel);
       }
@@ -4848,29 +5003,6 @@
       }
 
       // ── From my files ─────────────────────────────────────────────────────
-      function vcGeneratePrompt(level, count) {
-        return 'Based on this German document, write ' + count + ' vocabulary-in-context practice exercises for a ' + level +
-          ' learner, using words/phrases actually found in the document. Reply with ONLY this JSON array, no other text, no markdown fences: ' +
-          '[{"type":"context","promptHtml":"Sentence with ___ for the gap","accepted":["lowercase accepted answer(s), punctuation-free"],"note":{"focus":"...","think":"...","why":"...","mainRule":"...","example":"..."},"hints":["hint1","hint2"]}]. ' +
-          'Valid "type" values and their extra fields: ' +
-          '"context" needs "promptHtml" (containing ___) and "accepted" (array, lowercase punctuation-free); ' +
-          '"choice" needs "promptHtml" (containing ___), "options" (array of 4 short words/phrases) and "answerIndex" (0-based number); ' +
-          '"use" needs "word" (the target vocabulary item), "meaning" (short English gloss) and "promptHtml" (an instruction asking the learner to write a sentence with it), no "accepted" needed. ' +
-          'Every exercise object needs "type", "note" (with focus/think/why/mainRule/example) and "hints" (array of exactly 2 short strings, omit for "use" if not applicable), formatted as in the example above. ' +
-          'Each exercise must test using or understanding a real word from the document IN CONTEXT — never a plain translation flashcard.';
-      }
-
-      function vcParseGenerated(text) {
-        try {
-          var cleaned = text.trim().replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
-          var arr = JSON.parse(cleaned);
-          if (!Array.isArray(arr) || !arr.length) return null;
-          return arr.filter(function (ex) { return ex && ex.type && ex.note; });
-        } catch (e) {
-          return null;
-        }
-      }
-
       async function vcRenderFilesPanel() {
         var wrap = vcEl('glVocabFiles');
         var uid = _currentUser && (_currentUser.id || _currentUser.sub);
@@ -4895,7 +5027,7 @@
           }).join('') +
           '</div>' +
           '<div class="gl-vocab-files-config">' +
-          '<label>Difficulty<select id="glVocabCfgLevel"><option>A1</option><option>A2</option><option>B1</option><option selected>B2</option><option>C1</option></select></label>' +
+          '<label>Difficulty<select id="glVocabCfgLevel">' + _glLevelOptionsHtml() + '</select></label>' +
           '<label>Exercises<select id="glVocabCfgCount"><option>5</option><option selected>10</option><option>15</option></select></label>' +
           '<button type="button" class="gl-vocab-start-btn" id="glVocabFilesStart" disabled>Start practice</button>' +
           '</div>';
@@ -4909,62 +5041,18 @@
         });
       }
 
+      // Generation runs server-side from the file Minallo already indexed —
+      // the browser only sends the document id, never the file bytes.
       async function vcStartFromFile(file) {
-        var fname = file.documentName;
-        var uid = _currentUser && (_currentUser.id || _currentUser.sub);
-        var level = vcEl('glVocabCfgLevel') ? vcEl('glVocabCfgLevel').value : 'B2';
-        var count = vcEl('glVocabCfgCount') ? vcEl('glVocabCfgCount').value : '10';
-        var startBtn = vcEl('glVocabFilesStart');
-        if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Generating…'; }
-
-        try {
-          var bytes = await (await _glLearnerFiles()).readLearnerFile(file);
-          var ext = (fname.split('.').pop() || '').toLowerCase();
-          var messageContent;
-          if (ext === 'pdf') {
-            var b64 = '';
-            var chunkSize = 8192;
-            for (var i = 0; i < bytes.length; i += chunkSize) b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-            b64 = btoa(b64);
-            messageContent = [
-              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-              { type: 'text', text: vcGeneratePrompt(level, count) }
-            ];
-          } else if (['txt', 'md'].indexOf(ext) !== -1) {
-            var textContent = new TextDecoder().decode(bytes);
-            messageContent = [{ type: 'text', text: 'DOCUMENT CONTENT:\n' + textContent + '\n\n' + vcGeneratePrompt(level, count) }];
-          } else {
-            if (typeof showToast === 'function') showToast('Unsupported file', 'Only PDF and text files can be turned into vocabulary exercises right now.');
-            if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
-            return;
-          }
-
-          var resp = await _authFetch(BACKEND_URL + '/api/ai', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-6',
-              max_tokens: 2200,
-              system: 'You are a German vocabulary-in-context exercise generator. Reply with ONLY valid JSON, no markdown fences, no commentary.',
-              messages: [{ role: 'user', content: messageContent }]
-            })
-          });
-          var data = await resp.json();
-          var text = data.content ? data.content.map(function (b) { return b.text || ''; }).join('') : '';
-          var parsed = vcParseGenerated(text);
-          if (!parsed) throw new Error('Could not generate vocabulary exercises from this file.');
-
-          vc.queue = parsed;
-          vc.index = 0; vc.score = 0; vc.answers = {}; vc.hintLevel = {}; vc.tries = {}; vc.selected = {}; vc._lastUser = {};
-          vcSetTabView('practice');
-          vcEl('glVocabEnd').style.display = 'none';
-          vcEl('glVocabWorkspace').style.display = '';
-          vcRenderExercise();
-        } catch (e) {
-          if (typeof showToast === 'function') showToast('Could not generate exercises', e.message || 'Try a different file.');
-        } finally {
-          if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start practice'; }
+        var level = vcEl('glVocabCfgLevel') ? vcEl('glVocabCfgLevel').value : vc.level;
+        var count = parseInt(vcEl('glVocabCfgCount') ? vcEl('glVocabCfgCount').value : '10', 10) || 10;
+        if (!file.documentId) {
+          if (typeof showToast === 'function') showToast('File not indexed yet', 'Open Files and let this file finish indexing first.');
+          return;
         }
+        vc.level = level;
+        vcSetTabView('practice');
+        await vcStartQueue(vc.topic, count, { documentIds: [file.documentId] });
       }
     })();
 
@@ -5460,7 +5548,7 @@
         return s;
       }
       function lsPickSetIndex(avoidIdx) {
-        var level = lsEl('glListenLevel') ? lsEl('glListenLevel').value : 'B2';
+        var level = lsEl('glListenLevel') && lsEl('glListenLevel').value ? lsEl('glListenLevel').value : _glProfileLevel();
         var topic = lsEl('glListenTopic') ? lsEl('glListenTopic').value : 'Mixed';
         var best = -1, bestScore = -1;
         LISTEN_SETS.forEach(function (set, idx) {
@@ -5507,18 +5595,11 @@
       // the backend's GERMAN_EXAM_PROFILES registry — adding a profile
       // means one entry in each of these three places, not another
       // if-branch.
-      var LS_GERMAN_EXAM_PROFILES_FALLBACK = [
-        { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] }
-      ];
+      // Single source: the shared accessor derives the id from the
+      // authoritative (test, level) pair — no per-module resolver/table.
       function lsResolveProfileId() {
-        if (window._germanExamProfileId) return window._germanExamProfileId;
-        var familyNorm = (window._germanTest || '').trim().toLowerCase();
-        var levelNorm = (window._germanLevel || '').trim();
-        if (!familyNorm || !levelNorm) return null;
-        var matches = LS_GERMAN_EXAM_PROFILES_FALLBACK.filter(function (p) {
-          return p.family.toLowerCase() === familyNorm && p.legacyLevelValues.indexOf(levelNorm) !== -1;
-        });
-        return matches.length === 1 ? matches[0].profileId : null;
+        var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+        return (p && p.examProfileId) || null;
       }
 
       function lsMapGeneratedQuestion(part, q, speakerToSegment, allSegmentIds) {
@@ -5850,6 +5931,7 @@
       }
 
       window._glOpenListeningView = function () {
+        try { _glSyncLevelSelects(); } catch (e) { /* non-fatal */ }
         ls.tab = 'practice';
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';

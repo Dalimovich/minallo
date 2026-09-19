@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..auth import require_internal_token
+from ..services.german_learner_profile import get_german_learner_profile
 from ..services.writing_coach import (
     ALLOWED_LEVELS,
     ALLOWED_TASK_TYPES,
@@ -39,7 +40,9 @@ _MAX_TEXT_CHARS = 8000  # ~1500 German words; well above any sane essay submissi
 class AnalyseRequest(BaseModel):
     userId: str
     text: str
-    profileLevel: str
+    # Diagnostic only — the authenticated profile in the database decides the
+    # level (see writing_coach_analyse); this is never trusted.
+    profileLevel: str | None = None
     taskType: str = "freier_text"
     explanationLanguage: str = "English"
 
@@ -68,11 +71,35 @@ class AnalyseResponse(BaseModel):
 def writing_coach_analyse(payload: AnalyseRequest) -> AnalyseResponse:
     if not payload.userId or not _UUID_RE.match(payload.userId):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="userId must be a UUID")
-    if payload.profileLevel not in ALLOWED_LEVELS:
+    # The level comes from the authenticated user's saved profile, never the
+    # request: a stale tab / cached level must not grade against the wrong
+    # target.
+    profile = get_german_learner_profile(payload.userId)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Your profile could not be loaded right now. Please try again.",
+        )
+    if profile.is_learner:
+        if not profile.has_target:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Choose your German exam and target level in Profile first.",
+            )
+        profile_level = profile.target_level
+    elif payload.profileLevel in ALLOWED_LEVELS:
+        # Non-learner account with no saved German target: an explicit,
+        # validated request level is the only signal there is.
+        profile_level = payload.profileLevel
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"profileLevel must be one of {sorted(ALLOWED_LEVELS)}",
+            detail="Choose your German target level in Profile first.",
         )
+    if profile_level not in ALLOWED_LEVELS:
+        # A saved level outside the known catalog is a data problem, not a
+        # user error; grade against it as written rather than rejecting.
+        log.warning("writing-coach: unrecognised saved level %r", profile_level)
     if payload.taskType not in ALLOWED_TASK_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -93,7 +120,7 @@ def writing_coach_analyse(payload: AnalyseRequest) -> AnalyseResponse:
     analysis = analyse_writing(
         user_id=payload.userId,
         text=text,
-        profile_level=payload.profileLevel,
+        profile_level=profile_level,
         task_type=payload.taskType,
         explanation_language=payload.explanationLanguage or "English",
         weakness_profile=weakness_profile,
@@ -104,7 +131,7 @@ def writing_coach_analyse(payload: AnalyseRequest) -> AnalyseResponse:
         persist_submission(
             user_id=payload.userId,
             text=text,
-            profile_level=payload.profileLevel,
+            profile_level=profile_level,
             task_type=payload.taskType,
             analysis=analysis,
         )

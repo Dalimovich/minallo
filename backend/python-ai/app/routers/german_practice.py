@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
+from ..services.german_learner_profile import get_german_learner_profile
 from ..services.german_practice import MAX_LEVEL_LEN, MODULES, PracticeError, SourceNotReadyError, generate_practice
 
 log = logging.getLogger(__name__)
@@ -23,7 +24,12 @@ router = APIRouter(prefix="", tags=["german_practice"], dependencies=[Depends(re
 class GeneratePracticeRequest(BaseModel):
     userId: str
     module: str
-    level: str
+    # Ignored: the level always comes from the authenticated profile. Kept
+    # optional only so older clients that still send it don't fail validation.
+    level: str | None = None
+    # Explicit, session-only practice override (e.g. the learner deliberately
+    # picked an easier level). Never rewrites the profile.
+    sessionLevelOverride: str | None = None
     topic: str = Field(max_length=200)
     count: int = 10
     sourceDocumentIds: list[str] | None = Field(default=None, max_length=5)
@@ -35,11 +41,27 @@ class GeneratePracticeRequest(BaseModel):
 def generate_practice_endpoint(payload: GeneratePracticeRequest) -> dict[str, Any]:
     if payload.module not in MODULES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid module")
-    if not payload.level.strip() or len(payload.level) > MAX_LEVEL_LEN:
+    override = (payload.sessionLevelOverride or "").strip()
+    if len(override) > MAX_LEVEL_LEN:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid level")
+    profile = get_german_learner_profile(payload.userId)
+    if profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Your profile could not be loaded right now. Please try again.",
+        )
+    if profile.has_target:
+        level = override or profile.target_level
+    elif override:
+        level = override
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choose your German target level in Profile first.",
+        )
     try:
         return generate_practice(
-            user_id=payload.userId, module=payload.module, level=payload.level,
+            user_id=payload.userId, module=payload.module, level=level,
             topic=payload.topic.strip() or "general", count=payload.count,
             source_document_ids=payload.sourceDocumentIds,
             avoid_prompts=[a[:300] for a in (payload.avoidPrompts or [])],

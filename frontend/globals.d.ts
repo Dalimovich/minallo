@@ -161,6 +161,18 @@ declare global {
     ) => unknown;
     _applyUserTypeUI?: () => void;
     _resolveGermanExamProfileId?: (test: string | undefined, level: string | undefined) => string | null;
+    _applySavedProfile?: (row: Record<string, unknown>) => void;
+    getGermanLearnerProfile?: () => {
+      state: 'loading' | 'ready' | 'error';
+      userType: string;
+      testFamily: string;
+      targetLevel: string;
+      examProfileId: string | null;
+    };
+    germanLevelOptionsHtml?: () => string;
+    isValidGermanTestLevel?: (test: string, level: string) => boolean;
+    populateGermanLevelSelect?: (sel: HTMLSelectElement | null, test: string, level: string) => void;
+    GERMAN_TEST_LEVELS?: Record<string, string[]>;
     _adminShowIfEligible?: (user: { id?: string } | null) => void;
     _showOnboarding?: (email?: string) => void;
     landShowAuth?: (mode?: 'signin' | 'signup') => void;

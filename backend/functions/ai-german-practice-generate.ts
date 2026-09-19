@@ -50,9 +50,15 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(400, 'Invalid JSON');
   }
 
-  const { module, level, topic } = body;
+  const { module, topic } = body;
+  // The level is NOT taken from the request: python-ai reads the authenticated
+  // profile. Only an explicit session-only override may be sent.
+  const overrideRaw = body.sessionLevelOverride;
   if (typeof module !== 'string' || !VALID_MODULES.includes(module)) return fail(400, 'invalid module');
-  if (typeof level !== 'string' || !level.trim() || level.length > MAX_LEVEL_LENGTH) return fail(400, 'invalid level');
+  if (overrideRaw !== undefined && overrideRaw !== null && (typeof overrideRaw !== 'string' || overrideRaw.length > MAX_LEVEL_LENGTH)) {
+    return fail(400, 'invalid level');
+  }
+  const sessionLevelOverride = typeof overrideRaw === 'string' && overrideRaw.trim() ? overrideRaw.trim() : null;
   if (typeof topic !== 'string' || topic.length > MAX_TOPIC_LENGTH) return fail(400, 'invalid topic');
   const countRaw = body.count === undefined ? 10 : body.count;
   if (typeof countRaw !== 'number' || !Number.isInteger(countRaw) || countRaw < 3 || countRaw > 15) {
@@ -82,7 +88,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   await logSecurityEvent(serviceKey, user.id, 'ai_german_practice_generate', {
     module,
-    level,
+    session_level_override: sessionLevelOverride,
     count: countRaw,
     from_documents: sourceDocumentIds.length > 0
   });
@@ -92,7 +98,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     {
       userId: user.id,
       module,
-      level,
+      sessionLevelOverride,
       topic,
       count: countRaw,
       sourceDocumentIds: sourceDocumentIds.length ? sourceDocumentIds : null,

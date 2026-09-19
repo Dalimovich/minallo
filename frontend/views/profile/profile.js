@@ -20,7 +20,7 @@ async function saveProfile() {
     showToast(_t('toast_sign_in'), '');
     return;
   }
-  var glSel = document.getElementById('profileGermanLevel');
+  var isLearner = window._userType === 'learner';
   var data = {
     id: _currentUser.id,
     full_name: (document.getElementById('profileName') || {}).value || '',
@@ -30,32 +30,44 @@ async function saveProfile() {
     programme: (document.getElementById('profileProgramme') || {}).value || '',
     vertiefung: (document.getElementById('profileVertiefung') || {}).value || '',
     matrikel: (document.getElementById('profileMatrikel') || {}).value || '',
-    // Persist the German level so learners can update it as they advance.
-    // This is the single editable source of truth — the Schreibtrainer and
-    // sidebar both read window._germanLevel which we refresh below.
-    german_level: glSel ? glSel.value || '' : '',
     updated_at: new Date().toISOString()
   };
-  // Learners edit their exam family here too. A blank select means "not
-  // chosen", never "clear it", so it's omitted rather than written as ''.
-  var gtSel = document.getElementById('profileGermanTest');
-  if (gtSel && gtSel.value) data.german_test = gtSel.value;
-  if (window._userType === 'learner' && typeof window._resolveGermanExamProfileId === 'function') {
-    // Recompute now instead of trusting a stale persisted id: applyProfile()
-    // prefers the persisted column over re-deriving, so a changed test/level
-    // must overwrite it (null when the pair no longer maps to a profile).
-    data.german_exam_profile_id = window._resolveGermanExamProfileId(
-      data.german_test !== undefined ? data.german_test : window._germanTest,
-      data.german_level
-    );
+  if (isLearner) {
+    // profiles.german_test + profiles.german_level are the single source of
+    // truth for the website AND the AI. Both are always saved together, and
+    // only as a valid pair from the shared catalog.
+    var gtSel = document.getElementById('profileGermanTest');
+    var glSel = document.getElementById('profileGermanLevel');
+    var test = gtSel ? gtSel.value : '';
+    var level = glSel ? glSel.value : '';
+    if (!test || !level || !(window.isValidGermanTestLevel && window.isValidGermanTestLevel(test, level))) {
+      showToast(_t('toast_save_failed'), 'Please choose your exam and a target level for it.');
+      return;
+    }
+    data.german_test = test;
+    data.german_level = level;
+    // Re-resolved on every save: null (no exam-specific blueprint for this
+    // pair) is a normal value, not an error, and clears a stale id.
+    data.german_exam_profile_id = window._resolveGermanExamProfileId
+      ? window._resolveGermanExamProfileId(test, level)
+      : null;
   }
   try {
     var _pr = await _sb.from('profiles').upsert(data);
     if (_pr && _pr.error) {
+      // Retry without ONLY the optional compat fields; never the learner
+      // identity fields (german_test / german_level).
       var _fb = Object.assign({}, data);
       delete _fb.vertiefung;
+      delete _fb.german_exam_profile_id;
       var _pr2 = await _sb.from('profiles').upsert(_fb);
       if (_pr2 && _pr2.error) throw new Error(_pr2.error.message || 'save failed');
+    }
+    // Read the real saved row back: server first, then runtime, then cache.
+    var saved = await _sb.from('profiles').select('*').eq('id', _currentUser.id).single();
+    if (!saved) throw new Error('Could not confirm the saved profile');
+    if (isLearner && (saved.german_test !== data.german_test || saved.german_level !== data.german_level)) {
+      throw new Error('Your German level was not saved. Please try again.');
     }
     showToast(_t('toast_profile_saved'), _t('toast_profile_saved_sub'));
     if (data.vertiefung) {
@@ -72,53 +84,18 @@ async function saveProfile() {
         localStorage.setItem('ss_major', _spM);
       }
     }
-    try {
-      // `data` only carries the fields this form edits (full_name, email,
-      // university, ...) — it never had german_test, german_exam_profile_id,
-      // user_type, courses, chat_username, etc. Overwriting profile_cache_
-      // with it directly used to replace the FULL cached profile with this
-      // partial one, so the next page load's boot-time cache-path apply
-      // (loadUserData's `{authoritative: false}` call, which runs before the
-      // real profiles fetch completes) would see those fields as absent.
-      // Merge onto the existing full cache instead, so a save only updates
-      // what it actually knows about.
-      var existingCache = {};
-      try {
-        var rawCache = localStorage.getItem('profile_cache_' + _currentUser.id);
-        if (rawCache) existingCache = JSON.parse(rawCache) || {};
-      } catch (e) {}
-      var mergedCache = Object.assign({}, existingCache, data);
-      localStorage.setItem('profile_cache_' + _currentUser.id, JSON.stringify(mergedCache));
-    } catch (e) {}
-    // Refresh the in-memory German level + its localStorage cache so the
-    // Schreibtrainer (and anything else reading window._germanLevel) picks
-    // up the change without a reload. Also re-render the practice hero
-    // chip and any open Schreibtrainer badge.
-    if (data.german_level !== undefined) {
-      window._germanLevel = data.german_level || '';
-      try {
-        localStorage.setItem('ss_german_level_' + _currentUser.id, window._germanLevel);
-      } catch (e) {}
-      var glChip = document.getElementById('glLevelChip');
-      var glChipChip = document.getElementById('glLevelChipChip');
-      var wcVal = document.getElementById('wcLevelValue');
-      if (glChip) glChip.textContent = window._germanLevel || '–';
-      if (glChipChip) glChipChip.textContent = window._germanLevel || '–';
-      if (wcVal) wcVal.textContent = window._germanLevel || '–';
-    }
     var init = document.getElementById('profileInitial');
     if (init && data.full_name) init.textContent = data.full_name.charAt(0).toUpperCase();
     updateAuthIndicator(_currentUser);
-    // Refresh the sidebar (incl. the university sub-label #sbUserSub) and the
-    // in-memory _userUniversity / ss_university cache so the new uni shows up
-    // immediately instead of only after a reload.
-    // Pass the merged (full) cache, not the partial `data` this form knows
-    // about — applyProfile() now guards partial objects from downgrading
-    // fields they never carried, but passing the full merged object keeps
-    // this call fully authoritative instead of relying on that guard alone.
-    if (typeof window.applyProfile === 'function') window.applyProfile(mergedCache);
+    // Make the saved row the authoritative runtime profile: updates
+    // window._germanTest/_germanLevel/_germanExamProfileId, the profile cache,
+    // and fires ss-profile-updated so every open surface (practice level
+    // selectors, sidebar chip, Writing Coach badge, Sprachbausteine) reacts
+    // with no reload.
+    if (typeof window._applySavedProfile === 'function') window._applySavedProfile(saved);
+    else if (typeof window.applyProfile === 'function') window.applyProfile(saved);
   } catch (e) {
-    showToast(_t('toast_save_failed'), String(e));
+    showToast(_t('toast_save_failed'), String((e && e.message) || e));
   }
 }
 
@@ -134,3 +111,15 @@ async function saveProfile() {
     }
   });
 })();
+
+// Changing the exam family repopulates Target Level with that exam's exact
+// levels (same catalog as onboarding). Delegated because the form HTML is
+// lazy-loaded.
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t || t.id !== 'profileGermanTest') return;
+  var gl = document.getElementById('profileGermanLevel');
+  if (gl && typeof window.populateGermanLevelSelect === 'function') {
+    window.populateGermanLevelSelect(gl, t.value, '');
+  }
+});

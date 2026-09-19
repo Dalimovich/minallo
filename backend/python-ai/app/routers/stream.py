@@ -108,6 +108,11 @@ from ..services.source_router import (
     effective_document_ids,
     policy_allows_general_knowledge,
 )
+from ..services.german_learner_profile import (
+    format_learner_profile_block,
+    get_german_learner_profile,
+    learner_profile_fingerprint,
+)
 from ..services.web_answer import generate_web_answer
 from ..services.usage_meter import record_usage
 from ..services.workspace_context import (
@@ -3654,9 +3659,15 @@ async def _prepare_ask_stream_response(
     )
     if account_snapshot:
         workspace_block += format_account_block(account_snapshot, in_course_chat=True)
+    # German learner target, read server-side from the authenticated profile.
+    # Its fingerprint joins the cache key so a level change (B2 → C1
+    # Hochschule) never replays an answer written for the old level.
+    learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
+    workspace_block += format_learner_profile_block(learner_profile)
     ws_fingerprint = workspace_fingerprint(
         {"s": workspace_snapshot, "w": weak_topics, "p": page_context,
-         "a": account_snapshot, "n": named_course_name}
+         "a": account_snapshot, "n": named_course_name,
+         "lp": learner_profile_fingerprint(learner_profile)}
     ) if workspace_block else ""
     assistant_mode = assistant_mode_from_turn(dialogue, question)
     observer.event(

@@ -7,8 +7,16 @@ import {
   beginProfileResolution,
   resetProfileResolution,
   ensureUserProfile,
-  resolveGermanExamProfileIdClient,
+  applySavedProfile,
 } from './user-data.js';
+import {
+  GERMAN_TEST_LEVELS,
+  getGermanLearnerProfile,
+  germanLevelOptionsHtml,
+  isValidGermanTestLevel,
+  populateGermanLevelSelect,
+  resolveGermanExamProfileIdClient,
+} from './german-profile.js';
 
 export interface AuthBridgeOptions {
   sb: SbClientCompat | null;
@@ -101,6 +109,13 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   window._resetProfileResolution = resetProfileResolution;
   window._ensureUserProfile = ensureUserProfile;
   window._resolveGermanExamProfileId = resolveGermanExamProfileIdClient;
+  window._applySavedProfile = applySavedProfile;
+  // Single German-profile contract for classic-script views (profile, practice).
+  window.getGermanLearnerProfile = getGermanLearnerProfile;
+  window.germanLevelOptionsHtml = germanLevelOptionsHtml;
+  window.isValidGermanTestLevel = isValidGermanTestLevel;
+  window.populateGermanLevelSelect = populateGermanLevelSelect;
+  window.GERMAN_TEST_LEVELS = GERMAN_TEST_LEVELS;
 
   return {
     showAuthModal: (mode) => authModal.showAuthModal(mode),

@@ -19,6 +19,7 @@ import { enforceEventRateLimit, enforceGenerationCap } from '../lib/rate-limit';
 import { requireActiveSubscription } from '../lib/subscription-gate';
 import { isGermanSpeakingEnabled } from '../lib/feature-flags';
 import { logSecurityEvent } from '../lib/logger';
+import { getGermanLearnerProfile, unsupportedExamProfileMessage } from '../lib/german-learner-profile';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const GENERATE_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_RATE_LIMIT_MAX', '30'), 10);
@@ -77,6 +78,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(403, 'Speaking practice is temporarily unavailable.');
   }
 
+  // The exam profile comes from the authenticated user's SAVED profile
+  // (profiles.german_test + german_level), never the request. A missing or
+  // stale browser profileId still resolves correctly; a contradictory one
+  // loses to the server.
+  const learner = await getGermanLearnerProfile(serviceKey, user.id);
+  if (!learner) return fail(503, 'Your profile could not be loaded right now. Please try again.');
+  const profileId = learner.examProfileId;
+  if (!profileId || !VALID_PROFILE_IDS.includes(profileId)) {
+    return fail(422, unsupportedExamProfileMessage(learner));
+  }
+  const clientDisagrees = typeof earlyBody.profileId === 'string' && earlyBody.profileId !== '' && earlyBody.profileId !== profileId;
+
   const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'ai_german_exam_generate');
   if (subBlocked) return subBlocked;
 
@@ -95,7 +108,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const body: Record<string, unknown> = earlyBody;
 
-  const profileId = body.profileId;
   const module = body.module;
   const partId = body.partId;
   const mode = typeof body.mode === 'string' ? body.mode : 'adaptive_practice';
@@ -111,9 +123,6 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   // (it isn't, for speculative calls — see POST /german-exam/consume).
   const speculative = body.speculative === true;
 
-  if (typeof profileId !== 'string' || !VALID_PROFILE_IDS.includes(profileId)) {
-    return fail(400, 'invalid or unsupported profileId');
-  }
   if (typeof module !== 'string' || !VALID_MODULES.includes(module)) {
     return fail(400, 'invalid or unsupported module');
   }
@@ -133,6 +142,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   await logSecurityEvent(serviceKey, user.id, 'ai_german_exam_generate', {
     profile_id: profileId,
+    client_profile_id_mismatch: clientDisagrees || undefined,
     module,
     part_id: partId,
     mode,

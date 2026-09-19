@@ -61,6 +61,7 @@ function harness({ failSave = false, generic = false } = {}) {
     if (name.includes('writing-exam')) return { ...exam, writingExamRequest: request, WritingExamSession: class extends Session { constructor() { super(request); } } };
     if (name.includes('writing-coach-ai')) return { analyzeParagraph: async body => { calls.push({ path: 'generic', body }); return analysis; } };
     if (name.includes('ai-error')) return { friendlyAiErrorMessage: e => e.message };
+    if (name.includes('german-profile')) return { getGermanLearnerProfile: () => ({ targetLevel: window._germanLevel || '' }) };
     return { transitionLearnerWorkspace: async () => {} };
   });
   coach.initWritingCoach(); coach.openWritingCoach();

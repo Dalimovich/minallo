@@ -23,17 +23,20 @@ import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { transitionLearnerWorkspace } from '../chatbot-new/experience-mode.js';
 import { WritingExamSession, writingExamRequest, writingProfileReady, type WritingGrade } from './writing-exam.js';
 
+import { getGermanLearnerProfile } from '../auth/german-profile.js';
+
 const DRAFT_KEY = 'ss_writing_coach_draft';
 const TASK_KEY = 'ss_writing_coach_task';
 const MIN_CHARS = 10;
 const DEFAULT_TASK: TaskType = 'freier_text';
 
-/** Read the user's German level from the profile (loaded into window by
- * user-data.ts). The trainer is read-only on this value — editing happens
- * on the Profile page. */
+/** The learner's German target level, via the single profile accessor
+ * (getGermanLearnerProfile). Empty until the authoritative profile is ready —
+ * never a guessed default. Read-only here; editing happens on the Profile
+ * page. The server re-reads the level from the authenticated profile, so this
+ * value is for display and diagnostics only. */
 function _profileLevel(): string {
-  const w = window as unknown as { _germanLevel?: string };
-  return (w._germanLevel || '').trim();
+  return getGermanLearnerProfile().targetLevel.trim();
 }
 
 function _activeTaskType(): TaskType {
