@@ -126,6 +126,29 @@
     }
     /* Critical safety: these partials are injected before their feature CSS.
        Keep modal markup hidden even if a stylesheet is delayed or lazy. */
+    /* Boot cover: the only thing painted before the final interface. It is
+       in the raw HTML so it is the first frame; js/boot-cover.js owns its
+       removal (html.mn-boot-done). Logo only — no text, no spinner. */
+    #minalloBootCover {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483000;
+      display: grid;
+      place-items: center;
+      background: #031323;
+    }
+    #minalloBootCover img { width: 88px; height: 88px; display: block; }
+    #minalloBootCover .mn-boot-stack { display: grid; justify-items: center; gap: 22px; }
+    #minalloBootRecovery {
+      display: grid; justify-items: center; gap: 12px;
+      color: #9fb3c8; font: 500 14px/1.4 system-ui, sans-serif; text-align: center;
+    }
+    #minalloBootRecovery[hidden] { display: none; }
+    #minalloBootRecovery button {
+      font: inherit; color: #e2e8f0; background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px; padding: 8px 16px; cursor: pointer;
+    }
+    html.mn-boot-done #minalloBootCover { display: none; }
     #onboardModal {
       display: none;
     }
@@ -136,6 +159,15 @@
   </style>
   </head>
   <body class="night">
+    <div id="minalloBootCover" aria-label="Minallo">
+      <div class="mn-boot-stack">
+        <img src="/assets/favicon.png" alt="Minallo" width="88" height="88" decoding="sync" fetchpriority="high" />
+        <div id="minalloBootRecovery" hidden>
+          <span data-boot-msg></span>
+          <span><button type="button" data-boot-retry></button> <button type="button" data-boot-out></button></span>
+        </div>
+      </div>
+    </div>
     <!-- SECTIONS ARE INJECTED HERE BY loader.js.
          The static SEO hero below ships in the raw HTML so Googlebot
          (and crawlers that don't execute JS) can read the H1, the
@@ -170,17 +202,18 @@
          auth-bootstrap → supabase → loader.
          The runtime contract (auth-bootstrap before supabase before loader)
          relies on the in-order execution `defer` guarantees. -->
+    <script src="js/boot-cover.js?v=1" defer></script>
     <script src="js/ss-ready-marker.js?v=1" defer></script>
     <script src="js/minallo.js?v=2" defer></script>
     <script src="js/runtime-config.js" defer></script>
-    <script src="js/config.js?v=20260919-files-progressive-1" defer></script>
+    <script src="js/config.js?v=20260919-boot-cover-1" defer></script>
     <!-- AI chat typing config — only read inside the dashboard chat
          features, never on the public landing. `async` removes it from
          the critical-request chain so it loads in parallel without
          sequencing against loader.js. -->
     <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=5"></script>
-    <script src="js/auth-bootstrap.js?v=10" defer></script>
-    <script src="js/supabase.js?v=8" defer></script>
-    <script type="module" src="js/loader.js?v=63"></script>
+    <script src="js/auth-bootstrap.js?v=11" defer></script>
+    <script src="js/supabase.js?v=9" defer></script>
+    <script type="module" src="js/loader.js?v=64"></script>
   </body>
 </html>

@@ -343,6 +343,8 @@ export function showOnboarding(email?: string): void {
   if (emailField && email) emailField.value = email;
   const modal = document.getElementById('onboardModal');
   if (modal) modal.style.display = 'flex';
+  // A brand-new account has no profile to wait for — onboarding IS its interface.
+  (window as unknown as { MinalloBoot?: { hide: () => void } }).MinalloBoot?.hide();
 }
 
 function _selectedState(): string {

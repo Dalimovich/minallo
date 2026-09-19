@@ -70,6 +70,7 @@ interface LandingTranslation {
     try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) { /* noop */ }
     const splash = document.getElementById('ss-splash');
     if (splash) splash.style.display = 'none';
+    document.documentElement.classList.add('mn-boot-done');
     try { window.dispatchEvent(new Event('ss-ready')); } catch (e) { /* noop */ }
   }, 35000);
 

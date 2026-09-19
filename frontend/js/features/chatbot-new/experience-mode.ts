@@ -202,29 +202,6 @@ export function applyChatbotExperienceMode(): void {
   root.dataset.roleResolved = resolved ? 'true' : 'false';
   root.dataset.roleResolutionState = resolutionState;
 
-  // Explicit JS control of the role-resolution status UI — not left to CSS
-  // selectors alone. A stale/missing stylesheet (e.g. an old immutably-
-  // cached chatbot.css) must not be able to leave "Loading your
-  // workspace…" and "Couldn't load your account" both visible as raw text.
-  // The `hidden` attribute is the actual visibility mechanism here; CSS
-  // only styles what's already shown.
-  const statusEl = root.querySelector<HTMLElement>('[data-testid="chatbot-role-loading"]');
-  if (statusEl) {
-    if (resolved) {
-      statusEl.hidden = true;
-      statusEl.setAttribute('aria-hidden', 'true');
-    } else {
-      statusEl.hidden = false;
-      statusEl.removeAttribute('aria-hidden');
-      const isError = resolutionState === 'error';
-      const spinnerEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-spinner"]');
-      const loadingTextEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-loading-text"]');
-      const errorEl = statusEl.querySelector<HTMLElement>('[data-testid="chatbot-role-error"]');
-      if (spinnerEl) spinnerEl.hidden = isError;
-      if (loadingTextEl) loadingTextEl.hidden = isError;
-      if (errorEl) errorEl.hidden = !isError;
-    }
-  }
   // Workspace-view mode only ever applies to learners; a student (or a
   // learner who hasn't opened Writing Coach) is always effectively 'chat'.
   const inPracticeView = isLearner && _workspaceView === 'practice';
@@ -303,6 +280,9 @@ export function applyChatbotExperienceMode(): void {
   } else if (isStudent && coursesTab && (activeTab === germanTab || activeTab === filesTab)) {
     coursesTab.click();
   }
+  // The correct interface for this role is now fully applied. The single
+  // boot-cover owner (js/boot-cover.js) listens for this to reveal it.
+  if (resolved) window.dispatchEvent(new Event('ss-experience-applied'));
 }
 
 /** Binds the shell's role-mode behavior once per mount: the [data-nav-target]
@@ -318,13 +298,6 @@ export function initChatbotExperienceMode(root: HTMLElement): void {
 
   root.addEventListener('click', (ev) => {
     const target = ev.target as HTMLElement;
-
-    if (target.closest('#ncbRoleResolutionRetry')) {
-      ev.preventDefault();
-      const ensure = (window as unknown as { _ensureUserProfile?: (opts?: { force?: boolean }) => Promise<void> })._ensureUserProfile;
-      if (typeof ensure === 'function') void ensure({ force: true });
-      return;
-    }
 
     const skillTarget = target.closest<HTMLElement>('[data-workspace-skill]');
     if (skillTarget) {

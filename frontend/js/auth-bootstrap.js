@@ -48,6 +48,8 @@
 
 function _ssForceSplashOff(reason) {
   try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) {}
+  // Watchdog last resort: never leave the user behind the boot cover.
+  try { document.documentElement.classList.add('mn-boot-done'); } catch (e) {}
   try {
     var splash = document.getElementById('ss-splash');
     if (splash) splash.style.display = 'none';
@@ -260,6 +262,9 @@ window.addEventListener('pageshow', function (e) {
 });
 
 window._onLoginSuccess = function () {
+  // Cover the landing/auth state with the logo the moment sign-in succeeds,
+  // so the dashboard is never exposed half-way through login.
+  try { if (window.MinalloBoot) window.MinalloBoot.show(); } catch (e) {}
   try {
     sessionStorage.setItem('ss_logged_in', 'true');
     sessionStorage.setItem('ss_last_active', Date.now());

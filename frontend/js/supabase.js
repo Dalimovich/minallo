@@ -850,6 +850,7 @@ function _enterApp(user) {
 }
 
 function _showModal() {
+  if (window.MinalloBoot) window.MinalloBoot.signedOut();
   _sbToken = null;
   window._sbToken = null;
   _currentUser = null;
@@ -911,6 +912,14 @@ function _sbRefreshAccessToken() {
     });
 }
 
+// Session could not be verified after bounded retries: show the boot cover's
+// single recovery surface instead of exposing a half-initialised app.
+function _ssBootRecovery(reason) {
+  console.error('[watchdog] ' + reason);
+  if (window.MinalloBoot) window.MinalloBoot.recovery('auth');
+  else _ssForceSplashOff(reason);
+}
+
 var _sbBootRecoveryAttempts = 0;
 function _verifyAndEnter(tok) {
   _ssAuth('checking', { source: 'verifyAndEnter' });
@@ -933,7 +942,7 @@ function _verifyAndEnter(tok) {
         }, 500 * Math.pow(2, _sbBootRecoveryAttempts));
         return;
       }
-      _ssForceSplashOff('Authentication is temporarily unavailable; session preserved.');
+      _ssBootRecovery('Authentication is temporarily unavailable; session preserved.');
       return;
     }
     _showModal();
@@ -1018,6 +1027,7 @@ window.addEventListener('ss-ready', function () {
   }
 
   function _showModalClean() {
+    if (window.MinalloBoot) window.MinalloBoot.signedOut();
     _clearSavedAuth();
 
     try {
@@ -1119,7 +1129,7 @@ window.addEventListener('ss-ready', function () {
     } else if (_sbStoredRefresh()) {
       _sbRefreshAccessToken().then(function (newTok) {
         if (newTok) _verifyAndEnter(newTok);
-        else _ssForceSplashOff('Saved session could not be refreshed yet.');
+        else _ssBootRecovery('Saved session could not be refreshed yet.');
       });
     } else {
       _showModalClean();
@@ -1164,7 +1174,7 @@ window.addEventListener('ss-ready', function () {
     } else if (_sbStoredRefresh()) {
       _sbRefreshAccessToken().then(function (newTok) {
         if (newTok) _verifyAndEnter(newTok);
-        else _ssForceSplashOff('Session refresh is temporarily unavailable.');
+        else _ssBootRecovery('Session refresh is temporarily unavailable.');
       });
     } else {
       console.log('[Auth] alreadyIn but no token → showModalClean');

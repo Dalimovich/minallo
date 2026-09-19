@@ -99,7 +99,13 @@ export function resetProfileResolution(): void {
 
 function scheduleProfileRetry(uid: string): void {
   if (_profileRetryTimer) return; // one retry chain in flight at a time
-  if (_profileRetryAttempt >= PROFILE_RETRY_DELAYS_MS.length) return; // bounded — ensureUserProfile({force:true}) can still be called explicitly
+  if (_profileRetryAttempt >= PROFILE_RETRY_DELAYS_MS.length) {
+    // Bounded retries exhausted: tell the boot owner (js/boot-cover.js) to
+    // show its single recovery surface. ensureUserProfile({force:true}) can
+    // still be called explicitly.
+    window.dispatchEvent(new Event('ss-profile-failed'));
+    return;
+  }
   const delay = PROFILE_RETRY_DELAYS_MS[_profileRetryAttempt];
   _profileRetryAttempt += 1;
   _profileRetryTimer = setTimeout(() => {
