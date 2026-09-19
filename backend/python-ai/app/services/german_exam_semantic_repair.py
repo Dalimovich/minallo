@@ -20,7 +20,7 @@ import json
 import logging
 from copy import deepcopy
 from contextvars import copy_context
-from concurrent.futures import ThreadPoolExecutor
+from .gen_timing import ContextThreadPoolExecutor as ThreadPoolExecutor
 from typing import Any
 
 from ..config import get_settings

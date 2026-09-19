@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
+from ..services import gen_timing
 from ..services.german_exam_generator import generate_task
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exam_profiles import GermanExamProfileError, get_part, get_profile
@@ -51,23 +52,40 @@ class GenerateExamTaskRequest(BaseModel):
 
 @router.post("/german-exam/generate")
 def generate_exam_task_endpoint(payload: GenerateExamTaskRequest) -> dict[str, Any]:
-    try:
-        return generate_task(
-            user_id=payload.userId,
-            profile_id=payload.profileId,
-            module=payload.module,
-            part_id=payload.partId,
-            mode=payload.mode,
-            topic_override=payload.topic,
-            speculative=payload.speculative,
-        )
-    except GermanExamProfileError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        log.exception("german-exam generation failed")
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Generation failed") from exc
+    with gen_timing.timed_request(payload.module, payload.partId) as timer:
+        try:
+            result = generate_task(
+                user_id=payload.userId,
+                profile_id=payload.profileId,
+                module=payload.module,
+                part_id=payload.partId,
+                mode=payload.mode,
+                topic_override=payload.topic,
+                speculative=payload.speculative,
+            )
+        except GermanExamProfileError as exc:
+            gen_timing.finish(timer, "bad_request")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except NotImplementedError as exc:
+            gen_timing.finish(timer, "not_implemented")
+            raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, gen_timing.GenerationBudgetExceeded) or timer.expired():
+                gen_timing.finish(timer, "budget_exceeded")
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail=f"Generation took too long (ref {timer.request_id})",
+                ) from exc
+            log.exception("german-exam generation failed request_id=%s", timer.request_id)
+            gen_timing.finish(timer, "error")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Generation failed (ref {timer.request_id})",
+            ) from exc
+        diagnostics = gen_timing.finish(timer, "ok")
+        if isinstance(result, dict):
+            result["diagnostics"] = diagnostics
+        return result
 
 
 class ExamResultItem(BaseModel):

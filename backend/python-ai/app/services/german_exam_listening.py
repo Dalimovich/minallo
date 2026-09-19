@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from .gen_timing import ContextThreadPoolExecutor as ThreadPoolExecutor
 from time import perf_counter
 from typing import Any
 

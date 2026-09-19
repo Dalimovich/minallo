@@ -32,11 +32,13 @@ const GENERATE_RATE_LIMIT_WINDOW = parseInt(
 // but a production release-smoke run (2026-09-17) measured a real Lesen
 // generate call taking 99s to succeed and a later one 502ing at the 120s
 // upstream timeout — semantic-verification repair/regeneration passes can
-// push latency past that ceiling. Default this endpoint to 180s so a slow
-// repair cycle still completes instead of failing a real learner's request;
-// AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS still overrides it if measured
-// timings ever call for a different value.
-const GENERATE_UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS', '180000'), 10);
+// push latency past that ceiling. A later run then hit Cloudflare's own
+// ~120s edge limit (HTTP 524 HTML page), so holding this request for 180s
+// only wasted work: the client was already gone. The chain is now
+// python budget (95s, GERMAN_GEN_BUDGET_S) < this timeout (105s) < edge (~120s),
+// so a slow generation ends as a structured error with a reference id, never a
+// 524. AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS still overrides it.
+const GENERATE_UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS', '105000'), 10);
 
 // Phase 1 allowlist — defense in depth even though python-ai itself also
 // validates. Extend this as later phases add profiles/modules/parts.

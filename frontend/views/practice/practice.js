@@ -447,6 +447,7 @@
       // guarantees speech never keeps playing invisibly once another skill
       // is opened. See the Hören IIFE below for _glCloseListeningView.
       if (typeof window._glCloseListeningView === 'function') window._glCloseListeningView();
+      _glCancelAllGenerations();
 
       _glActiveSkill = skill;
       var home = document.getElementById('glHome');
@@ -779,7 +780,7 @@
     function _glLearnerLevel(fallback) {
       return _glProfileLevel() || fallback || '';
     }
-    async function _glGeneratePractice(payload) {
+    async function _glGeneratePractice(payload, signal) {
       // The server derives the level from the authenticated profile. Only a
       // level that differs from the profile the browser knows is sent, as an
       // explicit session-only override — a stale tab's cached level equals its
@@ -790,17 +791,93 @@
       var resp = await _authFetch(BACKEND_URL + '/api/ai/german-practice/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: signal
       });
       var data = null;
       try { data = await resp.json(); } catch (e) { /* non-JSON error body */ }
       if (!resp.ok || !data || data.schema !== 'german-practice-v1' || !Array.isArray(data.items) || !data.items.length) {
         var err = new Error('Could not create practice.');
         err.status = resp.status;
+        err.reference = _glRefFromBody(data);
         err.userMessage = resp.status === 422 && data && (data.error || data.detail) ? String(data.error || data.detail) : '';
         throw err;
       }
+      if (data.diagnostics && typeof console !== 'undefined' && console.info) console.info('[german-gen]', data.diagnostics);
       return data;
+    }
+
+    // ── Shared generation lifecycle (deadline, cancel, honest progress) ─────
+    // Every German AI generation goes through _glRunGeneration so none can sit
+    // on a static "Generating…" card. See js/features/german/generation.ts.
+    var _glGenLibPromise = null;
+    function _glGenerationLib() {
+      if (!_glGenLibPromise) _glGenLibPromise = import('/js/features/german/generation.js');
+      return _glGenLibPromise;
+    }
+    var _glLastGenFailure = { code: '', reference: '', status: 0 };
+    function _glRefFromBody(b) {
+      if (!b) return '';
+      if (b.diagnostics && b.diagnostics.requestId) return String(b.diagnostics.requestId);
+      if (b.requestId) return String(b.requestId);
+      var m = /\(ref ([a-f0-9]{6,32})\)/i.exec(String(b.detail || b.error || ''));
+      return m ? m[1] : '';
+    }
+    // Starts a generation for `holder` (a module state object), cancelling any
+    // run it still has in flight. Resolves with the request's value; rejects
+    // with a GenerationError ({code: timeout|cancelled|failed, reference}).
+    var _glGenHolders = [];
+    // Opening another skill drops any generation still in flight elsewhere, so a
+    // slow Sprachbausteine request can't keep running (or land) behind Lesen.
+    function _glCancelAllGenerations() {
+      _glGenHolders.forEach(function (h) {
+        if (h._run) { h._run.cancel(); h._run = null; }
+      });
+    }
+    function _glRunGeneration(holder, kind, el, stages, requestFn) {
+      if (_glGenHolders.indexOf(holder) === -1) _glGenHolders.push(holder);
+      if (holder._run) { holder._run.cancel(); holder._run = null; }
+      return _glGenerationLib().then(function (lib) {
+        var h = lib.runGeneration({ kind: kind, el: el, stages: stages || undefined, request: requestFn });
+        holder._run = h;
+        var clear = function () { if (holder._run === h) holder._run = null; };
+        h.promise.then(clear, function (err) {
+          clear();
+          _glLastGenFailure = { code: err && err.code || 'failed', reference: err && err.reference || '', status: err && err.status || 0 };
+        });
+        return h.promise;
+      });
+    }
+    function _glExamRequest(body) {
+      return function (signal) {
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: signal
+        }).then(function (resp) {
+          if (resp.ok) {
+            return resp.json().then(function (env) {
+              if (env && env.diagnostics && typeof console !== 'undefined' && console.info) console.info('[german-gen]', env.diagnostics);
+              return env;
+            });
+          }
+          return resp.json().catch(function () { return null; }).then(function (b) {
+            var e = new Error('generate_http_' + resp.status);
+            e.status = resp.status;
+            e.reference = _glRefFromBody(b);
+            throw e;
+          });
+        });
+      };
+    }
+    // Extra lines for the exam error cards: why it stopped + support reference.
+    function _glFailNote() {
+      var f = _glLastGenFailure;
+      var msg = f.code === 'timeout' || f.status === 504 ? 'Generation took too long. Try again.'
+        : f.code === 'cancelled' ? 'You cancelled this generation.' : '';
+      return (msg ? '<p class="gl-listen-error-sub">' + msg + '</p>' : '') +
+        (f.reference ? '<p class="gl-listen-error-sub">Reference: ' + _glEscape(f.reference) + '</p>' : '');
     }
 
     // Saved quiz/card keys retain compatibility without changing university course state.
@@ -1773,6 +1850,7 @@
           '<div class="gl-listen-error">' +
             '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general reading practice instead.</p>' +
+            _glFailNote() +
             '<div class="gl-listen-error-actions">' +
               '<button type="button" id="glReadingErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
               '<button type="button" id="glReadingErrorFallback" class="gl-listen-end-btn">Use general reading practice</button>' +
@@ -1812,16 +1890,11 @@
         // the same table that save writes to.
         return rdEnsureResultsSaved().then(function () {
           if (myToken !== rd._genRequestToken) return null;
-          return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileId: profileId, module: 'reading', partId: partId, mode: 'adaptive_practice' })
-          });
-        }).then(function (resp) {
-          if (resp === null) return false;
-          if (!resp.ok) throw new Error('generate_http_' + resp.status);
-          return resp.json();
+          return _glRunGeneration(rd, 'exam', panel,
+            { start: 'Creating your reading exercise…' },
+            _glExamRequest({ profileId: profileId, module: 'reading', partId: partId, mode: 'adaptive_practice' }));
         }).then(function (envelope) {
+          if (envelope === null) return false;
           if (myToken !== rd._genRequestToken) return false;
           rdLoadGeneratedPart(envelope);
           rdRenderGeneratedWorkspace();
@@ -3140,6 +3213,7 @@
           '<div class="gl-listen-error">' +
             '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry.</p>' +
+            _glFailNote() +
             '<div class="gl-listen-error-actions">' +
               '<button type="button" id="glSprachbausteineErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
             '</div>' +
@@ -3204,14 +3278,10 @@
         if (textPanel) textPanel.innerHTML = '';
         if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified telc exercise…</div>';
         sbArmWatchdog();
-        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profileId: profileId, module: 'language_elements', partId: sb.partId, mode: 'adaptive_practice' })
-        }).then(function (resp) {
-          if (!resp.ok) throw new Error('generate_http_' + resp.status);
-          return resp.json();
-        }).then(function (envelope) {
+        return _glRunGeneration(sb, 'exam', qPanel,
+          { start: 'Creating your Sprachbausteine exercise…' },
+          _glExamRequest({ profileId: profileId, module: 'language_elements', partId: sb.partId, mode: 'adaptive_practice' })
+        ).then(function (envelope) {
           if (myToken !== sb._genRequestToken) return false;
           // Defensive: a malformed envelope (unexpected shape from a
           // half-broken generation) must surface as the same explicit
@@ -3783,6 +3853,7 @@
       function gmShowStart() {
         gm._gen++;
         gm._busy = false;
+        if (gm._run) { gm._run.cancel(); gm._run = null; }
         gmShowPanel('<div class="gl-gram-files-empty"><div class="gl-gram-ex-eyebrow">Grammatik</div>' +
           '<p class="gl-gram-ex-prompt">' + _glEscape(gmTopicLabel(gm.topic)) + ' · ' + _glEscape(gm.level) + '</p>' +
           '<div class="gl-gram-ex-actions"><button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramStartBtn">Start practice</button></div></div>');
@@ -3793,29 +3864,35 @@
       async function gmStartQueue(topic, count, opts) {
         var token = ++gm._gen;
         gm._busy = true;
-        gmShowPanel('<div class="gl-gram-files-empty" id="glGramCreating">Creating your practice…</div>');
+        gmShowPanel('');
+        var payload = {
+          module: 'grammar', level: gm.level, count: count || 10,
+          topic: opts && opts.topicLabel ? opts.topicLabel : gmTopicLabel(topic),
+          sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
+          avoidPrompts: gm.seen.slice(-30), weakAreas: gmWeakLabels()
+        };
         try {
-          var data = await _glGeneratePractice({
-            module: 'grammar', level: gm.level, count: count || 10,
-            topic: opts && opts.topicLabel ? opts.topicLabel : gmTopicLabel(topic),
-            sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
-            avoidPrompts: gm.seen.slice(-30), weakAreas: gmWeakLabels()
-          });
+          var data = await _glRunGeneration(gm, 'practice', gmEl('glGramExercise'), null,
+            function (signal) { return _glGeneratePractice(payload, signal); });
           if (token !== gm._gen) return;
-          gm._busy = false;
           gmBeginQueue(data.items, false);
         } catch (e) {
-          if (token !== gm._gen) return;
-          gm._busy = false;
-          gmShowPanel('<div class="gl-gram-files-empty"><div class="gl-gram-fb-title">Couldn\'t create practice.</div>' +
+          if (token !== gm._gen) return; // superseded: the newer request owns the UI
+          if (e && e.code === 'cancelled') { gmShowStart(); return; }
+          var timedOut = e && (e.code === 'timeout' || e.status === 504);
+          gmShowPanel('<div class="gl-gram-files-empty"><div class="gl-gram-fb-title">' +
+            (timedOut ? 'Generation took too long.' : 'Couldn\'t create practice.') + '</div>' +
             (e && e.userMessage ? '<p>' + _glEscape(e.userMessage) + '</p>' : '') +
+            (e && e.reference ? '<p>Reference: ' + _glEscape(e.reference) + '</p>' : '') +
             '<div class="gl-gram-ex-actions">' +
-            '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramRetryBtn">Retry</button>' +
+            '<button type="button" class="gl-gram-btn gl-gram-btn-primary" id="glGramRetryBtn">' + (timedOut ? 'Try again' : 'Retry') + '</button>' +
             (!opts && GM_BANK[topic] ? '<button type="button" class="gl-gram-btn gl-gram-btn-ghost" id="glGramSampleBtn">Use sample practice</button>' : '') +
             '</div></div>');
           gmEl('glGramRetryBtn').addEventListener('click', function () { gmStartQueue(topic, count, opts); });
           var sb2 = gmEl('glGramSampleBtn');
           if (sb2) sb2.addEventListener('click', function () { gmBeginQueue(gmPickExercises(topic, count || 10), true); });
+        } finally {
+          if (token === gm._gen) gm._busy = false;
         }
       }
 
@@ -4592,6 +4669,7 @@
       function vcShowStart() {
         vc._gen++;
         vc._busy = false;
+        if (vc._run) { vc._run.cancel(); vc._run = null; }
         vcShowPanel('<div class="gl-vocab-files-empty"><div class="gl-vocab-ex-eyebrow">Wortschatz</div>' +
           '<p class="gl-vocab-ex-prompt">' + _glEscape(vcTopicLabel(vc.topic)) + ' · ' + _glEscape(vc.level) + '</p>' +
           '<div class="gl-vocab-ex-actions"><button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabStartBtn">Start practice</button></div></div>');
@@ -4602,29 +4680,35 @@
       async function vcStartQueue(topic, count, opts) {
         var token = ++vc._gen;
         vc._busy = true;
-        vcShowPanel('<div class="gl-vocab-files-empty" id="glVocabCreating">Creating your practice…</div>');
+        vcShowPanel('');
+        var payload = {
+          module: 'vocabulary', level: vc.level, count: count || 10,
+          topic: opts && opts.documentIds ? 'Vocabulary from the learner\'s own document' : vcTopicLabel(topic),
+          sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
+          avoidPrompts: vc.seen.slice(-30), weakAreas: vcWeakLabels()
+        };
         try {
-          var data = await _glGeneratePractice({
-            module: 'vocabulary', level: vc.level, count: count || 10,
-            topic: opts && opts.documentIds ? 'Vocabulary from the learner\'s own document' : vcTopicLabel(topic),
-            sourceDocumentIds: opts && opts.documentIds ? opts.documentIds : undefined,
-            avoidPrompts: vc.seen.slice(-30), weakAreas: vcWeakLabels()
-          });
+          var data = await _glRunGeneration(vc, 'practice', vcEl('glVocabExercise'), null,
+            function (signal) { return _glGeneratePractice(payload, signal); });
           if (token !== vc._gen) return;
-          vc._busy = false;
           vcBeginQueue(data.items, false);
         } catch (e) {
-          if (token !== vc._gen) return;
-          vc._busy = false;
-          vcShowPanel('<div class="gl-vocab-files-empty"><div class="gl-vocab-fb-title">Couldn\'t create practice.</div>' +
+          if (token !== vc._gen) return; // superseded: the newer request owns the UI
+          if (e && e.code === 'cancelled') { vcShowStart(); return; }
+          var timedOut = e && (e.code === 'timeout' || e.status === 504);
+          vcShowPanel('<div class="gl-vocab-files-empty"><div class="gl-vocab-fb-title">' +
+            (timedOut ? 'Generation took too long.' : 'Couldn\'t create practice.') + '</div>' +
             (e && e.userMessage ? '<p>' + _glEscape(e.userMessage) + '</p>' : '') +
+            (e && e.reference ? '<p>Reference: ' + _glEscape(e.reference) + '</p>' : '') +
             '<div class="gl-vocab-ex-actions">' +
-            '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabRetryBtn">Retry</button>' +
+            '<button type="button" class="gl-vocab-btn gl-vocab-btn-primary" id="glVocabRetryBtn">' + (timedOut ? 'Try again' : 'Retry') + '</button>' +
             (!opts && VC_BANK[topic] ? '<button type="button" class="gl-vocab-btn gl-vocab-btn-ghost" id="glVocabSampleBtn">Use sample practice</button>' : '') +
             '</div></div>');
           vcEl('glVocabRetryBtn').addEventListener('click', function () { vcStartQueue(topic, count, opts); });
           var sb2 = vcEl('glVocabSampleBtn');
           if (sb2) sb2.addEventListener('click', function () { vcBeginQueue(vcPickExercises(topic, count || 10), true); });
+        } finally {
+          if (token === vc._gen) vc._busy = false;
         }
       }
 
@@ -5782,6 +5866,7 @@
           '<div class="gl-listen-error">' +
             '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general listening practice instead.</p>' +
+            _glFailNote() +
             '<div class="gl-listen-error-actions">' +
               '<button type="button" id="glListenErrorRetry" class="gl-listen-end-btn gl-listen-end-btn-primary">Retry</button>' +
               '<button type="button" id="glListenErrorFallback" class="gl-listen-end-btn">Use general listening practice</button>' +
@@ -5870,14 +5955,12 @@
 
         var taskPanel = lsEl('glListenTaskPanel');
         if (taskPanel) taskPanel.innerHTML = '<div class="gl-listen-generating">Generating your listening exercise…</div>';
-        return _authFetch(BACKEND_URL + '/api/ai/german-exam/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ profileId: profileId, module: moduleName, partId: partId, mode: 'adaptive_practice' })
-        }).then(function (resp) {
-          if (!resp.ok) throw new Error('german_exam_generate_http_' + resp.status);
-          return resp.json();
-        }).then(function (envelope) {
+        // Content generation only; audio is prepared separately by
+        // lsPlayer.setSegments() once the content lands.
+        return _glRunGeneration(ls, 'exam', taskPanel,
+          { start: 'Creating your listening exercise…' },
+          _glExamRequest({ profileId: profileId, module: moduleName, partId: partId, mode: 'adaptive_practice' })
+        ).then(function (envelope) {
           if (myToken !== ls._genRequestToken) return; // superseded by a newer request — drop silently
           lsLoadGeneratedPart(envelope);
         }).catch(function (err) {

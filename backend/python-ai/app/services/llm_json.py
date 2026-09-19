@@ -18,6 +18,7 @@ from typing import Any
 
 from ..config import get_settings
 from .concurrency import llm_fanout_slot
+from . import gen_timing
 from .openai_client import get_openai_client
 from .usage_meter import record_usage, usage_from_response
 
@@ -214,21 +215,45 @@ def chat_json(
     # (cheatsheet/quiz/flashcards/…) can't saturate the OpenAI quota or the box.
     # The interactive stream path doesn't use chat_json, so it's never blocked.
     resp = None
+    timer = gen_timing.current()
+    caller = _caller_feature() if timer is not None else ""
     for attempt in range(6):
         try:
+            if timer is not None and timer.remaining_s() <= 1:
+                raise gen_timing.GenerationBudgetExceeded("generation time budget exhausted")
+            t_wait = time.perf_counter()
             with llm_fanout_slot():
-                resp = client.chat.completions.create(
-                    model=chosen,
-                    **token_param,
-                    **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
-                    response_format=({"type": "json_schema", "json_schema": {
-                        "name": "structured_result", "strict": True, "schema": json_schema,
-                    }} if json_schema is not None else {"type": "json_object"}),
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user",   "content": user},
-                    ],
-                )
+                t_call = time.perf_counter()
+                call_ok = False
+                extra_timeout: dict[str, Any] = {}
+                if timer is not None:
+                    remaining = timer.remaining_s()
+                    if remaining <= 1:
+                        raise gen_timing.GenerationBudgetExceeded("generation time budget exhausted")
+                    # A single provider call may never outlive the request.
+                    extra_timeout = {"timeout": remaining}
+                try:
+                    resp = client.chat.completions.create(
+                        **extra_timeout,
+                        model=chosen,
+                        **token_param,
+                        **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+                        response_format=({"type": "json_schema", "json_schema": {
+                            "name": "structured_result", "strict": True, "schema": json_schema,
+                        }} if json_schema is not None else {"type": "json_object"}),
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user",   "content": user},
+                        ],
+                    )
+                    call_ok = True
+                finally:
+                    if timer is not None:
+                        timer.record_call(
+                            caller=caller, model=chosen, effort=reasoning_effort,
+                            slot_wait_ms=(t_call - t_wait) * 1000,
+                            provider_ms=(time.perf_counter() - t_call) * 1000, ok=call_ok,
+                        )
             break
         except Exception as exc:
             if getattr(exc, "status_code", None) != 429 or attempt == 5:

@@ -14,7 +14,7 @@ import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_PRACTICE_RATE_LIMIT_MAX', '60'), 10);
 const RATE_LIMIT_WINDOW = parseInt(optionalEnv('AI_GERMAN_PRACTICE_RATE_LIMIT_WINDOW_MS', String(60 * 60 * 1000)), 10);
-const UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_GERMAN_PRACTICE_UPSTREAM_TIMEOUT_MS', '90000'), 10);
+const UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_GERMAN_PRACTICE_UPSTREAM_TIMEOUT_MS', '55000'), 10);
 
 const VALID_MODULES = ['vocabulary', 'grammar'];
 const MAX_LEVEL_LENGTH = 40;

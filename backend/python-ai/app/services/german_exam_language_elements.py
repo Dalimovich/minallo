@@ -41,7 +41,7 @@ import json
 import logging
 import random
 import re
-from concurrent.futures import ThreadPoolExecutor
+from .gen_timing import ContextThreadPoolExecutor as ThreadPoolExecutor
 from time import perf_counter
 from typing import Any
 
