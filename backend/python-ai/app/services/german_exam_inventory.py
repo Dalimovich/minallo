@@ -66,6 +66,21 @@ def batch_per_trigger() -> int:
     return _int_env("GERMAN_EXAM_INVENTORY_BATCH", 3)
 
 
+# Parts whose generator is known unhealthy: serving from existing stock still
+# works, but a low-stock take must NOT start paid background generation for
+# them (a learner would otherwise cause a background AND a live generation,
+# both failing). Comma-separated part ids; an explicitly EMPTY env value
+# disables the guard. Remove sprachbausteine_1 from the default once approved
+# stock exists and the generator passes its acceptance run.
+_DEFAULT_REFILL_DISABLED_PARTS = "sprachbausteine_1"
+
+
+def refill_disabled_parts() -> set[str]:
+    raw = os.getenv("GERMAN_EXAM_INVENTORY_REFILL_DISABLED_PARTS")
+    raw = _DEFAULT_REFILL_DISABLED_PARTS if raw is None else raw
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
 def is_stocked(module: str, mode: str, topic_override: str | None) -> bool:
     """A custom topic or the reserved exam_simulation mode always generates live."""
     return enabled() and module in STOCKED_MODULES and mode == "adaptive_practice" and not topic_override
@@ -124,7 +139,7 @@ def replenish_async(profile_id: str, module: str, part_id: str, need: int) -> bo
     """Starts (at most one per part per process) a daemon thread generating up
     to `need` stocked tasks, capped per trigger and by the per-part ceiling."""
     count = min(need, batch_per_trigger())
-    if count <= 0:
+    if count <= 0 or part_id in refill_disabled_parts():
         return False
     key = (profile_id, module, part_id)
     with _inflight_lock:

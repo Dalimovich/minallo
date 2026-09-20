@@ -102,3 +102,17 @@ def test_replenish_is_single_flight_per_part(monkeypatch):
     assert inv.replenish_async("p", "reading", "lesen_2", need=0) is False
     inv._inflight.clear()
     assert len(started) == 1
+
+
+def test_refill_kill_switch_blocks_only_the_listed_part(monkeypatch):
+    started = []
+    monkeypatch.setattr(inv.threading, "Thread", lambda **kw: type("T", (), {"start": lambda self: started.append(kw)})())
+    inv._inflight.clear()
+    monkeypatch.delenv("GERMAN_EXAM_INVENTORY_REFILL_DISABLED_PARTS", raising=False)
+    assert inv.replenish_async("p", "language_elements", "sprachbausteine_1", need=5) is False  # default guard
+    assert inv.replenish_async("p", "reading", "lesen_1", need=5) is True
+    inv._inflight.clear()
+    monkeypatch.setenv("GERMAN_EXAM_INVENTORY_REFILL_DISABLED_PARTS", "")  # explicit empty = guard off
+    assert inv.replenish_async("p", "language_elements", "sprachbausteine_1", need=5) is True
+    inv._inflight.clear()
+    assert len(started) == 2
