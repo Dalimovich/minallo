@@ -375,7 +375,11 @@ def validate_cloze_mc4_language_elements(part: PartBlueprint, content: dict[str,
         options = q.get("options") or []
         if len(options) != option_count:
             issues.append(ValidationIssue(q.get("questionId"), f"expected {option_count} options, got {len(options)}"))
-        if len({o.strip().lower() for o in options if isinstance(o, str)}) != len(options):
+        category = q.get("category")
+        # Orthography options may differ only by capitalization (Allgemeinen / allgemeinen): the
+        # contrast IS the item. Grammar/lexicon stay case-insensitive.
+        option_key = (lambda o: " ".join(o.split())) if category == "orthography" else (lambda o: o.strip().lower())
+        if len({option_key(o) for o in options if isinstance(o, str)}) != len(options):
             issues.append(ValidationIssue(q.get("questionId"), "duplicate options within one item"))
         correct_index = q.get("correctIndex")
         if not isinstance(correct_index, int) or not (0 <= correct_index < max(1, option_count)):

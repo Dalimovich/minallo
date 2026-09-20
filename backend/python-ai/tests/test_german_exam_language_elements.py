@@ -710,10 +710,10 @@ def test_too_many_missing_gaps_skips_repair_and_regenerates(monkeypatch: pytest.
 # ── Stage B per-gap repair: candidate-specific reasons + round 2 repairs round 1 ──
 
 def _repair_env(monkeypatch, outputs):
-    """One orthography gap whose ORIGINAL distractors equal the correct answer after _norm."""
+    """One grammar gap (case-insensitive equality) whose ORIGINAL distractors equal the correct answer after _norm."""
     from app.services import german_exam_language_elements as mod
 
-    specs = [{"gapId": "g1", "questionId": "q1", "category": "orthography"}]
+    specs = [{"gapId": "g1", "questionId": "q1", "category": "grammar"}]
     answers = {"g1": "Beispiel"}
     ctx = {"g1": {"sentenceWithCorrectAnswer": "Das ist ein Beispiel."}}
     original = {"wrongOptions": ["beispiel", "Bespiel", "Beispill"], "skillTags": ["register"]}
@@ -976,3 +976,142 @@ def test_stage_a_prompts_use_the_tagged_contract() -> None:
     assert "NO separate answer list" in system
     sysm, _u = m._prompt_missing_gap_repair({"g2": {"category": "grammar"}}, {"paragraphs": []}, ["g2"])
     assert "{{gN::answer}}" in sysm and "newAnswers" not in sysm
+
+
+# ── Orthography-aware equality, exact blank frame, repair parity ────────────
+
+def test_orthography_keeps_case_but_grammar_and_lexicon_do_not() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    item = {"wrongOptions": ["allgemeinen", "Allgemeine", "Allgemeinem"]}
+    assert mod._wrong_options_reason(item, "Allgemeinen", "orthography") is None
+    assert mod._wrong_options_reason(item, "Allgemeinen", "grammar") == "equals_correct_answer"
+    assert mod._wrong_options_reason(item, "Allgemeinen", "lexicon") == "equals_correct_answer"
+    assert mod._wrong_options_reason(item, "Allgemeinen") == "equals_correct_answer"  # default stays case-insensitive
+    for correct, wrong in (("Arbeiten", "arbeiten"), ("Neues", "neues")):
+        assert mod._wrong_options_reason({"wrongOptions": [wrong, "x1", "x2"]}, correct, "orthography") is None
+
+
+def test_orthography_still_rejects_exact_and_whitespace_duplicates() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    assert mod._wrong_options_reason({"wrongOptions": ["a", "b", "Allgemeinen"]}, "Allgemeinen", "orthography") == "equals_correct_answer"
+    assert mod._wrong_options_reason({"wrongOptions": ["Neues", " Neues ", "x"]}, "y", "orthography") == "duplicate_option"
+
+
+def test_orthography_option_set_keeps_four_distinct_surfaces_through_final_validation() -> None:
+    from app.services import german_exam_language_elements as mod
+    from app.services.german_exam_validator import validate_content
+
+    profile, part = _profile_and_part()
+    specs = mod._build_gap_specs(22)
+    text, answers = _public_text(specs), {s["gapId"]: f"antwort_{s['gapId']}" for s in specs}
+    items = {s["gapId"]: {"wrongOptions": [f"a_{s['gapId']}", f"b_{s['gapId']}", f"c_{s['gapId']}"], "skillTags": []} for s in specs}
+    ortho = next(s["gapId"] for s in specs if s["category"] == "orthography")
+    answers[ortho] = "Allgemeinen"
+    items[ortho] = {"wrongOptions": ["allgemeinen", "Allgemeinem", "Allgemeiner"], "skillTags": []}
+    content = mod._assemble_content(specs, text, answers, items)
+    q = next(q for q in content["questions"] if q["gapId"] == ortho)
+    assert len(set(q["options"])) == 4 and q["options"][q["correctIndex"]] == "Allgemeinen"
+    assert not [i for i in validate_content(part, content) if "duplicate options" in i.message and i.item_id == q["questionId"]]
+    # ...but the same case-only pair in a GRAMMAR item is still a duplicate.
+    grammar = next(s["gapId"] for s in specs if s["category"] == "grammar")
+    items[grammar] = {"wrongOptions": ["allgemeinen", "x", "y"], "skillTags": []}
+    answers[grammar] = "Allgemeinen"
+    content = mod._assemble_content(specs, text, answers, items)
+    gq = next(q for q in content["questions"] if q["gapId"] == grammar)
+    assert any("duplicate options" in i.message and i.item_id == gq["questionId"] for i in validate_content(part, content))
+
+
+def _two_gap_sentence_env():
+    from app.services import german_exam_language_elements as mod
+
+    specs = [{"gapId": "g7", "questionId": "q7", "category": "orthography"},
+             {"gapId": "g8", "questionId": "q8", "category": "grammar"}]
+    text = {"paragraphs": ["Davor steht {{g6}} hier. Man muss {{g7}} versuchen, {{g8}} zu erfüllen. Danach folgt {{g9}}."]}
+    answers = {"g6": "etwas", "g7": "Neues", "g8": "sie", "g9": "mehr"}
+    return mod, specs, text, answers
+
+
+def test_target_frame_keeps_only_the_target_gap_as_a_slot() -> None:
+    mod, specs, text, answers = _two_gap_sentence_env()
+    ctx = mod._build_gap_context(text, specs, answers)
+    assert ctx["g8"]["sentenceWithTargetGap"] == "Man muss Neues versuchen, {{g8}} zu erfüllen."
+    assert ctx["g7"]["sentenceWithTargetGap"] == "Man muss {{g7}} versuchen, sie zu erfüllen."
+    assert ctx["g8"]["sentenceWithCorrectAnswer"] == "Man muss Neues versuchen, sie zu erfüllen."
+    # Neighbour sentences never leak raw placeholders of other gaps.
+    assert "{{" not in ctx["g8"]["previousSentence"] and "{{" not in ctx["g8"]["nextSentence"]
+
+
+def test_stage_b_and_item_repair_both_see_the_same_exact_frame() -> None:
+    mod, specs, text, answers = _two_gap_sentence_env()
+    ctx = mod._build_gap_context(text, specs, answers)
+    profile, part = _profile_and_part()
+    system_b, _ = mod._prompt_stage_b(profile, part, specs, answers, ctx)
+    system_r, _ = mod._prompt_item_repair(specs[1], answers["g8"], ctx["g8"], ["x", "y", "z"], "duplicate_option")
+    for system in (system_b, system_r):
+        assert "Man muss Neues versuchen, {{g8}} zu erfüllen." in system     # sentenceWithTargetGap
+        assert "Man muss Neues versuchen, sie zu erfüllen." in system         # sentenceWithCorrectAnswer
+        assert "directly substitutable into sentenceWithTargetGap" in system  # substitution rule
+        assert "Man muss {{g7}} versuchen, {{g8}}" not in system              # never two placeholders
+    assert '"category": "grammar"' in system_r and '"correctAnswer": "sie"' in system_r
+    assert "duplicate_option" in system_r and '["x", "y", "z"]' in system_r
+    assert "capitalization is valid and desirable" in system_b
+    repair_ortho, _ = mod._prompt_item_repair(specs[0], answers["g7"], ctx["g7"], None, None)
+    assert "capitalization is valid and desirable" in repair_ortho
+
+
+def test_repair_uses_the_category_aware_equality(monkeypatch) -> None:
+    from app.services import german_exam_language_elements as mod
+
+    specs = [{"gapId": "g1", "questionId": "q1", "category": "orthography"}]
+    answers = {"g1": "Allgemeinen"}
+    ctx = {"g1": {"sentenceWithCorrectAnswer": "Im Allgemeinen ok."}}
+    # Initial Stage B item already has the capitalization contrast: NOT bad, so no repair call at all.
+    items = {"g1": {"wrongOptions": ["allgemeinen", "Allgemeine", "Allgemeinem"], "skillTags": ["register"]}}
+
+    def _boom(**_kw):
+        raise AssertionError("valid orthography item must not be sent to repair")
+
+    monkeypatch.setattr(mod, "_call_item_repair", _boom)
+    out, repaired, unresolved = mod._repair_stage_b_items(specs, answers, items, ctx)
+    assert (repaired, unresolved) == (0, []) and out["g1"] is items["g1"]
+
+    # A repair CANDIDATE with the same contrast is accepted for an orthography gap.
+    bad = {"g1": {"wrongOptions": ["Allgemeinen", "x", "y"], "skillTags": []}}
+    monkeypatch.setattr(mod, "_call_item_repair", lambda **_kw: _FakeResult(
+        {"wrongOptions": ["allgemeinen", "Allgemeine", "Allgemeinem"], "skillTags": ["register"]}))
+    out, repaired, unresolved = mod._repair_stage_b_items(specs, answers, bad, ctx)
+    assert (repaired, unresolved) == (1, [])
+
+
+def test_stage_b_call_exception_takes_the_bounded_regeneration_path(monkeypatch) -> None:
+    import pytest
+    from app.services import german_exam_language_elements as mod
+
+    profile, part = _profile_and_part()
+    specs = mod._build_gap_specs(22)
+    answers = {s["gapId"]: f"antwort_{s['gapId']}" for s in specs}
+    ctx = mod._build_gap_context(_public_text(specs), specs, answers)
+    calls = {"n": 0}
+
+    def _call(*, system, user):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("could not parse model JSON")
+        return _FakeResult(_stage_b_payload(specs))
+
+    monkeypatch.setattr(mod, "_call_stage_b", _call)
+    items, meta = mod._run_stage_b(profile, part, specs, answers, ctx)
+    assert calls["n"] == 2 and meta["regenerationCount"] == 1 and len(items) == 22
+
+    total = {"n": 0}
+
+    def _always(*, system, user):
+        total["n"] += 1
+        raise ValueError("could not parse model JSON")
+
+    monkeypatch.setattr(mod, "_call_stage_b", _always)
+    with pytest.raises(mod.LanguageElementsGenerationError):
+        mod._run_stage_b(profile, part, specs, answers, ctx)
+    assert total["n"] == mod._MAX_STAGE_B_REGENERATIONS + 1

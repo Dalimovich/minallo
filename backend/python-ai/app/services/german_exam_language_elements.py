@@ -221,6 +221,17 @@ def _norm(value: str) -> str:
     return " ".join(value.strip().casefold().split())
 
 
+def _norm_case_sensitive(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
+def _norm_for_category(category: str | None):
+    """Option-equality key by category. Orthography keeps case: capitalization
+    IS the contrast there (Allgemeinen / allgemeinen). Grammar and lexicon
+    stay case-insensitive."""
+    return _norm_case_sensitive if category == "orthography" else _norm
+
+
 _STAGE_A_PARAGRAPH_COUNT = 6
 
 
@@ -638,6 +649,13 @@ def _repair_passage_word_count(
     return current
 
 
+def _fill_gaps(sentence: str, answers_by_gap: dict[str, str], keep: str | None = None) -> str:
+    """Replaces every {{gN}} placeholder with its known answer, except `keep`."""
+    return _GAP_PLACEHOLDER_RE.sub(
+        lambda m: m.group(0) if m.group(1) == keep else answers_by_gap.get(m.group(1), m.group(0)), sentence
+    )
+
+
 def _build_gap_context(
     text: dict[str, Any], gap_specs: list[dict[str, str]], answers_by_gap: dict[str, str]
 ) -> dict[str, dict[str, Any]]:
@@ -661,16 +679,21 @@ def _build_gap_context(
                 gap_id = match.group(1)
                 if gap_id not in answers_by_gap:
                     continue
-                with_answer = _GAP_PLACEHOLDER_RE.sub(
-                    lambda m: answers_by_gap.get(m.group(1), m.group(0)), sentence
-                )
+                with_answer = _fill_gaps(sentence, answers_by_gap)
+                # Only THIS gap stays a slot; a second gap in the same sentence
+                # is shown filled with its known answer.
+                with_target_gap = _fill_gaps(sentence, answers_by_gap, keep=gap_id)
+                previous_sentence = sentences[si - 1] if si > 0 else None
+                next_sentence = sentences[si + 1] if si + 1 < len(sentences) else None
                 context_by_gap[gap_id] = {
                     "gapId": gap_id,
                     "paragraphIndex": pi,
                     "sentenceWithGap": sentence,
+                    "sentenceWithTargetGap": with_target_gap,
                     "sentenceWithCorrectAnswer": with_answer,
-                    "previousSentence": sentences[si - 1] if si > 0 else None,
-                    "nextSentence": sentences[si + 1] if si + 1 < len(sentences) else None,
+                    # Neighbours carry no raw {{gN}} placeholders either.
+                    "previousSentence": _fill_gaps(previous_sentence, answers_by_gap) if previous_sentence else None,
+                    "nextSentence": _fill_gaps(next_sentence, answers_by_gap) if next_sentence else None,
                 }
     # Fallback for any gap whose sentence-split placement failed to match
     # (should not happen post structural-validation, but Stage B must never
@@ -681,6 +704,7 @@ def _build_gap_context(
             context_by_gap[gap_id] = {
                 "gapId": gap_id, "paragraphIndex": None,
                 "sentenceWithGap": f"{{{{{gap_id}}}}}",
+                "sentenceWithTargetGap": f"{{{{{gap_id}}}}}",
                 "sentenceWithCorrectAnswer": answers_by_gap.get(gap_id, ""),
                 "previousSentence": None, "nextSentence": None,
             }
@@ -742,9 +766,34 @@ _CATEGORY_DISTRACTOR_RULES = {
     ),
     "orthography": (
         "a realistic spelling variant, a capitalization error, or a punctuation-sensitive variant where "
-        "applicable."
+        "applicable. If the intended contrast is capitalization, a distractor that differs from the correct "
+        "form only by capitalization is valid and desirable (e.g. Allgemeinen / allgemeinen, Arbeiten / "
+        "arbeiten, Neues / neues). Do not replace a capitalization task entirely with random endings or "
+        "invented spellings (e.g. Arbeitenen, Arbeits) unless that form is genuinely plausible in the exact slot."
     ),
 }
+
+# Shared by Stage B and item repair so both see the same slot and obey the same rule.
+_SUBSTITUTION_RULE = (
+    "Every distractor must be directly substitutable into sentenceWithTargetGap (replacing the {{gN}} slot) "
+    "without adding, removing or repeating any surrounding word. Before you output each distractor, "
+    "substitute it into the slot and check the result: reject options that create defects such as 'zu zu "
+    "erfüllen', 'zu entgegenzukommen', 'sich sich überlegen', a wrong finite/non-finite form, or a wrong "
+    "required ending caused by the surrounding words."
+)
+
+
+def _gap_frame(gap_spec: dict[str, str], correct_answer: str, ctx: dict[str, Any]) -> dict[str, Any]:
+    """The exact blank frame for one gap. sentenceWithTargetGap contains ONLY this gap as a placeholder."""
+    return {
+        "gapId": gap_spec["gapId"],
+        "category": gap_spec["category"],
+        "correctAnswer": correct_answer,
+        "sentenceWithTargetGap": ctx.get("sentenceWithTargetGap") or ctx.get("sentenceWithGap"),
+        "sentenceWithCorrectAnswer": ctx.get("sentenceWithCorrectAnswer"),
+        "previousSentence": ctx.get("previousSentence"),
+        "nextSentence": ctx.get("nextSentence"),
+    }
 
 
 def _prompt_stage_b(
@@ -755,32 +804,24 @@ def _prompt_stage_b(
     lines = []
     for g in gap_specs:
         gap_id = g["gapId"]
-        ctx = gap_context_by_id[gap_id]
-        sentence_parts = []
-        if ctx.get("previousSentence"):
-            sentence_parts.append(ctx["previousSentence"])
-        sentence_parts.append(ctx["sentenceWithCorrectAnswer"])
-        if ctx.get("nextSentence"):
-            sentence_parts.append(ctx["nextSentence"])
-        local_window = " ".join(sentence_parts)
-        lines.append(
-            f'  {{"gapId": "{gap_id}", "questionId": "{g["questionId"]}", "category": "{g["category"]}", '
-            f'"correctAnswer": {json.dumps(answers_by_gap[gap_id], ensure_ascii=False)}, '
-            f'"context": {json.dumps(local_window, ensure_ascii=False)}}}'
-        )
+        frame = {"questionId": g["questionId"], **_gap_frame(g, answers_by_gap[gap_id], gap_context_by_id[gap_id])}
+        lines.append("  " + json.dumps(frame, ensure_ascii=False))
     gap_block = "\n".join(lines)
     category_rules = "\n".join(f"- {cat}: prefer {rule}" for cat, rule in _CATEGORY_DISTRACTOR_RULES.items())
     system = (
         f"You write multiple-choice distractors for a German Sprachbausteine (cloze) exercise, "
-        f"{profile.family} {profile.variant or ''}, C1 level. For each gap below, \"context\" is the exact "
-        "local sentence (plus its immediate neighbors) with the correct answer already inserted — the "
-        "correct answer is fixed and came from the passage itself; do not change it, and do not invent "
-        "distractors from the correct answer alone. Read the context and write THREE wrong options that "
+        f"{profile.family} {profile.variant or ''}, C1 level. For each gap below you get the exact blank "
+        "frame: sentenceWithTargetGap (the slot is marked {{gN}}; any other gap in that sentence is already "
+        "filled in), sentenceWithCorrectAnswer, and the neighbouring sentences. The correct answer is fixed "
+        "and came from the passage itself; do not change it, and do not invent distractors from the correct "
+        "answer alone. Read the frame and write THREE wrong options that "
         "look locally plausible enough to tempt a C1 learner IN THAT EXACT CONTEXT, but each must fail for "
         "ONE identifiable grammatical, lexical, collocational, register, or orthographic reason in that "
         "context — never trivial, absurd, or obviously wrong on sight, and never differing from the correct "
         "answer only in an unrelated word. Each wrong option must differ from the correct answer and from "
-        "each other. Category-specific guidance:\n"
+        "each other. "
+        f"{_SUBSTITUTION_RULE}\n"
+        "Category-specific guidance:\n"
         f"{category_rules}\n\n"
         "Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
         "Gaps:\n"
@@ -849,8 +890,9 @@ def _stage_b_issues(payload: dict[str, Any], gap_specs: list[dict[str, str]]) ->
     return []
 
 
-def _wrong_options_reason(item: Any, correct_answer: str) -> str | None:
-    """Content-free reason code why a gap's distractor set is unusable, else None."""
+def _wrong_options_reason(item: Any, correct_answer: str, category: str | None = None) -> str | None:
+    """Content-free reason code why a gap's distractor set is unusable, else None.
+    Equality is case-insensitive except for orthography (see _norm_for_category)."""
     wrong = item.get("wrongOptions") if isinstance(item, dict) else None
     if not isinstance(wrong, list):
         return "missing_options"
@@ -858,16 +900,17 @@ def _wrong_options_reason(item: Any, correct_answer: str) -> str | None:
         return "wrong_option_count"
     if not all(isinstance(w, str) and w.strip() for w in wrong):
         return "empty_option"
-    normalized = [_norm(w) for w in wrong]
+    norm = _norm_for_category(category)
+    normalized = [norm(w) for w in wrong]
     if len(set(normalized)) != 3:
         return "duplicate_option"
-    if _norm(correct_answer) in normalized:
+    if norm(correct_answer) in normalized:
         return "equals_correct_answer"
     return None
 
 
-def _wrong_options_valid(item: dict[str, Any], correct_answer: str) -> bool:
-    return _wrong_options_reason(item, correct_answer) is None  # 3 distinct wrong options, none equal to the correct answer
+def _wrong_options_valid(item: dict[str, Any], correct_answer: str, category: str | None = None) -> bool:
+    return _wrong_options_reason(item, correct_answer, category) is None  # 3 distinct wrong options, none equal to the correct answer
 
 
 def _record_gap_outcome(gap_id: str, category: str, reason: str | None, round_no: int, resolved: bool,
@@ -888,13 +931,7 @@ def _prompt_item_repair(
     gap_spec: dict[str, str], correct_answer: str, context: dict[str, Any],
     prior_wrong_options: list[str] | None, reason: str | None
 ) -> tuple[str, str]:
-    sentence_parts = []
-    if context.get("previousSentence"):
-        sentence_parts.append(context["previousSentence"])
-    sentence_parts.append(context["sentenceWithCorrectAnswer"])
-    if context.get("nextSentence"):
-        sentence_parts.append(context["nextSentence"])
-    local_window = " ".join(sentence_parts)
+    frame = _gap_frame(gap_spec, correct_answer, context)
     rule = _CATEGORY_DISTRACTOR_RULES.get(gap_spec["category"], "")
     prior_line = (
         f"\n\nThe previous attempt {json.dumps(prior_wrong_options, ensure_ascii=False)} was rejected"
@@ -903,12 +940,14 @@ def _prompt_item_repair(
     )
     system = (
         "You are fixing ONE gap's multiple-choice distractors in a German Sprachbausteine exercise. The "
-        f"correct answer for this gap is already fixed ({correct_answer!r}) and came from the passage "
-        "itself — do not change it, and do not invent distractors from the correct answer alone. Here is "
-        f"the exact local sentence (plus neighbors) with the correct answer inserted: {local_window!r}. "
+        "correct answer for this gap is already fixed and came from the passage itself — do not change it, "
+        "and do not invent distractors from the correct answer alone. Here is the exact blank frame "
+        "(sentenceWithTargetGap marks the slot as {{gN}}; any other gap in that sentence is already filled "
+        f"in): {json.dumps(frame, ensure_ascii=False)}. "
         "Provide exactly THREE wrong options (distractors), each different from the correct answer and from "
-        f"each other, that look locally plausible enough to tempt a C1 learner IN THAT EXACT CONTEXT but "
-        f"each fail for one identifiable reason there. Category guidance: prefer {rule}"
+        "each other, that look locally plausible enough to tempt a C1 learner IN THAT EXACT CONTEXT but "
+        f"each fail for one identifiable reason there. {_SUBSTITUTION_RULE} "
+        f"Category guidance: prefer {rule}"
         f"{prior_line}\n\n"
         "Reply with ONLY a JSON object, no markdown fences, no commentary, shape exactly: "
         '{"wrongOptions": ["...", "...", "..."], "skillTags": ["..."]}.'
@@ -941,7 +980,7 @@ def _repair_stage_b_items(
     spec_by_gap = {g["gapId"]: g for g in gap_specs}
     # Every gap the plan expects, so a gap the model omitted is repaired like any other.
     bad_reason = {
-        g["gapId"]: _wrong_options_reason(items_by_gap.get(g["gapId"]), answers_by_gap[g["gapId"]])
+        g["gapId"]: _wrong_options_reason(items_by_gap.get(g["gapId"]), answers_by_gap[g["gapId"]], g["category"])
         for g in gap_specs
     }
     bad_gap_ids = [gid for gid, reason in bad_reason.items() if reason]
@@ -971,7 +1010,8 @@ def _repair_stage_b_items(
                 result = _call_item_repair(system=system, user=user)
                 fixed = result.data
                 # Validate the candidate ITSELF: its reason is what gets recorded and carried.
-                candidate_reason = _wrong_options_reason(fixed, answers_by_gap[gap_id])
+                candidate_reason = _wrong_options_reason(
+                    fixed, answers_by_gap[gap_id], spec_by_gap[gap_id]["category"])
                 if isinstance(fixed, dict) and isinstance(fixed.get("wrongOptions"), list):
                     candidate_wrong = fixed["wrongOptions"]
                 if candidate_reason is None:
@@ -1010,8 +1050,12 @@ def _run_stage_b(
     item_repair_total = 0
     for regeneration in range(_MAX_STAGE_B_REGENERATIONS + 1):
         system, user = _prompt_stage_b(profile, part, gap_specs, answers_by_gap, gap_context_by_id)
-        result = _call_stage_b(system=system, user=user)
-        payload = result.data if isinstance(result.data, dict) else {}
+        try:
+            result = _call_stage_b(system=system, user=user)
+            payload = result.data if isinstance(result.data, dict) else {}
+        except Exception:  # noqa: BLE001 - failed/unparseable Stage B call takes the same bounded regeneration as an empty result
+            log.warning("Sprachbausteine Stage B call failed", exc_info=True)
+            payload = {}
         raw_items = payload.get("items") if isinstance(payload.get("items"), list) else []
         items_by_gap: dict[str, dict[str, Any]] = {}
         for it in raw_items:
