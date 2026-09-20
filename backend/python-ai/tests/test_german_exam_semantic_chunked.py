@@ -167,7 +167,7 @@ def test_l_no_sdk_retries_are_reintroduced():
 def test_existing_verifier_receives_the_cap_and_keeps_model_and_effort(monkeypatch):
     from app.config import get_settings
     from app.services import german_exam_semantic_verify as sv
-    from app.services.german_exam_profiles import get_part
+    from app.services.german_exams import get_part
 
     part = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
     seen = {}

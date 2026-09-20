@@ -5,7 +5,8 @@ import pytest
 
 from app.services import german_exam_speaking as generation
 from app.services import german_exam_speaking_practice as practice
-from app.services.german_exam_profiles import get_profile, get_part, SPEAKING_TASK_MAXIMA, SPEAKING_LANGUAGE_MAXIMA
+from app.services.german_exams import get_profile, get_part
+from app.services.german_exams.telc_c1_hochschule import SPEAKING_LANGUAGE_MAXIMA, SPEAKING_TASK_MAXIMA
 from app.services.german_exam_validator import validate_content, hard_issues
 
 PART1 = {"questions": [

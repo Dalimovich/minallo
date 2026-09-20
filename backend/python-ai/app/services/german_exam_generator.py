@@ -25,7 +25,7 @@ from .german_exam_reading import generate_reading_part
 from .german_exam_writing import generate_writing_part
 from .german_exam_speaking import generate_speaking_part
 from .german_exam_performance import pick_topic, record_topic_used
-from .german_exam_profiles import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
+from .german_exams import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
 
 # Placeholder topic banks per module.
 # Topic is content flavor only; exam structure is untouched by topic choice.

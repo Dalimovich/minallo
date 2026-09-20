@@ -5,7 +5,7 @@ registry, never trust the client's own copies of them. Also covers Phase
 2.6's generationId traceability + consume idempotency."""
 from app.services import german_exam_performance as perf
 from app.services.german_exam_performance import AttemptItem, record_attempts, record_topic_used
-from app.services.german_exam_profiles import get_profile
+from app.services.german_exams import get_profile
 
 
 class _FakeTable:

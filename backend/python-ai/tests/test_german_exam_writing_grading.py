@@ -45,7 +45,7 @@ def _fake_analysis(**overrides) -> dict:
 
 def test_grades_via_the_existing_writing_coach_evaluator_not_a_second_engine(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing_grading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     calls = {"n": 0, "kwargs": None}
 
@@ -75,7 +75,7 @@ def test_grades_via_the_existing_writing_coach_evaluator_not_a_second_engine(mon
 
 def test_rubric_maps_analyse_writing_axes_onto_telc_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing_grading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis())
 
@@ -98,7 +98,7 @@ def test_rubric_maps_analyse_writing_axes_onto_telc_dimensions(monkeypatch: pyte
 
 def test_exam_result_items_have_null_correctness_and_populated_score(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing_grading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis())
 
@@ -129,7 +129,7 @@ def test_insufficient_context_omits_score_dimensions_rather_than_fabricating(mon
     dimension score exists to report — examResultItems must be empty, never
     filled with an invented 0."""
     from app.services import german_exam_writing_grading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis(
         score={"overall": None, "grammar": None, "vocabulary": None, "structure": None, "style": None, "taskFulfillment": None},
@@ -149,7 +149,7 @@ def test_insufficient_context_omits_score_dimensions_rather_than_fabricating(mon
 
 def test_invalid_writing_coach_task_type_falls_back_to_freier_text(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing_grading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     calls = {"kwargs": None}
 

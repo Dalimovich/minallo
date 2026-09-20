@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .german_exam_profiles import PartBlueprint
+from .german_exams import PartBlueprint
 from .german_exam_semantic_adjudicate import adjudicate_items
 from .german_exam_semantic_verify import SemanticVerificationResult, verify_semantic
 

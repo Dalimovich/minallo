@@ -13,7 +13,7 @@ from app.services.german_exam_adaptation import (
     WeaknessReport,
     build_adaptation_plan,
 )
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 
 HV1 = get_part("telc_c1_hochschule", "listening", "hv1")
 

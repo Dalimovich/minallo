@@ -59,7 +59,7 @@ def _valid_schreiben_content() -> dict:
 
 def test_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_schreiben_content()))
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
@@ -79,7 +79,7 @@ def test_non_duplicate_item_semantic_repair_used(monkeypatch: pytest.MonkeyPatch
     instructions) must route to targeted item repair, not full regeneration."""
     from app.services import german_exam_writing as mod
     from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_schreiben_content()))
 
@@ -118,7 +118,7 @@ def test_duplicate_information_forces_full_regeneration(monkeypatch: pytest.Monk
     instead, mirroring lesen_1's shared-pool-defect handling."""
     from app.services import german_exam_writing as mod
     from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     gen_calls = {"n": 0}
 
@@ -155,7 +155,7 @@ def test_duplicate_information_forces_full_regeneration(monkeypatch: pytest.Monk
 
 def test_persistently_invalid_output_raises_after_regeneration_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     always_broken = {"questions": [{"questionId": "a", "title": "x", "communicativeSituation": "x", "taskInstructions": "x", "writingCoachTaskType": "stellungnahme"}]}
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(always_broken))

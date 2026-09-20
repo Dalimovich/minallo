@@ -30,7 +30,7 @@ from typing import Any
 from ..config import get_settings
 
 from .german_exam_adaptation import AdaptationInstruction
-from .german_exam_profiles import ExamProfile, PartBlueprint
+from .german_exams import ExamProfile, PartBlueprint
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
 from .german_exam_semantic_verify import SemanticVerificationResult

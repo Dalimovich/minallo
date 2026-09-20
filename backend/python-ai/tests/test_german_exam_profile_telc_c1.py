@@ -1,11 +1,11 @@
-"""Locks telc_c1_hochschule's listening parts' constraints — item/speaker/
+"""telc_c1_hochschule exam-specific structure (app/services/german_exams/telc_c1_hochschule.py). Locks's listening parts' constraints — item/speaker/
 option/play counts must not silently drift."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.services.german_exam_profiles import GermanExamProfileError, get_part, get_profile, list_parts, resolve_profile_id
+from app.services.german_exams import GermanExamProfileError, get_part, get_profile, list_parts
 
 
 def test_profile_exists_with_listening_reading_language_elements_and_writing_modules() -> None:
@@ -74,22 +74,3 @@ def test_hv3_constraints_locked() -> None:
 def test_list_parts_returns_all_three() -> None:
     parts = list_parts("telc_c1_hochschule", "listening")
     assert [p.part_id for p in parts] == ["hv1", "hv2", "hv3"]
-
-
-def test_unknown_module_raises() -> None:
-    with pytest.raises(GermanExamProfileError):
-        list_parts("telc_c1_hochschule", "not_a_real_module")
-
-
-def test_unknown_profile_raises() -> None:
-    with pytest.raises(GermanExamProfileError):
-        get_profile("does_not_exist")
-
-
-def test_resolve_profile_id_matches_legacy_level() -> None:
-    assert resolve_profile_id("telc", "C1 Hochschule") == "telc_c1_hochschule"
-
-
-def test_resolve_profile_id_returns_none_when_unmatched() -> None:
-    assert resolve_profile_id("telc", "B2") is None
-    assert resolve_profile_id("TestDaF", "TDN 4") is None

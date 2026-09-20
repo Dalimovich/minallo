@@ -26,7 +26,7 @@ from ..auth import require_internal_token
 from ..services import gen_timing
 from ..services.german_exam_generator import generate_task
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
-from ..services.german_exam_profiles import GermanExamProfileError, get_part, get_profile
+from ..services.german_exams import GermanExamProfileError, get_part, get_profile
 from ..services.german_exam_writing_grading import grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
 from ..services.german_exam_validator import hard_issues, validate_content

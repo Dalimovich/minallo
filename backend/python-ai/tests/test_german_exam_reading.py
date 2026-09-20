@@ -78,7 +78,7 @@ def _valid_lesen3_content() -> dict:
 
 def test_lesen1_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_reading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_lesen1_content()))
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
@@ -99,7 +99,7 @@ def test_lesen1_semantic_item_error_forces_full_regeneration(monkeypatch: pytest
     — it must trigger a fresh generation call instead."""
     from app.services import german_exam_reading as mod
     from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     gen_calls = {"n": 0}
 
@@ -136,7 +136,7 @@ def test_lesen1_semantic_item_error_forces_full_regeneration(monkeypatch: pytest
 
 def test_lesen2_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_reading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_lesen2_content()))
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
@@ -153,7 +153,7 @@ def test_lesen2_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch
 def test_lesen2_item_level_semantic_repair_used(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_reading as mod
     from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_lesen2_content()))
 
@@ -188,7 +188,7 @@ def test_lesen2_item_level_semantic_repair_used(monkeypatch: pytest.MonkeyPatch)
 
 def test_lesen3_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_reading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_lesen3_content()))
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
@@ -206,7 +206,7 @@ def test_lesen3_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch
 
 def test_persistently_invalid_lesen1_output_raises_after_regeneration_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_reading as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     # Always return too few gaps — a part-level issue, unrepairable per-item.
     always_broken = {"text": {"title": "x", "paragraphs": ["x"], "gaps": [{"gapId": "g1"}]}, "candidates": [], "questions": []}

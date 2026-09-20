@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 
 from ..supabase_client import get_supabase
-from .german_exam_profiles import resolve_profile_id
+from .german_exams import resolve_profile_id
 
 log = logging.getLogger(__name__)
 

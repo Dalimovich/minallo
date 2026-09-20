@@ -26,14 +26,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from .german_exam_profiles import PartBlueprint, ExamProfile
+from .german_exams import PartBlueprint, ExamProfile
 from .writing_coach import ALLOWED_TASK_TYPES, analyse_writing
 
 # Maps each official telc Schreiben rubric dimension to (a) the
 # writing_coach.analyse_writing() score axis it's derived from (None means
 # "computed", see _communicative_design below) and (b) the writing-module
 # skill tags a per-dimension attempt row carries — these must all be members
-# of the schreiben_1 PartBlueprint's allowed_skill_tags (german_exam_profiles.py).
+# of the schreiben_1 PartBlueprint's allowed_skill_tags (german_exams.py).
 _RUBRIC_DIMENSIONS: dict[str, dict[str, Any]] = {
     "task_fulfilment": {"scoreKey": "taskFulfillment", "skillTags": ["task_fulfilment"]},
     "correctness": {"scoreKey": "grammar", "skillTags": ["grammar_accuracy", "orthography"]},

@@ -52,7 +52,7 @@ class _FakeResult:
 
 def test_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_listening as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     monkeypatch.setattr(mod, "chat_json", lambda **kwargs: _FakeResult(_valid_hv1_content()))
     monkeypatch.setattr(mod, "verify_semantic", _passing_semantic_result)
@@ -74,7 +74,7 @@ def test_valid_first_shot_needs_no_repair(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_one_bad_item_gets_repaired_without_full_regeneration(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_listening as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     broken = _valid_hv1_content()
     # Break q2 with an item-level issue (unknown skill tag) — repairable per-item,
@@ -110,7 +110,7 @@ def test_one_bad_item_gets_repaired_without_full_regeneration(monkeypatch: pytes
 
 def test_persistently_invalid_output_raises_after_regeneration_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_listening as mod
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
 
     # Always return too few segments — a part-level issue, unrepairable per-item.
     always_broken = {"segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "x", "displayText": "x"}], "questions": []}

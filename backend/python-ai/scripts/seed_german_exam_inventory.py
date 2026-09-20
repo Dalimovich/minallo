@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services import german_exam_inventory as inv  # noqa: E402
-from app.services.german_exam_profiles import get_profile  # noqa: E402
+from app.services.german_exams import get_profile  # noqa: E402
 
 PROFILE_ID = "telc_c1_hochschule"
 

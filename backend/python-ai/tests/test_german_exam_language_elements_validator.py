@@ -3,7 +3,7 @@ for telc_c1_hochschule Sprachbausteine (cloze_mc4_language_elements)."""
 
 from __future__ import annotations
 
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 from app.services.german_exam_validator import hard_issues, validate_content
 
 SPRACHBAUSTEINE = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")

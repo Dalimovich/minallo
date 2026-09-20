@@ -45,7 +45,7 @@ import logging
 from typing import Any
 
 from ..config import get_settings
-from .german_exam_profiles import PartBlueprint
+from .german_exams import PartBlueprint
 from .german_exam_semantic_verify import SemanticIssue
 from .llm_json import chat_json
 

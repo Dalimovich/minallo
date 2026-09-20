@@ -34,7 +34,7 @@ from concurrent.futures import Future, wait
 from typing import Any, Callable
 
 from . import gen_timing
-from .german_exam_profiles import PartBlueprint
+from .german_exams import PartBlueprint
 from .german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
 
 log = logging.getLogger(__name__)

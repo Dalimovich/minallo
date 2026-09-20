@@ -15,7 +15,7 @@ from typing import Any
 
 from ..supabase_client import get_supabase
 from .german_exam_adaptation import compute_weakness
-from .german_exam_profiles import GermanExamProfileError, get_part, get_profile
+from .german_exams import GermanExamProfileError, get_part, get_profile
 from .german_exam_skill_tags import UnknownSkillTagError, validate_tags
 
 _MAX_ITEMS_PER_SUBMISSION = 50

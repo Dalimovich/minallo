@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 from ..config import get_settings
-from .german_exam_profiles import ExamProfile, PartBlueprint
+from .german_exams import ExamProfile, PartBlueprint
 from .german_exam_semantic_gate import verify_semantic_full
 from .german_exam_validator import hard_issues, validate_content
 from .llm_json import chat_json

@@ -18,7 +18,7 @@ caught only the next time someone reads live output by hand."""
 from __future__ import annotations
 
 from app.services.german_exam_listening import _prompt_hv1, _prompt_hv2, _prompt_hv3
-from app.services.german_exam_profiles import get_part, get_profile
+from app.services.german_exams import get_part, get_profile
 
 PROFILE = get_profile("telc_c1_hochschule")
 TOPIC = {"topicId": "t", "label": "Test topic"}

@@ -12,7 +12,8 @@ import math
 from typing import Any
 
 from ..config import get_settings
-from .german_exam_profiles import get_profile, SPEAKING_TASK_MAXIMA, SPEAKING_LANGUAGE_MAXIMA
+from .german_exams import get_profile
+from .german_exams.telc_c1_hochschule import SPEAKING_LANGUAGE_MAXIMA, SPEAKING_TASK_MAXIMA
 from .llm_json import chat_json
 from .openai_client import get_openai_client
 from .usage_meter import record_usage

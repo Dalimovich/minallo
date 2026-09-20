@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .german_exam_profiles import PartBlueprint
+from .german_exams import PartBlueprint
 from .german_exam_skill_tags import UnknownSkillTagError, validate_tags
 
 

@@ -5,7 +5,7 @@ dispatched by the item's "kind")."""
 
 from __future__ import annotations
 
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticVerificationResult, _apply_audits
 
 LESEN1 = get_part("telc_c1_hochschule", "reading", "lesen_1")

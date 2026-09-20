@@ -30,7 +30,7 @@ from typing import Any
 
 from ..supabase_client import get_supabase
 from . import gen_timing
-from .german_exam_profiles import get_part, get_profile
+from .german_exams import get_part, get_profile
 
 log = logging.getLogger(__name__)
 

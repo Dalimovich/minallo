@@ -3,7 +3,7 @@ issue code from a narrow factual audit — never trusts a free-text verdict
 from the model, and fails closed on any malformed/incomplete/contradictory
 response, matching the main verifier's audit-first philosophy."""
 from app.services import german_exam_semantic_adjudicate as adj
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 
 HV1 = get_part("telc_c1_hochschule", "listening", "hv1")
 HV2 = get_part("telc_c1_hochschule", "listening", "hv2")

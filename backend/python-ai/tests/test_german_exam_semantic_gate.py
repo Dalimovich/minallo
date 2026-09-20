@@ -9,7 +9,7 @@ scripts/GERMAN_EXAM_SEMANTIC_QA.md "Phase 2.6"), so _ADJUDICATION_ENABLED
 defaults to False in production — test_adjudication_disabled_by_default
 locks that in."""
 from app.services import german_exam_semantic_gate as gate
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 from app.services.german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
 
 HV1 = get_part("telc_c1_hochschule", "listening", "hv1")

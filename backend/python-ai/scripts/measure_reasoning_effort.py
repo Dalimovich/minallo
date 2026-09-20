@@ -21,7 +21,7 @@ from time import perf_counter
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
 
 from app.services import german_exam_semantic_verify as verifier
-from app.services.german_exam_profiles import get_part, get_profile
+from app.services.german_exams import get_part, get_profile
 from app.services import llm_json
 from german_exam_semantic_fixtures import bad_content
 

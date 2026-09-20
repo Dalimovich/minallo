@@ -6,7 +6,7 @@ german_exam_semantic_verify.py's job, covered in a separate test file."""
 
 from __future__ import annotations
 
-from app.services.german_exam_profiles import get_part
+from app.services.german_exams import get_part
 from app.services.german_exam_validator import hard_issues, validate_content
 
 SCHREIBEN = get_part("telc_c1_hochschule", "writing", "schreiben_1")

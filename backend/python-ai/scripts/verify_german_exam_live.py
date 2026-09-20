@@ -13,7 +13,7 @@ from time import perf_counter
 from app.services import german_exam_listening as listening
 from app.services import german_exam_semantic_verify as verifier
 from app.services import german_exam_semantic_repair as repair
-from app.services.german_exam_profiles import get_profile, get_part
+from app.services.german_exams import get_profile, get_part
 from app.services import llm_json
 from app.services.german_exam_validator import hard_issues, validate_content
 

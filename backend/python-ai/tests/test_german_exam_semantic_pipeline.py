@@ -4,7 +4,7 @@ import pytest
 
 from test_german_exam_listening import _FakeResult, _valid_hv1_content, _passing_semantic_result
 from app.services import german_exam_listening as listening
-from app.services.german_exam_profiles import get_part, get_profile
+from app.services.german_exams import get_part, get_profile
 from app.services.german_exam_semantic_verify import _parse_result, SemanticIssue, SemanticVerificationResult, ItemSemanticResult
 from app.services.german_exam_semantic_repair import _constrain_repair
 

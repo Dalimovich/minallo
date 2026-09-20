@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -29,8 +29,11 @@ test('registry: telc C1 Hochschule resolves, telc B2 is simply null', () => {
 });
 
 test('registry mirrors the Python exam registry (same ids)', () => {
-  const py = read('backend/python-ai/app/services/german_exam_profiles.py');
-  const ids = [...py.matchAll(/^    "(\w+)": ExamProfile\(/gm)].map((m) => m[1]);
+  const dir = resolve(ROOT, 'backend/python-ai/app/services/german_exams');
+  const ids = readdirSync(dir)
+    .filter((f) => f.endsWith('.py') && !['__init__.py', 'shared.py', 'registry.py'].includes(f))
+    .flatMap((f) => [...readFileSync(resolve(dir, f), 'utf8').matchAll(/^    profile_id="(\w+)",/gm)].map((m) => m[1]));
+  assert.ok(ids.length >= 1, 'no exam profile files found');
   const ts = read('backend/lib/german-learner-profile.ts');
   for (const id of ids) assert.ok(ts.includes(`'${id}'`), `TS registry is missing ${id}`);
 });

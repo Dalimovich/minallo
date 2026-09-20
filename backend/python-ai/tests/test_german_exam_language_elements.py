@@ -128,7 +128,7 @@ def _setup(
 
 
 def _profile_and_part():
-    from app.services.german_exam_profiles import get_profile, get_part
+    from app.services.german_exams import get_profile, get_part
     profile = get_profile("telc_c1_hochschule")
     part = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
     return profile, part

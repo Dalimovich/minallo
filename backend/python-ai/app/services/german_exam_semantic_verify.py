@@ -32,7 +32,7 @@ from typing import Any
 
 from ..config import get_settings
 
-from .german_exam_profiles import PartBlueprint
+from .german_exams import PartBlueprint
 from .llm_json import chat_json
 
 log = logging.getLogger(__name__)
