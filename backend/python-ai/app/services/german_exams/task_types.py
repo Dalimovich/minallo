@@ -11,6 +11,30 @@ Flip a task type to True only when its generator, validator and renderer exist.
 from __future__ import annotations
 
 TASK_TYPES: dict[str, bool] = {
+    # Reserved reusable interactions; generation/validation/rendering not implemented.
+    "lexical_cloze": False,
+    "paragraph_ordering": False,
+    "reading_multiple_choice": False,
+    "speech_act_matching": False,
+    "statement_category_matching": False,
+    "statement_concept_pair_matching": False,
+    "reading_summary_error_detection": False,
+    "listening_overview_completion": False,
+    "listening_concept_pair_notes": False,
+    "listening_summary_error_detection": False,
+    "video_speaker_statement_matching": False,
+    "video_outline_completion": False,
+    "listening_multiple_choice": False,
+    "sound_script_comparison": False,
+    "argumentative_essay": False,
+    "text_graph_summary": False,
+    "spoken_advice": False,
+    "spoken_option_comparison": False,
+    "spoken_text_summary": False,
+    "spoken_information_comparison": False,
+    "recorded_topic_presentation": False,
+    "spoken_argument_response": False,
+    "spoken_measure_critique": False,
     # --- telc C1 Hochschule (reusable by any exam whose interaction is equivalent) ---
     "speaker_statement_matching": True,
     "sentence_completion_mc3": True,

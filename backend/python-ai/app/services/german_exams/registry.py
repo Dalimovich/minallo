@@ -10,8 +10,9 @@ from __future__ import annotations
 from .shared import ExamProfile, GermanExamProfileError, PartBlueprint
 from .goethe_c1 import GOETHE_C1
 from .telc_c1_hochschule import TELC_C1_HOCHSCHULE
+from .testdaf_digital import TESTDAF_DIGITAL
 
-_ALL_PROFILES: tuple[ExamProfile, ...] = (TELC_C1_HOCHSCHULE, GOETHE_C1)
+_ALL_PROFILES: tuple[ExamProfile, ...] = (TELC_C1_HOCHSCHULE, GOETHE_C1, TESTDAF_DIGITAL)
 
 GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {p.profile_id: p for p in _ALL_PROFILES}
 

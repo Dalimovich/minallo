@@ -578,5 +578,385 @@
     "profileVersion": 5,
     "schemaVersion": "german-exam-manifest-v1",
     "variant": "C1 Hochschule"
+  },
+  "testdaf_digital": {
+    "cefrLevel": null,
+    "displayName": "Digitaler TestDaF",
+    "family": "TestDaF",
+    "modules": [
+      {
+        "durationSeconds": 3300,
+        "id": "reading",
+        "label": "Lesen",
+        "note": "Ungefähre Dauer; zusätzliche unbewertete Erprobungsaufgaben sind möglich.",
+        "parts": [
+          {
+            "constraints": {
+              "itemCount": 5
+            },
+            "gradingDimensions": null,
+            "id": "lesen_1",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "lexical_cloze",
+            "title": "Lückentext ergänzen"
+          },
+          {
+            "constraints": {
+              "itemCount": 4
+            },
+            "gradingDimensions": null,
+            "id": "lesen_2",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "paragraph_ordering",
+            "title": "Textabschnitte ordnen"
+          },
+          {
+            "constraints": {
+              "itemCount": 7
+            },
+            "gradingDimensions": null,
+            "id": "lesen_3",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "reading_multiple_choice",
+            "title": "Multiple-Choice"
+          },
+          {
+            "constraints": {
+              "itemCount": 4
+            },
+            "gradingDimensions": null,
+            "id": "lesen_4",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "speech_act_matching",
+            "title": "Sprachhandlungen zuordnen"
+          },
+          {
+            "constraints": {
+              "itemCount": 7
+            },
+            "gradingDimensions": null,
+            "id": "lesen_5",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "statement_category_matching",
+            "title": "Aussagen Kategorien zuordnen"
+          },
+          {
+            "constraints": {
+              "itemCount": 4
+            },
+            "gradingDimensions": null,
+            "id": "lesen_6",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "statement_concept_pair_matching",
+            "title": "Aussagen einem Begriffspaar zuordnen"
+          },
+          {
+            "constraints": {
+              "itemCount": 3
+            },
+            "gradingDimensions": null,
+            "id": "lesen_7",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "reading_summary_error_detection",
+            "title": "Fehler in Zusammenfassung erkennen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": 2400,
+        "id": "listening",
+        "label": "Hören",
+        "note": "Ungefähre Dauer; zusätzliche unbewertete Erprobungsaufgaben sind möglich.",
+        "parts": [
+          {
+            "constraints": {
+              "itemCount": 5,
+              "mediaType": "audio"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_1",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "listening_overview_completion",
+            "title": "Kurzantwort: Übersicht ergänzen"
+          },
+          {
+            "constraints": {
+              "itemCount": 4,
+              "mediaType": "audio"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_2",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "listening_concept_pair_notes",
+            "title": "Kurzantwort: Textstellen zu Begriffspaar notieren"
+          },
+          {
+            "constraints": {
+              "itemCount": 2,
+              "mediaType": "audio"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_3",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "listening_summary_error_detection",
+            "title": "Fehler in Zusammenfassung erkennen"
+          },
+          {
+            "constraints": {
+              "itemCount": 6,
+              "mediaType": "video"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_4",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "video_speaker_statement_matching",
+            "title": "Aussagen Personen zuordnen"
+          },
+          {
+            "constraints": {
+              "itemCount": 4,
+              "mediaType": "video"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_5",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "video_outline_completion",
+            "title": "Kurzantwort: Gliederungspunkte zu Vortrag ergänzen"
+          },
+          {
+            "constraints": {
+              "itemCount": 5,
+              "mediaType": "audio"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_6",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "listening_multiple_choice",
+            "title": "Multiple-Choice"
+          },
+          {
+            "constraints": {
+              "itemCount": 4,
+              "mediaType": "audio"
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_7",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "sound_script_comparison",
+            "title": "Laut- und Schriftbild abgleichen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": 3600,
+        "id": "writing",
+        "label": "Schreiben",
+        "note": "Ungefähre Dauer; zusätzliche unbewertete Erprobungsaufgaben sind möglich.",
+        "parts": [
+          {
+            "constraints": {
+              "wordCountMin": 200
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "source_fidelity",
+              "coherence",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "schreiben_1",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "argumentative_essay",
+            "title": "Argumentativen Text schreiben"
+          },
+          {
+            "constraints": {
+              "wordCountMaxApprox": 150,
+              "wordCountMinApprox": 100
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "source_fidelity",
+              "coherence",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "schreiben_2",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "text_graph_summary",
+            "title": "Informationen aus Lesetext und Grafik zusammenfassen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": 2100,
+        "id": "speaking",
+        "label": "Sprechen",
+        "note": "Ungefähre Dauer; zusätzliche unbewertete Erprobungsaufgaben sind möglich.",
+        "parts": [
+          {
+            "constraints": {
+              "speakingSeconds": 45
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_1",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_advice",
+            "title": "Rat geben"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 90
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_2",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_option_comparison",
+            "title": "Optionen abwägen"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 120
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_3",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_text_summary",
+            "title": "Text zusammenfassen"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 90
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_4",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_information_comparison",
+            "title": "Informationen abgleichen, Stellung nehmen"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 150
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_5",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "recorded_topic_presentation",
+            "title": "Thema präsentieren"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 120
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_6",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_argument_response",
+            "title": "Argumente wiedergeben, Stellung nehmen"
+          },
+          {
+            "constraints": {
+              "speakingSeconds": 90
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "situational_appropriateness",
+              "source_fidelity",
+              "fluency",
+              "pronunciation",
+              "linguistic_range",
+              "comprehensibility"
+            ],
+            "id": "sprechen_7",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "spoken_measure_critique",
+            "title": "Maßnahmen kritisieren"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      }
+    ],
+    "profileId": "testdaf_digital",
+    "profileVersion": 1,
+    "schemaVersion": "german-exam-manifest-v1",
+    "variant": "Digital"
   }
 }
