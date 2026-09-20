@@ -142,18 +142,26 @@ def _failure(message: str) -> SemanticVerificationResult:
         False, [SemanticIssue("VERIFIER_RESPONSE_INVALID", "error", message)], terminal_verifier_failure=True)
 
 
-def verify_semantic_chunked(part: PartBlueprint, content: dict[str, Any], verify_fn: VerifyFn) -> SemanticVerificationResult:
-    """Drop-in replacement for ``verify_fn(part, content)`` on a many-item part."""
+def verify_semantic_chunked(
+    part: PartBlueprint,
+    content: dict[str, Any],
+    verify_fn: VerifyFn,
+    *,
+    primary_chunks: int = _PRIMARY_CHUNKS,
+    min_items: int = _MIN_ITEMS_TO_CHUNK,
+    cap: int = SPRACHBAUSTEINE_VERIFIER_CHUNK_MAX_TOKENS,
+) -> SemanticVerificationResult:
+    """Drop-in replacement for ``verify_fn(part, content)`` on a many-item part. The keyword
+    arguments default to the Sprachbausteine tuning; other task types pass their own."""
     questions = list(content.get("questions") or [])
     n = len(questions)
-    if n < _MIN_ITEMS_TO_CHUNK:
+    if n < min_items:
         return verify_fn(part, content)
 
     from .gen_timing import ContextThreadPoolExecutor  # noqa: WPS433
 
     original_ids = [q["questionId"] for q in questions]
-    sizes = split_sizes(n, _PRIMARY_CHUNKS)
-    cap = SPRACHBAUSTEINE_VERIFIER_CHUNK_MAX_TOKENS
+    sizes = split_sizes(n, primary_chunks)
     run = _Run(part, content, verify_fn)
 
     chunks: list[list[dict[str, Any]]] = []
@@ -162,7 +170,7 @@ def verify_semantic_chunked(part: PartBlueprint, content: dict[str, Any], verify
         chunks.append(questions[start:start + size])
         start += size
 
-    pool = ContextThreadPoolExecutor(max_workers=2 * _PRIMARY_CHUNKS)
+    pool = ContextThreadPoolExecutor(max_workers=2 * primary_chunks)
     try:
         primary = [
             pool.submit(run.call, chunk, cap, {"chunkIndex": i, "fallback": False})

@@ -53,13 +53,32 @@ RECEPTIVE_RAW_ITEMS = 30
 MODULE_MAX_POINTS = 100
 MODULE_PASS_POINTS = 60  # 60 % in every module (Handbuch 1.3, DFB 6.x)
 
-_LESEN_TAGS = (
-    "detail_comprehension", "global_comprehension", "text_structure", "reference_resolution",
-    "paraphrase_mapping", "inference", "author_intention", "argument_structure", "lexical_choice", "grammar",
+_LESEN_TAGS = (  # must all be in german_exam_skill_tags.py's "reading" vocabulary (tested)
+    "detail_comprehension", "global_comprehension", "selective_information", "text_structure",
+    "reference_resolution", "paraphrase_mapping", "inference", "author_intention", "argument_structure",
 )
 _HOEREN_TAGS = (
     "global_main_idea", "detail_fact", "selective_information", "speaker_opinion",
     "attitude_tone", "not_stated_distinction", "implicit_inference", "paraphrase_mapping",
+)
+
+_LESEN_TOPICS: tuple[dict[str, str], ...] = (
+    {"topicId": "remote_work_office", "label": "Homeoffice oder Büro – wie arbeiten wir künftig?"},
+    {"topicId": "four_day_week", "label": "Die Vier-Tage-Woche: Chance oder Illusion?"},
+    {"topicId": "social_media_youth", "label": "Soziale Medien und ihre Wirkung auf Jugendliche"},
+    {"topicId": "city_car_free", "label": "Autofreie Innenstädte: Gewinn für alle?"},
+    {"topicId": "ai_at_work", "label": "Künstliche Intelligenz am Arbeitsplatz"},
+    {"topicId": "school_digital", "label": "Digitale Medien im Schulunterricht"},
+    {"topicId": "local_journalism", "label": "Das Sterben der Lokalzeitungen"},
+    {"topicId": "housing_costs", "label": "Wohnen in Großstädten: Wer kann es sich noch leisten?"},
+    {"topicId": "science_communication", "label": "Wissenschaft in der Öffentlichkeit: Wie viel Vereinfachung ist erlaubt?"},
+    {"topicId": "volunteering", "label": "Ehrenamt in einer Gesellschaft im Wandel"},
+    {"topicId": "food_waste", "label": "Lebensmittelverschwendung und was dagegen hilft"},
+    {"topicId": "language_and_gender", "label": "Sprache im Wandel: Debatte um gendergerechte Formulierungen"},
+    {"topicId": "museums_future", "label": "Museen der Zukunft zwischen Tradition und Digitalisierung"},
+    {"topicId": "mental_health_work", "label": "Psychische Belastung im Berufsalltag"},
+    {"topicId": "energy_transition", "label": "Energiewende im Alltag: Was Haushalte tatsächlich bewegen"},
+    {"topicId": "lifelong_learning", "label": "Weiterbildung im Beruf: Pflicht oder Chance?"},
 )
 
 _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
@@ -74,16 +93,32 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
         part_id="lesen_2", module="reading", title="Sachtext verstehen",
         task_type="reading_detail_mc3",
+        # Handbuch p.26: deskriptiv-explikativer Sachtext (public sphere, scientific topic of general
+        # interest), circa 680 words; the item order follows the text.
         constraints={"itemCount": 7, "optionCount": 3, "wordCountApprox": 680, "itemsFollowTextOrder": True,
-                     "suggestedMinutes": 20},
+                     "suggestedMinutes": 20,
+                     "textGenre": "descriptive-explanatory article (Sachtext) with high information density on a "
+                                  "scientific topic of general interest, as published in the general press",
+                     "balanceOptionPositions": True},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("paraphrase_distance", "inference_depth"),
         scoring=ScoringSpec(max_points=7, points_per_correct=1), available=False,
     ),
     PartBlueprint(
         part_id="lesen_3", module="reading", title="Text mit Sätzen rekonstruieren",
         task_type="text_reconstruction_sentence_matching",
+        # Handbuch p.27: "Der Text ist circa 530 Wörter lang, mit den ausgeschnittenen Sätzen circa 600
+        # Wörter"; genre = Kommentar oder Reportage on a controversial topic (public/professional/academic).
         constraints={"gapCount": 8, "candidateCount": 10, "unusedCandidates": 2, "wordCountApprox": 530,
-                     "suggestedMinutes": 20},
+                     "wordCountWithSentencesApprox": 600, "suggestedMinutes": 20,
+                     # Opt-in engine behaviours (telc's lesen_1 does not use them): exact placeholder /
+                     # candidate integrity checks, and scrambling the candidate order.
+                     "strictPlaceholders": True, "shuffleCandidates": True,
+                     "generationMode": "article_first", "solverRepair": True,
+                     # Engine tuning (not an official fact): verify the 8 gaps as 2 parallel chunks of 4,
+                     # each against all 10 candidates — one 8x10 call exhausts its reasoning budget.
+                     "verifier": {"chunks": 2, "chunkMaxTokens": 8000, "blindSolve": True},
+                     "textGenre": "a press commentary (Kommentar) or report (Reportage) on a controversial current "
+                                  "topic from public, professional or academic life"},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("reference_complexity", "distractor_similarity"),
         scoring=ScoringSpec(max_points=8, points_per_correct=1), available=False,
     ),
@@ -224,8 +259,12 @@ GOETHE_C1 = ExamProfile(
     ),
     source_version="Handbuch © 2024 Goethe-Institut; Durchführungsbestimmungen Stand 1. September 2025",
     verified_at="2026-09-20",
-    profile_version=1,
+    profile_version=2,  # 2: Lesen Teil 3 genre + with-sentences word count, topic bank
     display_name="Goethe-Zertifikat C1",
+    # Goethe C1 is general advanced German (public life, society, work, education, science, culture,
+    # media, technology, environment) — not a university-only bank. Banks for the other modules are
+    # added with their phases.
+    topic_banks={"reading": _LESEN_TOPICS},
     module_specs={
         # Lesen 65 min includes 5 min to transfer answers; Hören ~40 min includes pause and 3 min transfer.
         "reading": ModuleSpec(label="Lesen", duration_seconds=65 * 60, scoring=_RECEPTIVE_MODULE_SCORING),

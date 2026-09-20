@@ -228,17 +228,25 @@ def _verify_prompt_hv3(part: PartBlueprint, content: dict[str, Any]) -> tuple[st
 
 
 def _verify_prompt_lesen1(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    # Exams that declare a genre (Goethe) get a neutral description; telc's wording is unchanged.
+    genre = part.constraints.get("textGenre")
+    candidate_count = part.constraints.get("candidateCount", 8) if genre else 8
+    style = "" if genre else "telc-style Lesen Teil 1, Textrekonstruktion"
+    register = (
+        f"isn't natural C1-level German in the register of {genre}" if genre
+        else "isn't C1-Hochschule-appropriate academic register"
+    )
     system = _base_verifier_preamble(part) + (
-        "\n\nThis is text_reconstruction_sentence_matching (telc-style Lesen Teil 1, Textrekonstruktion). "
-        "You are given the full text with numbered gaps and 8 candidate sentences. For each gap-mapping "
+        f"\n\nThis is text_reconstruction_sentence_matching ({style or 'sentences removed from a text'}). "
+        f"You are given the full text with numbered gaps and {candidate_count} candidate sentences. For each gap-mapping "
         "item verify: (A) the candidate named in correctCandidateId genuinely fits the gap grammatically "
         "AND logically (discourse structure, reference resolution, connectors, logical progression) — "
         "UNSUPPORTED_CORRECT_ANSWER if not; (B) no OTHER candidate fits that same gap equally well — if a "
         "second candidate could also plausibly fill it, use AMBIGUOUS_MAPPING with evidence.questionIds "
-        "listing the gap's questionId. Compare each gap against ALL 8 candidates, not just the marked one. "
+        f"listing the gap's questionId. Compare each gap against ALL {candidate_count} candidates, not just the marked one. "
         "The two unused candidates are supposed to be unsupported for every gap — do not flag that. "
         "Part-wide: PART_WIDE_INCOHERENCE if the text doesn't read as one coherent original text once "
-        "correctly reconstructed, or isn't C1-Hochschule-appropriate academic register."
+        f"correctly reconstructed, or {register}."
     )
     text = content.get("text") or {}
     payload = {
@@ -247,6 +255,29 @@ def _verify_prompt_lesen1(part: PartBlueprint, content: dict[str, Any]) -> tuple
         "questions": content.get("questions") or [],
     }
     user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
+def _verify_prompt_reading_detail_mc3(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied article"
+    ) + (
+        "\n\nThis is reading_detail_mc3: one article and multiple-choice comprehension items, judged ONLY "
+        "from the article text. For each item verify: (A) the option at mc3.correctIndex is clearly and "
+        "uniquely supported by the article (UNSUPPORTED_CORRECT_ANSWER if not); (B) exactly one option is "
+        "defensible — if another option could ALSO be argued correct from the article, use "
+        "MULTIPLE_DEFENSIBLE_ANSWERS with evidence.optionIndexes listing both; (C) each wrong option is "
+        "plausible — it should arise from the article (a true detail attached to the wrong thing, a partial "
+        "truth, a wrong cause or attribution, a distorted paraphrase); reject an absurd option or one "
+        "decidable without reading using IMPLAUSIBLE_DISTRACTOR; (D) a 'wrong' option that is as well "
+        "supported as the key is DISTRACTOR_ACCIDENTALLY_CORRECT; (E) QUESTION_NOT_ANSWERABLE if the stem asks "
+        "for something the article does not state or imply; (F) PARAPHRASE_TOO_LITERAL if the correct "
+        "option merely copies the article's wording so it can be solved by matching words. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the article is not one coherent, natural, original text or its register "
+        "is not suitable for C1, or the items do not follow the order of the text."
+    )
+    text = content.get("text") or {}
+    user = json.dumps({"article": text.get("paragraphs"), "questions": content.get("questions") or []}, ensure_ascii=False)
     return system, user
 
 
@@ -400,7 +431,11 @@ def _verify_prompt_speaking(part: PartBlueprint, content: dict[str, Any]) -> tup
     return system, json.dumps(content, ensure_ascii=False)
 
 
+# Task types whose items are `mc3` (three options, one key) and are audited with per-option verdicts.
+_MC3_TASK_TYPES = frozenset({"sentence_completion_mc3", "reading_detail_mc3"})
+
 _VERIFY_PROMPT_BUILDERS = {
+    "reading_detail_mc3": _verify_prompt_reading_detail_mc3,
     "presentation_summary_followup": _verify_prompt_speaking,
     "quote_guided_discussion": _verify_prompt_speaking,
     "speaker_statement_matching": _verify_prompt_hv1,
@@ -511,7 +546,7 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
         audit = _object_schema({"duplicateItemIds": strings, "contrastingStatements": {"type": "boolean"}, "engagesBothStatements": {"type": "boolean"}})
     elif part.task_type == "speaker_statement_matching":
         audit = _object_schema({"supportedSpeakerIds": strings, "plausible": {"type": "boolean"}})
-    elif part.task_type == "sentence_completion_mc3":
+    elif part.task_type in _MC3_TASK_TYPES:
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
     elif part.task_type == "structured_note_completion":
@@ -571,7 +606,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "UNSUPPORTED_CORRECT_ANSWER"
             elif len(set(values)) > 1:
                 code = "AMBIGUOUS_MAPPING"
-        elif part.task_type == "sentence_completion_mc3":
+        elif part.task_type in _MC3_TASK_TYPES:
             values = audit.get("optionVerdicts")
             if (not isinstance(values, list) or len(values) != 3
                     or any(v not in ("supported", "plausible_wrong", "implausible_wrong") for v in values)):
@@ -671,7 +706,7 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
             "alternative to private cars in a sustainability debate. Being false or contradicted by "
             "speakers does NOT by itself make a distractor implausible. "
         )
-    elif part.task_type == "sentence_completion_mc3":
+    elif part.task_type in _MC3_TASK_TYPES:
         system += (
             "HV2 optionVerdicts classifies EACH of the three options in order: supported, plausible_wrong, "
             "or implausible_wrong. An absurd option is implausible_wrong even if the correct answer is "
@@ -686,7 +721,7 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
         )
     elif part.task_type == "text_reconstruction_sentence_matching":
         system += (
-            "bestCandidateId is whichever of the 8 candidates (not just the keyed one) genuinely fits this "
+            f"bestCandidateId is whichever of the {part.constraints.get('candidateCount', 8)} candidates (not just the keyed one) genuinely fits this "
             "gap best; tiedCandidateIds lists every OTHER candidate that fits equally well (empty if the "
             "keyed candidate is the unique best fit). Consider grammar, connectors, and logical progression "
             "with the surrounding paragraphs, not just topical relevance. "

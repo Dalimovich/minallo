@@ -41,7 +41,8 @@ export interface ExamNavModule {
   partCount: number;
   durationLabel: string | null;
   skill: string | null; // data-skill of the existing practice card that opens this module
-  available: boolean; // every part is generatable
+  availableParts: number; // parts that can be generated today
+  available: boolean; // at least one part is generatable (the module can be opened)
 }
 
 /** module id -> data-skill of the existing exam practice card. */
@@ -74,7 +75,8 @@ export function buildNavModel(manifest: ExamManifest): ExamNavModule[] {
     partCount: m.parts.length,
     durationLabel: durationLabel(m.durationSeconds),
     skill: MODULE_SKILL[m.id] ?? null,
-    available: m.parts.length > 0 && m.parts.every((p) => p.implemented),
+    availableParts: m.parts.filter((p) => p.implemented).length,
+    available: m.parts.some((p) => p.implemented),
   }));
 }
 
@@ -113,7 +115,11 @@ export function renderOverviewHtml(manifest: ExamManifest): string {
     .map((m) => {
       const parts = `${m.partCount} ${m.partCount === 1 ? 'part' : 'parts'}`;
       const time = m.durationLabel ? ` · ${esc(m.durationLabel)}` : '';
-      const soon = m.available ? '' : ' <span class="gl-exam-soon">coming soon</span>';
+      const soon = !m.available
+        ? ' <span class="gl-exam-soon">coming soon</span>'
+        : m.availableParts < m.partCount
+          ? ` <span class="gl-exam-soon">${m.availableParts} of ${m.partCount} ready</span>`
+          : '';
       return (
         `<li class="gl-exam-module" data-exam-module="${esc(m.id)}">` +
         `<span class="gl-exam-module-name">${esc(m.label)}</span>` +

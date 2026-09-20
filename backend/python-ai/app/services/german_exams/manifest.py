@@ -23,7 +23,12 @@ _DEFAULT_MODULE_LABELS = {
 def _scoring(spec: ScoringSpec | None) -> dict[str, Any] | None:
     if spec is None:
         return None
-    return {"mode": spec.resolved_mode, "maxPoints": spec.max_points, "passPoints": spec.pass_points}
+    return {
+        "mode": spec.resolved_mode,
+        "maxPoints": spec.max_points,
+        "passPoints": spec.pass_points,
+        "pointsPerCorrect": spec.points_per_correct,
+    }
 
 
 def _part(part: PartBlueprint) -> dict[str, Any]:

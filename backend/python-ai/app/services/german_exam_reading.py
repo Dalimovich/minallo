@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from .gen_timing import ContextThreadPoolExecutor as ThreadPoolExecutor
 from time import perf_counter
 from typing import Any
@@ -32,7 +33,7 @@ from .german_exam_adaptation import AdaptationInstruction
 from .german_exams import ExamProfile, PartBlueprint
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
-from .german_exam_semantic_verify import SemanticVerificationResult
+from .german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
 from .german_exam_validator import ValidationIssue, hard_issues, validate_content
 from .llm_json import chat_json
 
@@ -60,13 +61,78 @@ def _adaptation_guidance(instructions: list[AdaptationInstruction]) -> str:
     return "\n".join(lines)
 
 
+def word_range(constraints: dict, default_min: int, default_max: int) -> tuple[int, int]:
+    """Target word range from a blueprint. Exact bounds (`wordCountMin/Max`) win; where the official
+    source only says "circa N" (`wordCountApprox`) the range is N ±10 % — never an invented hard limit."""
+    if "wordCountMin" in constraints or "wordCountMax" in constraints:
+        return constraints.get("wordCountMin", default_min), constraints.get("wordCountMax", default_max)
+    approx = constraints.get("wordCountApprox")
+    if approx:
+        return round(approx * 0.9), round(approx * 1.1)
+    return default_min, default_max
+
+
 def _base_system_preamble(profile: ExamProfile, part: PartBlueprint) -> str:
+    text_kind = (
+        "coherent text of the required genre"
+        if part.constraints.get("textGenre")
+        else "coherent academic or study-relevant text"
+    )
     return (
         f"You generate ORIGINAL German reading-exam practice content for {profile.family} "
         f"{profile.variant or ''} ({part.title}), matching the official {part.task_type} task format. "
-        "You must NOT copy any real exam content — generate an entirely new, coherent academic or "
-        "study-relevant text with the same structure and difficulty. Reply with ONLY valid JSON, no "
+        f"You must NOT copy any real exam content — generate an entirely new, {text_kind} "
+        "with the same structure and difficulty. Reply with ONLY valid JSON, no "
         "markdown fences, no commentary."
+    )
+
+
+def _reconstruction_text_description(part: PartBlueprint, topic: dict[str, str], word_min: int, word_max: int) -> str:
+    genre = part.constraints.get("textGenre")
+    if not genre:
+        return f"one coherent academic/study-relevant text of {word_min}-{word_max} words on the topic '{topic['label']}'"
+    total = part.constraints.get("wordCountWithSentencesApprox")
+    restored = f" (about {total} words once the removed sentences are restored)" if total else ""
+    return (
+        f"one coherent original {genre} on the topic '{topic['label']}', {word_min}-{word_max} words for the "
+        f"text WITHOUT the removed sentences{restored}"
+    )
+
+
+def _reconstruction_quality_rules(part: PartBlueprint) -> str:
+    """Extra gap-design rules, only for blueprints that declare a text genre (Goethe). Kept out of the
+    default prompt so exams that never used them (telc) produce exactly the prompt they always did."""
+    if not part.constraints.get("textGenre"):
+        return ""
+    word_min, word_max = word_range(part.constraints, 400, 500)
+    return (
+        "\n\nLength: models tend to write too little. Write 8 to 10 paragraphs of 55-75 words each, so the "
+        f"text WITHOUT the removed sentences has between {word_min} and {word_max} words (aim for about "
+        f"{part.constraints.get('wordCountApprox', word_max)}). It must NOT be shorter than {word_min} words."
+        "\n\nGap-design rules (the answer must be reasoned from DISCOURSE, not guessed):\n"
+        "- Each removed sentence is ONE complete sentence (a statement, a rhetorical question, a "
+        "consequence, an example, a concession ...).\n"
+        "- TWO-WAY BINDING (the most important rule): every removed sentence must be tied to its own spot by "
+        "BOTH neighbours. (a) It points BACK: it contains a reference or connector that only makes sense "
+        "after the sentence before it (a demonstrative such as 'dieser Ansatz'/'diese Zahl', a pronoun, "
+        "'dabei', 'dennoch', 'im Gegensatz dazu', or a question that the sentence before raises). (b) The "
+        "sentence AFTER it picks up something that is introduced ONLY by the removed sentence (a term, "
+        "a number, an example, an objection) with 'das', 'dies', 'dieser', 'dort', 'damit' or a connector.\n"
+        "- Forbidden: generic summary, moral or filler sentences that could be inserted almost anywhere "
+        "('Gerade deshalb braucht es klare Regeln.', 'Anders gesagt: ...', 'Das zeigt, wie komplex das Thema "
+        "ist.'). Every removed sentence must carry specific content of THIS article.\n"
+        "- Before you output, test each gap: could a second candidate stand in this gap without breaking a "
+        "reference, a connector or the logic? If yes, rewrite one of them.\n"
+        "- Two gaps must never be adjacent or in the same short stretch of text; spread them across the "
+        "whole text and put at least one gap right at the start of a paragraph and one inside a paragraph.\n"
+        "- Candidate sentences must NOT share the same opening word or connector pattern, must vary in length "
+        "and function, and must be listed in a scrambled order (not in the order of the gaps).\n"
+        "- The unused candidates must sound like they belong to this article (same topic, same register) but "
+        "each must clearly break for EVERY gap once read carefully: it repeats what the text already says, "
+        "contradicts the argument, uses a reference ('dieser', 'sie', 'dort') that has no possible antecedent "
+        "at that spot, or belongs to a different line of argument. Never make an unused candidate absurd.\n"
+        "- No two candidates may be defensible for the same gap, and no candidate may fit two gaps.\n"
+        "- The article must read as one natural, original piece once every correct sentence is restored."
     )
 
 
@@ -77,12 +143,11 @@ def _prompt_lesen1(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptat
     gap_count = part.constraints.get("gapCount", 6)
     candidate_count = part.constraints.get("candidateCount", 8)
     unused = part.constraints.get("unusedCandidates", 2)
-    word_min = part.constraints.get("wordCountMin", 400)
-    word_max = part.constraints.get("wordCountMax", 500)
+    word_min, word_max = word_range(part.constraints, 400, 500)
 
     system = _base_system_preamble(profile, part) + (
-        f"\n\nTask structure (IMMUTABLE): one coherent academic/study-relevant text of "
-        f"{word_min}-{word_max} words on the topic '{topic['label']}', split into paragraphs, with "
+        f"\n\nTask structure (IMMUTABLE): {_reconstruction_text_description(part, topic, word_min, word_max)}, "
+        "split into paragraphs, with "
         f"exactly {gap_count} gaps marked inline in the paragraph text as the literal placeholder "
         '"{{gapId}}" (e.g. "{{g1}}") at the point a sentence was removed. Then exactly '
         f"{candidate_count} candidate sentences, of which exactly {gap_count} correctly fill exactly one "
@@ -97,7 +162,8 @@ def _prompt_lesen1(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptat
         "reference_resolution when the gap hinges on a pronoun/article pointing to specific prior/later "
         "content, text_structure when it's about paragraph-level organization, argument_structure when "
         "it's about how a claim/counterclaim/example connects, paraphrase_mapping when recognizing a "
-        "reworded idea is what's needed. Use at least 3 different tags across the 6 items.\n\n"
+        f"reworded idea is what's needed. Use at least 3 different tags across the {gap_count} items."
+        f"{_reconstruction_quality_rules(part)}\n\n"
         f"{_adaptation_guidance(plan)}\n\n"
         "Output JSON shape exactly (the skillTags below are illustrative, not literal — pick tags that "
         "actually fit each item per the guidance above):\n"
@@ -223,11 +289,371 @@ def _prompt_lesen3(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptat
     return system, user
 
 
+# ── reading_detail_mc3 (Goethe Lesen Teil 2) ────────────────────────────────
+
+
+def _prompt_reading_detail_mc3(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 7)
+    option_count = part.constraints.get("optionCount", 3)
+    word_min, word_max = word_range(part.constraints, 600, 750)
+    genre = part.constraints.get("textGenre") or "informational article"
+    follow_order = part.constraints.get("itemsFollowTextOrder")
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one original {genre} on the topic '{topic['label']}', "
+        f"{word_min}-{word_max} words, split into 8 to 10 paragraphs with stable ids (p1, p2, ...). Models tend "
+        f"to write too little: each paragraph should have 65-90 words and the whole text must NOT be shorter "
+        f"than {word_min} words. Then exactly {item_count} multiple-choice items, each with a question or "
+        f"sentence stem and exactly {option_count} options, exactly one of which is correct."
+        + (" The items must follow the ORDER of the text (each item's evidence is at or after the previous item's)." if follow_order else "")
+        + "\n\nItem design — test real comprehension, not phrase matching:\n"
+        "- Mix the item types across the set: a detail that must be located and understood; the relationship "
+        "between two facts (cause, condition, contrast, consequence); what the AUTHOR reasons, criticises or "
+        "concludes; what follows implicitly from a passage; which option correctly rephrases a statement; "
+        "the purpose of an example.\n"
+        "- The correct option must be a PARAPHRASE of the text. Never reuse a run of seven or more consecutive "
+        "words from the text in the correct option, and do not let the stem quote the text either.\n"
+        "- Each wrong option must be plausible and arise from the text: a true detail attached to the wrong "
+        "thing, a partial truth, a wrong cause/effect or wrong attribution, a distorted or over-generalised "
+        "paraphrase, or something from a nearby passage that does not answer THIS question. Never an absurd "
+        "option, never one decidable from general knowledge alone, never one that is ALSO supported by the "
+        "text. Never use options like 'alle genannten' or 'keine der Aussagen'.\n"
+        "- The three options of an item must have the same grammatical form and similar length; the correct "
+        "one must not be systematically the longest or the most detailed.\n"
+        "- Do not try to balance the position of the correct option; the application scrambles the options.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item, and use at least 4 "
+        f"different tags across the {item_count} items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Every item lists evidenceParagraphIds: the paragraph id(s) that decide the answer.\n\n"
+        "Output JSON shape exactly (skillTags illustrative):\n"
+        "{\n"
+        '  "text": {"title": "...", "paragraphs": [{"paragraphId": "p1", "text": "..."}, ...]},\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "skillTags": ["detail_comprehension"], "difficulty": "c1",\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1,\n'
+        '             "evidenceParagraphIds": ["p2"]}},\n'
+        "    ...\n"
+        f"  ] // exactly {item_count} items\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
+def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
+    """Deterministically move each item's correct option to a balanced, seeded position (LLMs put the
+    key in the middle far too often). Only swaps two options inside one item; text and keys stay consistent."""
+    questions = content.get("questions")
+    if not isinstance(questions, list) or not questions:
+        return content
+    import copy
+    import hashlib
+    import random
+
+    seed = hashlib.sha256(json.dumps(questions, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    rng = random.Random(seed)
+    width = 3
+    for q in questions:
+        mc3 = q.get("mc3") if isinstance(q, dict) else None
+        if isinstance(mc3, dict) and isinstance(mc3.get("options"), list):
+            width = len(mc3["options"]) or 3
+            break
+    targets = [i % width for i in range(len(questions))]
+    rng.shuffle(targets)
+    out = copy.deepcopy(content)
+    for q, target in zip(out["questions"], targets):
+        mc3 = q.get("mc3") if isinstance(q, dict) else None
+        if not isinstance(mc3, dict) or not isinstance(mc3.get("options"), list):
+            continue
+        idx = mc3.get("correctIndex")
+        options = mc3["options"]
+        if isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < len(options) and target < len(options):
+            options[idx], options[target] = options[target], options[idx]
+            mc3["correctIndex"] = target
+    return out
+
+
 _PROMPT_BUILDERS = {
+    "reading_detail_mc3": _prompt_reading_detail_mc3,
     "text_reconstruction_sentence_matching": _prompt_lesen1,
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,
 }
+
+
+# ── text_reconstruction, article-first generation (blueprint `generationMode`) ───
+#
+# Single-shot generation asks one call to write the article AND eight discourse-bound removable
+# sentences AND distractors at once; measured live it produced ambiguous or loosely bound gaps most
+# of the time. The article-first mode splits the work: (1) write ONE coherent article as addressable
+# sentences, (2) choose which sentences to remove and write the distractors, (3) assemble the gaps
+# deterministically. The restored text is coherent by construction and placeholder integrity cannot
+# be wrong. The semantic verifier still judges the result.
+
+_RECONSTRUCTION_TAGS = ("reference_resolution", "text_structure", "argument_structure", "paraphrase_mapping")
+
+
+def _article_prompt(profile: ExamProfile, part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
+    total = part.constraints.get("wordCountWithSentencesApprox") or part.constraints.get("wordCountApprox", 600)
+    low, high = round(total * 0.9), round(total * 1.1)
+    genre = part.constraints.get("textGenre", "press article")
+    gap_count = part.constraints.get("gapCount", 8)
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nWrite ONE original {genre} in German on the topic '{topic['label']}'. Length: {low}-{high} words in "
+        "total. Models write far too little, so follow this arithmetic exactly: 11 paragraphs of 5 sentences "
+        "(55 sentences), every sentence 14 to 22 words long (full, information-rich sentences with subordinate "
+        "clauses — never short ones). Register: natural C1 press German with an argumentative line (thesis, "
+        "examples, objections, concessions, consequences).\n"
+        "The text must be tightly COHESIVE, because sentences will later be removed and the reader must "
+        "restore them from context: use demonstratives and pronouns that point to the previous sentence "
+        "('dieser Ansatz', 'diese Zahl', 'dabei', 'damit'), connectors that express a specific relation "
+        "('allerdings', 'dennoch', 'im Gegenzug', 'deshalb', 'zudem'), rhetorical questions that the next "
+        "sentence answers, and terms that are introduced in one sentence and picked up in the next. Avoid "
+        "generic filler sentences. Every sentence must be a single complete sentence.\n\n"
+        f"While writing, DESIGN exactly {gap_count} ANCHOR sentences: sentences that will later be removed from "
+        "the text as gaps. Write each anchor so that it is firmly bound to its spot by BOTH neighbours: it points "
+        "back with a demonstrative/pronoun/connector that only works after the previous sentence (or answers a "
+        "question the previous sentence raises), and the NEXT sentence picks up a term, number, example or "
+        "objection that only the anchor introduces. Give the anchors different functions (example, consequence, "
+        "concession, definition, rhetorical question, contrast, evaluation ...) so that no two could swap "
+        "places. Anchors: never the first sentence of the article, never two consecutive sentences, spread "
+        "over the first, middle and last third of the text.\n"
+        'Output JSON exactly: {"title": "...", "paragraphs": [["Satz 1.", "Satz 2.", ...], ["..."]], '
+        '"anchors": [{"paragraph": 2, "sentence": 3, "function": "example", "skillTag": "reference_resolution"}, '
+        f"... exactly {gap_count} entries]}} — every paragraph is an array of its sentences as separate strings; "
+        "paragraph and sentence numbers are 1-based positions in that array; skillTag is one of "
+        f"{list(_RECONSTRUCTION_TAGS)}."
+    )
+    return system, f"Write the article now. Topic: {topic['label']}."
+
+
+def _anchors_to_removed(article: dict[str, Any], paragraphs: list[list[str]], numbered: list[tuple[str, str]]) -> list[dict[str, Any]] | None:
+    """Translate the writer's (paragraph, sentence) anchors into sentence ids; None if malformed."""
+    anchors = article.get("anchors")
+    if not isinstance(anchors, list):
+        return None
+    starts, total = [], 0
+    for para in paragraphs:
+        starts.append(total)
+        total += len(para)
+    removed: list[dict[str, Any]] = []
+    for a in anchors:
+        try:
+            p, sn = int(a["paragraph"]), int(a["sentence"])
+            if not 1 <= p <= len(paragraphs) or not 1 <= sn <= len(paragraphs[p - 1]):
+                return None
+            removed.append({"id": numbered[starts[p - 1] + sn - 1][0], "function": a.get("function"), "skillTag": a.get("skillTag")})
+        except (KeyError, TypeError, ValueError):
+            return None
+    return removed
+
+
+def _distractor_prompt(part: PartBlueprint, numbered: list[tuple[str, str]], removed_ids: list[str]) -> tuple[str, str]:
+    unused = part.constraints.get("unusedCandidates", 2)
+    gap_count = part.constraints.get("gapCount", 8)
+    lines = "\n".join(
+        f"{sid}: {'[REMOVED — becomes a gap] ' if sid in removed_ids else ''}{text}" for sid, text in numbered
+    )
+    system = (
+        "You finish a German C1 sentence-reconstruction exercise. The article below has numbered sentences; the "
+        f"{gap_count} sentences marked [REMOVED] become gaps. Write exactly {unused} DISTRACTOR sentences. Each must "
+        "be ONE complete sentence in the same register and on the topic, so it sounds as if it belongs to the "
+        f"article — but it must be UNAMBIGUOUSLY unable to fit any of the {gap_count} gaps. Generic on-topic "
+        "sentences ('Auch in anderen Bereichen ...', 'Zudem spielt ... eine Rolle') are NOT acceptable: a reader "
+        "could place them almost anywhere. Each distractor MUST fail for a hard, checkable reason, one of:\n"
+        "  (a) DANGLING REFERENCE: it contains a demonstrative or pronoun phrase ('diese Studie', 'dieser "
+        "Vorschlag', 'jene Regelung', 'dort') whose antecedent appears NOWHERE in the article, so it cannot "
+        "follow any sentence; or\n"
+        "  (b) CONTRADICTION: it states the opposite of a concrete claim the article makes elsewhere, so it "
+        "cannot stand in any gap without breaking the argument.\n"
+        "Use one of each if possible. It must make a DIFFERENT claim from every removed sentence (no paraphrase, "
+        "no shared key terms with them) and must never be absurd. In breaksBecause name the reason "
+        "('dangling reference: ...' or 'contradiction: ...'). Reply with ONLY valid JSON: "
+        f'{{"distractors": [{{"text": "...", "breaksBecause": "..."}}, ... exactly {unused} entries]}}'
+    )
+    return system, lines
+
+
+def _selection_prompt(part: PartBlueprint, article: dict[str, Any], numbered: list[tuple[str, str]]) -> tuple[str, str]:
+    gap_count = part.constraints.get("gapCount", 8)
+    unused = part.constraints.get("unusedCandidates", 2)
+    lines = "\n".join(f"{sid}: {text}" for sid, text in numbered)
+    system = (
+        "You prepare a German C1 sentence-reconstruction exercise from an existing article whose sentences are "
+        f"numbered. Choose exactly {gap_count} sentences to REMOVE (they become the gaps), and write exactly "
+        f"{unused} DISTRACTOR sentences. Reply with ONLY valid JSON, no fences, no commentary.\n\n"
+        "Rules for the removed sentences:\n"
+        "- Never remove the first sentence of the article, and never two consecutive sentences. Spread them "
+        "over the whole article (some in the first third, some in the middle, some in the last third).\n"
+        "- Choose sentences that are firmly BOUND to their place: the removed sentence points back to the one "
+        "before it (a demonstrative, pronoun or connector that only works there, or it answers a question "
+        "raised there), and the sentence after it picks up something only the removed sentence introduced. "
+        "Never choose a generic sentence that could stand almost anywhere.\n"
+        "- The removed sentences must differ in function (example, consequence, concession, definition, "
+        "rhetorical question, contrast, evaluation ...) so that no two of them could swap places.\n"
+        "- For each, give its skillTag: one of "
+        f"{list(_RECONSTRUCTION_TAGS)} — whichever describes what the reader must use to place it.\n\n"
+        f"Rules for the {unused} distractors: each must be ONE complete sentence in the same register and on "
+        "the topic of the article, so it sounds as if it belongs — but it must clearly not fit ANY of the "
+        f"{gap_count} gaps once read carefully: it repeats what the text already says, contradicts the "
+        "argument, has a reference ('dieser', 'sie', 'dort') without a possible antecedent, or belongs to a "
+        "different line of argument. It must not paraphrase any removed sentence and must not reuse the "
+        "hook words of a removed sentence. Never make it absurd.\n\n"
+        'Output JSON exactly: {"removed": [{"id": "s7", "function": "example", "skillTag": "reference_resolution"}, '
+        f'... exactly {gap_count} entries], "distractors": [{{"text": "...", "breaksBecause": "..."}}, ... exactly '
+        f"{unused} entries]}}"
+    )
+    return system, f"Article title: {article.get('title', '')}\n\nSentences:\n{lines}"
+
+
+def _content_words(text: str) -> set[str]:
+    """Lower-cased words of 5+ letters with a crude 4-letter stem, so 'Dialog'/'Dialogs' and
+    'ersetzen'/'ersetzt' overlap. Only used to detect near-paraphrases between two sentences."""
+    return {w[:5] for w in re.findall(r"[a-zäöüß]{5,}", text.lower())}
+
+
+def near_paraphrase(a: str, b: str, threshold: float = 0.45) -> bool:
+    """True when `a` reuses at least `threshold` of its content words in `b` (or vice versa)."""
+    wa, wb = _content_words(a), _content_words(b)
+    if not wa or not wb:
+        return False
+    shared = len(wa & wb)
+    return shared / len(wa) >= threshold or shared / len(wb) >= threshold
+
+
+def _check_selection(
+    selection: Any, order: list[str], gap_count: int, unused: int, texts: dict[str, str] | None = None
+) -> list[str]:
+    problems: list[str] = []
+    if not isinstance(selection, dict):
+        return ["selection is not an object"]
+    removed = selection.get("removed")
+    distractors = selection.get("distractors")
+    if not isinstance(removed, list) or len(removed) != gap_count:
+        return [f"need exactly {gap_count} removed sentences"]
+    ids = [r.get("id") if isinstance(r, dict) else None for r in removed]
+    if any(i not in order for i in ids) or len(set(ids)) != len(ids):
+        return ["removed ids must be distinct ids from the numbered sentences"]
+    positions = sorted(order.index(i) for i in ids)
+    if positions[0] == 0:
+        problems.append("the first sentence must not be removed")
+    if any(b - a < 2 for a, b in zip(positions, positions[1:])):
+        problems.append("two consecutive sentences were removed")
+    third = len(order) / 3
+    if not (any(p < third for p in positions) and any(third <= p < 2 * third for p in positions) and any(p >= 2 * third for p in positions)):
+        problems.append("removed sentences must be spread over all three thirds of the article")
+    if not isinstance(distractors, list) or len(distractors) != unused or any(
+        not isinstance(d, dict) or not isinstance(d.get("text"), str) or not d["text"].strip() for d in distractors
+    ):
+        problems.append(f"need exactly {unused} distractors with text")
+    elif texts:
+        for d in distractors:
+            for rid in ids:
+                if near_paraphrase(d["text"], texts[rid]):
+                    problems.append(
+                        f"a distractor is a near-paraphrase of removed sentence {rid} and could fit its gap; "
+                        "write a distractor with a different claim and different key terms"
+                    )
+                    break
+    return problems
+
+
+def _assemble_reconstruction(part: PartBlueprint, article: dict[str, Any], numbered: list[tuple[str, str]], selection: dict[str, Any]) -> dict[str, Any]:
+    removed = {r["id"]: r for r in selection["removed"]}
+    text_by_id = dict(numbered)
+    gap_of: dict[str, str] = {}
+    paragraphs_out: list[str] = []
+    counter = 0
+    idx = 0
+    for paragraph in article["paragraphs"]:
+        parts: list[str] = []
+        for _sentence in paragraph:
+            sid = numbered[idx][0]
+            idx += 1
+            if sid in removed:
+                counter += 1
+                gap_of[sid] = f"g{counter}"
+                parts.append("{{" + gap_of[sid] + "}}")
+            else:
+                parts.append(text_by_id[sid].strip())
+        paragraphs_out.append(" ".join(parts))
+    correct = [{"text": text_by_id[sid].strip(), "gapId": gap_of[sid], "tag": removed[sid].get("skillTag")} for sid in gap_of]
+    wrong = [{"text": d["text"].strip()} for d in selection["distractors"]]
+    ordered = correct + wrong
+    candidates = [{"candidateId": f"c{i + 1}", "text": c["text"]} for i, c in enumerate(ordered)]
+    questions = []
+    for i, c in enumerate(correct):
+        tag = c["tag"] if c["tag"] in _RECONSTRUCTION_TAGS and c["tag"] in part.allowed_skill_tags else "text_structure"
+        questions.append({"questionId": f"q{i + 1}", "gapId": c["gapId"], "correctCandidateId": f"c{i + 1}",
+                          "skillTags": [tag], "difficulty": "c1"})
+    return {
+        "text": {"title": article.get("title", ""), "paragraphs": paragraphs_out,
+                 "gaps": [{"gapId": c["gapId"]} for c in correct]},
+        "candidates": candidates,
+        "questions": questions,
+    }
+
+
+def _generate_reconstruction_article_first(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
+) -> dict[str, Any]:
+    """Returns assembled content, or {} when a stage failed (the caller's regeneration loop retries)."""
+    del plan  # adaptation guidance does not apply to article-first reconstruction yet
+    gap_count = part.constraints.get("gapCount", 8)
+    unused = part.constraints.get("unusedCandidates", 2)
+    system, user = _article_prompt(profile, part, topic)
+    settings = get_settings()
+    writer = settings.german_exam_model if part.constraints.get("articleModel") == "primary" else settings.german_exam_model_stage_a
+    article = chat_json(system=system, user=user, max_tokens=12000, model=writer,
+                        reasoning_effort="medium" if writer.startswith("gpt-5") else None).data
+    paragraphs = article.get("paragraphs") if isinstance(article, dict) else None
+    if (not isinstance(paragraphs, list) or not paragraphs
+            or any(not isinstance(p, list) or not p or any(not isinstance(s, str) or not s.strip() for s in p) for p in paragraphs)):
+        log.warning("article-first: article stage returned an invalid shape")
+        return {}
+    numbered: list[tuple[str, str]] = []
+    for paragraph in paragraphs:
+        for sentence in paragraph:
+            numbered.append((f"s{len(numbered) + 1}", sentence))
+    total_words = sum(len(t.split()) for _sid, t in numbered)
+    target = part.constraints.get("wordCountWithSentencesApprox") or part.constraints.get("wordCountApprox", 600)
+    if not round(target * 0.75) <= total_words <= round(target * 1.3) or len(numbered) < gap_count * 3:
+        log.warning("article-first: article has %s words / %s sentences — rejecting", total_words, len(numbered))
+        return {}
+
+    order = [sid for sid, _t in numbered]
+    texts = dict(numbered)
+
+    # Preferred path: the writer authored the anchors. Only the distractors are still missing.
+    anchored = _anchors_to_removed(article, paragraphs, numbered)
+    if anchored is not None:
+        stub = {"removed": anchored, "distractors": [{"text": "x"}] * unused}
+        if not _check_selection(stub, order, gap_count, unused):
+            removed_ids = [r["id"] for r in anchored]
+            system, user = _distractor_prompt(part, numbered, removed_ids)
+            for _attempt in range(2):
+                data = chat_json(system=system, user=user, max_tokens=1500, model=settings.german_exam_model).data
+                selection = {"removed": anchored, "distractors": data.get("distractors") if isinstance(data, dict) else None}
+                problems = _check_selection(selection, order, gap_count, unused, texts)
+                if not problems:
+                    return _assemble_reconstruction(part, article, numbered, selection)
+                log.info("article-first: distractors rejected (%s)", problems)
+                user += "\n\nYour previous answer was rejected: " + "; ".join(problems) + ". Fix exactly this."
+        else:
+            log.info("article-first: authored anchors violate the layout rules — falling back to selection")
+
+    # Fallback: choose the removable sentences after the fact.
+    system, user = _selection_prompt(part, article, numbered)
+    selection: Any = None
+    for _attempt in range(2):
+        selection = chat_json(system=system, user=user, max_tokens=3000, model=settings.german_exam_model).data
+        problems = _check_selection(selection, order, gap_count, unused, dict(numbered))
+        if not problems:
+            return _assemble_reconstruction(part, article, numbered, selection)
+        log.info("article-first: selection rejected (%s)", problems)
+        user += "\n\nYour previous answer was rejected: " + "; ".join(problems) + ". Fix exactly this."
+    return {}
 
 
 def _repair_prompt(part: PartBlueprint, content: dict[str, Any], issue: ValidationIssue) -> tuple[str, str]:
@@ -286,7 +712,217 @@ def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]
     # No evidence postprocessors needed for reading — evidence is
     # LLM-supplied (paragraph ids), like Hören's HV2/HV3. Kept for
     # pipeline-shape parity with generate_listening_part.
+    if part.constraints.get("shuffleCandidates"):
+        content = shuffle_candidates(content)
+    if part.constraints.get("balanceOptionPositions"):
+        content = balance_option_positions(content)
     return content
+
+
+def shuffle_candidates(content: dict[str, Any]) -> dict[str, Any]:
+    """Deterministically scramble the candidate ORDER (ids, texts and keys are untouched) so the
+    answer is never readable off the gap order. Seeded from the content so re-running is stable."""
+    candidates = content.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) < 2:
+        return content
+    import hashlib
+    import random
+
+    seed = hashlib.sha256(json.dumps(candidates, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    shuffled = list(candidates)
+    random.Random(seed).shuffle(shuffled)
+    out = dict(content)
+    out["candidates"] = shuffled
+    return out
+
+
+def _blind_solve(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
+    """Independent 'learner' pass: a solver that does NOT see the key must find the assignment and name
+    any other candidate that could also fit a gap. Ambiguity that the key-aware verifier rationalises
+    away (e.g. a distractor that paraphrases a correct sentence) shows up here as a mismatch or an
+    `alsoFits` entry — exactly what a real candidate would trip over."""
+    gap_count = part.constraints.get("gapCount", 8)
+    unused = part.constraints.get("unusedCandidates", 2)
+    questions = content.get("questions") or []
+    text = content.get("text") or {}
+    system = (
+        "You are a strong German C1 learner solving a sentence-insertion exercise. The text has numbered gaps "
+        f"(placeholders like {{{{g1}}}}); there are {gap_count + unused} candidate sentences: exactly "
+        f"{gap_count} belong in the gaps (one each), {unused} belong nowhere. Decide by grammar, reference "
+        "words, connectors and the logic of the argument. For EVERY gap give the best candidate id and "
+        "'alsoFits': the ids of any OTHER candidates that could also be inserted there without breaking a "
+        "reference, a connector or the logic (be honest and strict: list a candidate only if it is a real "
+        "alternative). Also list the candidates that belong nowhere and judge each of those: 'plausible' if it "
+        "is a sensible German sentence that simply does not fit any gap, 'absurd' if it is self-contradictory, "
+        "meaningless, vague to the point of saying nothing, or clearly unrelated to the article. Reply with ONLY "
+        'valid JSON: {"assignments": [{"gapId": "g1", "candidateId": "c3", "alsoFits": []}, ...], '
+        '"unused": ["c1", "c9"], "unusedAssessment": [{"candidateId": "c1", "verdict": "plausible"}, ...]}'
+    )
+    payload = {"paragraphs": text.get("paragraphs"), "candidates": content.get("candidates")}
+    result = None
+    for _attempt in range(2):
+        try:
+            result = chat_json(system=system, user=json.dumps(payload, ensure_ascii=False), max_tokens=12000,
+                               model=get_settings().german_exam_model,
+                               reasoning_effort="medium" if get_settings().german_exam_model.startswith("gpt-5") else None)
+        except Exception:  # noqa: BLE001
+            log.warning("blind-solve call failed", exc_info=True)
+            continue
+        if isinstance(result.data, dict) and isinstance(result.data.get("assignments"), list):
+            break
+        result = None
+    gap_of_question = {q["gapId"]: q for q in questions}
+    if result is None:
+        return SemanticVerificationResult(
+            passed=False,
+            part_wide_issues=[SemanticIssue("VERIFIER_RESPONSE_INVALID", "error", "blind solver returned no usable answer")],
+        )
+    assigned = {a.get("gapId"): a for a in result.data["assignments"] if isinstance(a, dict)}
+    items: list[ItemSemanticResult] = []
+    for q in questions:
+        a = assigned.get(q["gapId"]) or {}
+        issues: list[SemanticIssue] = []
+        also = [c for c in (a.get("alsoFits") or []) if isinstance(c, str)]
+        if a.get("candidateId") != q["correctCandidateId"]:
+            issues.append(SemanticIssue(
+                "UNSUPPORTED_CORRECT_ANSWER", "error",
+                f"an independent solver chose {a.get('candidateId')!r}, not the keyed {q['correctCandidateId']!r}",
+                {"questionIds": [q["questionId"]], "confusedWith": [a.get("candidateId")] + also}))
+        elif also:
+            issues.append(SemanticIssue(
+                "AMBIGUOUS_MAPPING", "error", f"an independent solver found {also} also fits this gap",
+                {"questionIds": [q["questionId"]], "confusedWith": also}))
+        items.append(ItemSemanticResult(q["questionId"], not issues, issues))
+    del gap_of_question
+    key_ids = {q["correctCandidateId"] for q in questions}
+    part_wide: list[SemanticIssue] = []
+    for verdict in result.data.get("unusedAssessment") or []:
+        if isinstance(verdict, dict) and verdict.get("verdict") == "absurd" and verdict.get("candidateId") not in key_ids:
+            part_wide.append(SemanticIssue(
+                "IMPLAUSIBLE_DISTRACTOR", "error",
+                f"unused candidate {verdict.get('candidateId')!r} is absurd, meaningless or unrelated"))
+    return SemanticVerificationResult(passed=all(i.passed for i in items) and not part_wide, part_wide_issues=part_wide, items=items)
+
+
+_SENTENCE_AFTER = re.compile(r"\{\{(\w+)\}\}\s*([^.!?]*[.!?])")
+
+
+def _repair_reconstruction(
+    part: PartBlueprint, content: dict[str, Any], item_errors: dict[str, list[SemanticIssue]]
+) -> tuple[dict[str, Any], bool]:
+    """Solver-guided repair: for every gap the blind solver confused, the writer rewrites the removed
+    sentence AND the sentence right after the gap so the pair can only belong there; a distractor that
+    was mistaken for a correct sentence is replaced too. Returns (content, changed). Never raises."""
+    import copy
+
+    del part
+    questions = {q["questionId"]: q for q in content.get("questions") or []}
+    candidates = {c["candidateId"]: c for c in content.get("candidates") or []}
+    keys = {q["correctCandidateId"] for q in questions.values()}
+    problems = []
+    replace_distractors: set[str] = set()
+    for qid, issues in item_errors.items():
+        q = questions.get(qid)
+        if q is None:
+            continue
+        confused = sorted({c for i in issues for c in (i.evidence.get("confusedWith") or []) if c in candidates})
+        replace_distractors.update(c for c in confused if c not in keys)
+        problems.append({
+            "gapId": q["gapId"],
+            "currentGapSentence": candidates[q["correctCandidateId"]]["text"],
+            "wasConfusedWith": [candidates[c]["text"] for c in confused],
+        })
+    if not problems:
+        return content, False
+
+    restored = "\n".join(content["text"]["paragraphs"])
+    for q in questions.values():
+        restored = restored.replace(
+            "{{" + q["gapId"] + "}}", "[[" + q["gapId"] + ": " + candidates[q["correctCandidateId"]]["text"] + "]]"
+        )
+    system = (
+        "You repair a German C1 sentence-reconstruction exercise. In the restored article below the sentences in "
+        "[[gN: ...]] are the gap sentences. An independent solver confused some of them with other sentences. "
+        "For EACH listed problem gap, rewrite (1) the gap sentence and (2) the sentence that comes directly after "
+        "it, so that the pair is firmly bound to this spot and cannot be confused with the listed sentences: the "
+        "gap sentence must point back with a demonstrative/pronoun/connector that only works right after the "
+        "sentence before it, carry specific content, and the following sentence must take up a term or claim that "
+        "ONLY the gap sentence introduces. Keep the topic, register and the gap sentence's function; change "
+        "nothing else. Each is ONE complete sentence."
+        + (
+            " Also write a replacement for each sentence listed under replaceDistractors: it must fail for a hard "
+            "reason (a reference with no antecedent anywhere in the article, or a contradiction of a concrete "
+            "claim of the article) and must not resemble any gap sentence."
+            if replace_distractors else ""
+        )
+        + ' Reply with ONLY valid JSON: {"rewrites": [{"gapId": "g2", "gapSentence": "...", "nextSentence": "..."}], '
+        '"newDistractors": [{"replaces": "<old distractor text>", "text": "..."}]}'
+    )
+    user = json.dumps({
+        "restoredArticle": restored,
+        "problems": problems,
+        "replaceDistractors": [candidates[c]["text"] for c in sorted(replace_distractors)],
+    }, ensure_ascii=False)
+    try:
+        data = chat_json(system=system, user=user, max_tokens=3000, model=get_settings().german_exam_model_stage_a).data
+    except Exception:  # noqa: BLE001
+        log.warning("solver-guided repair call failed", exc_info=True)
+        return content, False
+    if not isinstance(data, dict) or not isinstance(data.get("rewrites"), list):
+        return content, False
+
+    out = copy.deepcopy(content)
+    out_cands = {c["candidateId"]: c for c in out["candidates"]}
+    gap_to_q = {q["gapId"]: q for q in questions.values()}
+    changed = False
+    for rw in data["rewrites"]:
+        if not isinstance(rw, dict) or rw.get("gapId") not in gap_to_q:
+            continue
+        new_gap, new_next = rw.get("gapSentence"), rw.get("nextSentence")
+        if not (isinstance(new_gap, str) and new_gap.strip() and isinstance(new_next, str) and new_next.strip()):
+            continue
+        gap_id = rw["gapId"]
+        matched = False
+        for i, para in enumerate(out["text"]["paragraphs"]):
+            m = _SENTENCE_AFTER.search(para)
+            while m and m.group(1) != gap_id:
+                m = _SENTENCE_AFTER.search(para, m.end())
+            if m:
+                out["text"]["paragraphs"][i] = para[: m.start(2)] + new_next.strip() + para[m.end(2):]
+                matched = True
+                break
+        if matched:
+            out_cands[gap_to_q[gap_id]["correctCandidateId"]]["text"] = new_gap.strip()
+            changed = True
+    for nd in data.get("newDistractors") or []:
+        if isinstance(nd, dict) and isinstance(nd.get("text"), str) and nd["text"].strip():
+            for cid in replace_distractors:
+                if out_cands[cid]["text"] == nd.get("replaces"):
+                    out_cands[cid]["text"] = nd["text"].strip()
+                    changed = True
+    return out, changed
+
+
+def _verify(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
+    """One semantic verification. Blueprints with many gaps x candidates opt into the chunked verifier
+    (`verifier: {"chunks": N, "chunkMaxTokens": T}`): a single call spends its whole reasoning budget
+    and returns truncated JSON, so the gaps are verified as N parallel chunks, each against ALL candidates.
+    `blindSolve: True` adds the independent solver pass (see _blind_solve) once the verifier has passed."""
+    cfg = part.constraints.get("verifier")
+    if not cfg:
+        return verify_semantic(part, content)
+    from .german_exam_semantic_chunked import verify_semantic_chunked
+
+    if cfg.get("blindSolve"):
+        # The solver is the strictest and cheapest gate, so it runs first: a failing attempt is
+        # rejected without paying for the chunked verifier.
+        solved = _blind_solve(part, content)
+        if not solved.passed:
+            return solved
+    return verify_semantic_chunked(
+        part, content, verify_semantic, primary_chunks=cfg["chunks"], min_items=cfg.get("minItems", cfg["chunks"]),
+        cap=cfg["chunkMaxTokens"],
+    )
 
 
 def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
@@ -311,10 +947,12 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         nonlocal verification_count
         result: SemanticVerificationResult | None = None
         for attempt in range(2):
-            result = verify_semantic(part, content)
+            result = _verify(part, content)
             record_findings(result)
             verification_count += 1
             findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
+            if result.terminal_verifier_failure:
+                return result  # the chunked verifier already spent its one bounded fallback
             if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
                 return result
         assert result is not None
@@ -335,8 +973,20 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
             # lesen_1: an item-level semantic error may actually live in the
             # shared candidates array or the surrounding text — not
             # repairable at item level. Stop here; caller falls back to a
-            # full regeneration.
-            break
+            # full regeneration — unless the blueprint opts into solver-guided repair, which
+            # rewrites exactly the sentences the blind solver confused (see _repair_reconstruction).
+            if not part.constraints.get("solverRepair"):
+                break
+            content, changed = _repair_reconstruction(part, content, item_errors)
+            if not changed:
+                break
+            repair_count += len(item_errors)
+            content = _postprocess(part, content)
+            if hard_issues(validate_content(part, content)):
+                log.warning("solver-guided repair broke deterministic structure — abandoning repair")
+                break
+            result = check()
+            continue
 
         content, resolved = repair_items_semantic(part, content, item_errors)
         repair_count += len(item_errors)
@@ -381,9 +1031,12 @@ def generate_reading_part(
     total_issue_counts: dict[str, int] = {}
 
     for regeneration in range(_MAX_FULL_REGENERATIONS + 1):
-        system, user = builder(profile, part, plan, topic)
-        result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
-        content = result.data if isinstance(result.data, dict) else {}
+        if part.constraints.get("generationMode") == "article_first":
+            content = _generate_reconstruction_article_first(profile, part, plan, topic)
+        else:
+            system, user = builder(profile, part, plan, topic)
+            result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
+            content = result.data if isinstance(result.data, dict) else {}
         content = _postprocess(part, content)
 
         issues = validate_content(part, content)

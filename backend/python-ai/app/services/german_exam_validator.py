@@ -18,6 +18,7 @@ validator passes — see `german_exam_listening.py`'s generation pipeline.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -241,6 +242,158 @@ def validate_text_reconstruction_sentence_matching(part: PartBlueprint, content:
     if candidate_ids and len(unused) != unused_count:
         issues.append(ValidationIssue(None, f"expected {unused_count} unused candidates, got {len(unused)}"))
 
+    if part.constraints.get("strictPlaceholders"):
+        issues.extend(_check_reconstruction_integrity(part, text, gap_ids, candidates))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+_PLACEHOLDER_NAME = re.compile(
+    r"\b(?:XYZ|ABC[- ]?(?:GmbH|AG)|Mustermann|Musterfirma|Musterstadt|Beispiel(?:firma|stadt|GmbH)|Lorem ipsum|Firma [A-Z]{1,3})\b"
+)
+_SENTENCE_BREAK = re.compile(r"\w{3,}[.!?][\"”“)]?\s+[A-ZÄÖÜ]")
+
+
+def _check_reconstruction_integrity(
+    part: PartBlueprint, text: Any, gap_ids: set[str], candidates: list[Any]
+) -> list[ValidationIssue]:
+    """Placeholder / length / candidate-shape checks for blueprints that opt in with
+    `strictPlaceholders` (Goethe). All findings are part-level: a broken gap layout or candidate
+    list cannot be repaired one question at a time, so the caller regenerates."""
+    issues: list[ValidationIssue] = []
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    if not isinstance(paragraphs, list) or not paragraphs or any(not isinstance(p, str) or not p.strip() for p in paragraphs):
+        return [ValidationIssue(None, "text.paragraphs must be a non-empty list of non-empty strings")]
+    joined = "\n".join(paragraphs)
+
+    found = _PLACEHOLDER.findall(joined)
+    for gap_id in sorted(gap_ids):
+        n = found.count(gap_id)
+        if n != 1:
+            issues.append(ValidationIssue(None, f"placeholder {{{{{gap_id}}}}} must appear exactly once in the text, found {n}"))
+    unknown = sorted({g for g in found if g not in gap_ids})
+    if unknown:
+        issues.append(ValidationIssue(None, f"text contains placeholders that are not declared gaps: {unknown}"))
+    if re.search(r"\}\}\s*\{\{", joined):
+        issues.append(ValidationIssue(None, "two gaps are adjacent — every gap needs text around it"))
+
+    approx = part.constraints.get("wordCountApprox")
+    if approx:
+        words = len(_PLACEHOLDER.sub(" ", joined).split())
+        low, high = round(approx * 0.75), round(approx * 1.25)
+        if not low <= words <= high:
+            issues.append(ValidationIssue(None, f"gapped text has {words} words, expected about {approx} ({low}-{high})"))
+
+    # Filler names an LLM invents when it has no real example ("Firma XYZ", "Max Mustermann"): never
+    # acceptable in an exam text — the item would read as a template.
+    everything = joined + " " + " ".join(str(c.get("text", "")) for c in candidates if isinstance(c, dict))
+    m = _PLACEHOLDER_NAME.search(everything)
+    if m:
+        issues.append(ValidationIssue(None, f"text contains a placeholder name ({m.group(0)!r}); use a concrete, plausible example"))
+
+    flat = re.sub(r"\s+", " ", joined).lower()
+    for c in candidates:
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("candidateId")
+        sentence = (c.get("text") or "").strip()
+        n_words = len(sentence.split())
+        if not 3 <= n_words <= 45:
+            issues.append(ValidationIssue(None, f"candidate {cid} has {n_words} words; a removed sentence should have 3-45"))
+        if not re.search(r"[.!?][\"”“)]?$", sentence):
+            issues.append(ValidationIssue(None, f"candidate {cid} is not a complete sentence (no closing punctuation)"))
+        if _SENTENCE_BREAK.search(sentence):
+            issues.append(ValidationIssue(None, f"candidate {cid} contains more than one sentence"))
+        if sentence and re.sub(r"\s+", " ", sentence).lower() in flat:
+            issues.append(ValidationIssue(None, f"candidate {cid} already appears verbatim in the text"))
+    return issues
+
+
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[\wäöüÄÖÜß]+", text.lower())
+
+
+def _copied_run(option: str, article_words: list[str], run: int) -> bool:
+    """True if `option` reproduces `run` consecutive words of the article (a phrase-copy answer)."""
+    words = _normalized_words(option)
+    if len(words) < run:
+        return False
+    grams = {tuple(article_words[i:i + run]) for i in range(len(article_words) - run + 1)}
+    return any(tuple(words[i:i + run]) in grams for i in range(len(words) - run + 1))
+
+
+def validate_reading_detail_mc3(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """One informational article + N three-option comprehension items (Goethe Lesen Teil 2).
+
+    Generic: counts, option count, text order and length all come from the blueprint."""
+    issues: list[ValidationIssue] = []
+    text = content.get("text")
+    questions = content.get("questions") or []
+    item_count = part.constraints.get("itemCount", 7)
+    option_count = part.constraints.get("optionCount", 3)
+
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    para_ids: list[str] = []
+    article_words: list[str] = []
+    if not isinstance(paragraphs, list) or not paragraphs:
+        issues.append(ValidationIssue(None, "text.paragraphs must be a non-empty list"))
+    else:
+        for p in paragraphs:
+            pid = p.get("paragraphId") if isinstance(p, dict) else None
+            body = p.get("text") if isinstance(p, dict) else None
+            if not isinstance(pid, str) or not pid.strip() or not isinstance(body, str) or not body.strip():
+                issues.append(ValidationIssue(None, "every paragraph needs a paragraphId and non-empty text"))
+                continue
+            para_ids.append(pid)
+            article_words.extend(_normalized_words(body))
+        if len(set(para_ids)) != len(para_ids):
+            issues.append(ValidationIssue(None, "duplicate paragraphId"))
+        approx = part.constraints.get("wordCountApprox")
+        if approx:
+            low, high = round(approx * 0.75), round(approx * 1.25)
+            if not low <= len(article_words) <= high:
+                issues.append(ValidationIssue(None, f"article has {len(article_words)} words, expected about {approx} ({low}-{high})"))
+
+    if len(questions) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} items, got {len(questions)}"))
+
+    stems: list[str] = []
+    previous_first = -1
+    order_broken = False
+    for q in questions:
+        qid = q.get("questionId")
+        mc3 = q.get("mc3") or {}
+        stem = mc3.get("stem")
+        options = mc3.get("options")
+        if not isinstance(stem, str) or not stem.strip():
+            issues.append(ValidationIssue(qid, "mc3.stem is missing"))
+        else:
+            stems.append(stem.strip().lower())
+        if not isinstance(options, list) or len(options) != option_count or any(not isinstance(o, str) or not o.strip() for o in options):
+            issues.append(ValidationIssue(qid, f"expected {option_count} non-empty options"))
+            continue
+        if len({o.strip().lower() for o in options}) != len(options):
+            issues.append(ValidationIssue(qid, "duplicate options within one item"))
+        correct = mc3.get("correctIndex")
+        if not isinstance(correct, int) or isinstance(correct, bool) or not 0 <= correct < option_count:
+            issues.append(ValidationIssue(qid, "correctIndex missing or out of range"))
+        elif article_words and _copied_run(options[correct], article_words, 7):
+            issues.append(ValidationIssue(qid, "correct option copies 7+ consecutive words of the article; it must be a paraphrase"))
+        evidence = mc3.get("evidenceParagraphIds")
+        if not isinstance(evidence, list) or not evidence or any(e not in para_ids for e in evidence):
+            issues.append(ValidationIssue(qid, "evidenceParagraphIds must list real paragraph ids"))
+        elif part.constraints.get("itemsFollowTextOrder"):
+            first = min(para_ids.index(e) for e in evidence)
+            if first < previous_first:
+                order_broken = True
+            previous_first = max(previous_first, first)
+    if order_broken:
+        issues.append(ValidationIssue(None, "items must follow the order of the article (evidence paragraphs must not move backwards)"))
+    if len(set(stems)) != len(stems):
+        issues.append(ValidationIssue(None, "two items ask the same question"))
+
     issues.extend(_check_skill_tags(part.module, questions, "questionId"))
     return issues
 
@@ -385,7 +538,6 @@ def validate_cloze_mc4_language_elements(part: PartBlueprint, content: dict[str,
         if not isinstance(correct_index, int) or not (0 <= correct_index < max(1, option_count)):
             issues.append(ValidationIssue(q.get("questionId"), "correctIndex missing or out of range"))
 
-        category = q.get("category")
         if category not in _LANGUAGE_ELEMENT_CATEGORIES:
             issues.append(ValidationIssue(q.get("questionId"), f"category must be one of {sorted(_LANGUAGE_ELEMENT_CATEGORIES)}"))
         else:
@@ -526,6 +678,7 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "text_reconstruction_sentence_matching": validate_text_reconstruction_sentence_matching,
     "section_statement_matching": validate_section_statement_matching,
     "detail_tristate_with_global_heading": validate_detail_tristate_with_global_heading,
+    "reading_detail_mc3": validate_reading_detail_mc3,
     "cloze_mc4_language_elements": validate_cloze_mc4_language_elements,
     "choice_long_form_writing": validate_choice_long_form_writing,
 }

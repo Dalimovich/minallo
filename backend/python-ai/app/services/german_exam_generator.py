@@ -75,7 +75,9 @@ _TOPIC_BANKS: dict[str, list[dict[str, str]]] = {
 
 
 def _topic_bank(module: str, profile: ExamProfile) -> list[dict[str, str]]:
-    del profile  # reserved for exam-specific topic curation later
+    # An exam profile may own its topic banks (Goethe does); others use the engine defaults.
+    if profile.topic_banks and module in profile.topic_banks:
+        return [dict(t) for t in profile.topic_banks[module]]
     return _TOPIC_BANKS.get("writing" if module == "speaking" else module, [])
 
 
@@ -204,6 +206,7 @@ def _envelope(
             "cefrLevel": profile.cefr_level,
             "profileId": profile.profile_id,
             "profileVersion": profile.profile_version,
+            "displayName": profile.display_name,
         },
         "module": module,
         "part": {

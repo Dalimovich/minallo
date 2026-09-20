@@ -84,3 +84,14 @@ def test_e2e_manifest_fixture_matches_the_profile_files() -> None:
     if os.environ.get("UPDATE_MANIFEST_FIXTURE") == "1":
         path.write_text(json.dumps(current, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf8")
     assert json.loads(path.read_text(encoding="utf8")) == json.loads(json.dumps(current))
+
+
+def test_every_profile_part_only_allows_known_skill_tags() -> None:
+    """A tag the module's controlled vocabulary does not contain would be offered to the LLM in the
+    prompt and then rejected by validation (wasted repairs), so profiles may only list known tags."""
+    from app.services.german_exam_skill_tags import validate_tags
+
+    for profile in GERMAN_EXAM_PROFILES.values():
+        for module, parts in profile.modules.items():
+            for part in parts or ():
+                validate_tags(part.module, list(part.allowed_skill_tags))  # raises on an unknown tag

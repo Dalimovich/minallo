@@ -58,7 +58,11 @@ test('profile change detection', () => {
 test('skills the exam lacks or cannot generate yet are blocked, never routed to another exam', () => {
   const goethe = { profileId: 'goethe_c1', manifest: GOETHE, status: 'ready' };
   assert.match(ws.skillBlockReason(goethe, 'sprachbausteine'), /no such section/);
-  assert.match(ws.skillBlockReason(goethe, 'reading'), /coming soon/);
+  assert.match(ws.skillBlockReason(goethe, 'reading'), /coming soon/); // no part generatable yet
+  // as soon as ONE part of a module is generatable the module opens (the other parts stay disabled)
+  const partial = { profileId: 'goethe_c1', status: 'ready', manifest: { ...GOETHE, modules: [{ ...mod('reading', 'Lesen', 4, false), parts: [part('lesen_1', false), part('lesen_2', false), part('lesen_3', true), part('lesen_4', false)] }] } };
+  assert.equal(ws.skillBlockReason(partial, 'reading'), '');
+  assert.match(ws.renderOverviewHtml(partial.manifest), /1 of 4 ready/);
   const telc = { profileId: 'telc_c1_hochschule', manifest: TELC, status: 'ready' };
   for (const s of ['reading', 'listening', 'sprachbausteine', 'writing']) assert.equal(ws.skillBlockReason(telc, s), '');
   // general practice skills and not-yet-loaded manifests are never blocked
@@ -93,4 +97,21 @@ test('the workspace has no exam-specific branching and the practice view is wire
   assert.match(practice, /_glExamSkillBlocked/);
   assert.match(practice, /_glRegisterProfileReset/);
   assert.match(practice, /initExamWorkspace/);
+});
+
+test('the Reading view takes its parts, task types and per-item points from the exam manifest', () => {
+  const practice = readFileSync(resolve(ROOT, 'frontend/views/practice/practice.js'), 'utf8');
+  // no exam-specific part table left except the telc fallback used before a manifest exists
+  assert.doesNotMatch(practice, /RD_PART_TASK_TYPES|RD_PART_LABELS/);
+  assert.match(practice, /function rdParts\(\)/);
+  assert.match(practice, /window\._glExamState/);
+  assert.match(practice, /rdPointsPerCorrect\(\)/);
+  // renderers and graders are dispatched by task type, one entry per task type
+  for (const taskType of ['text_reconstruction_sentence_matching', 'section_statement_matching', 'detail_tristate_with_global_heading', 'reading_detail_mc3']) {
+    assert.match(practice, new RegExp(`${taskType}: rdRender`), `renderer for ${taskType}`);
+    assert.match(practice, new RegExp(`${taskType}: rdGrade`), `grader for ${taskType}`);
+  }
+  // the candidate legend must be able to label 10 candidates (Goethe Teil 3), not just 8
+  assert.match(practice, /RD_LETTERS = 'ABCDEFGHIJKL'/);
+  assert.doesNotMatch(practice, /var letters = 'ABCDEFGH';\s*return _glEscape\(text\)/);
 });

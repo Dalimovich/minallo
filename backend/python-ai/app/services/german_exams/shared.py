@@ -115,4 +115,7 @@ class ExamProfile:
     # modules without a spec follow in `modules` order.
     display_name: str | None = None
     module_specs: dict[str, ModuleSpec] | None = None
+    # module -> topic candidates ({"topicId", "label"}). Topics change content flavour only, never
+    # structure. None -> the engine's default topic banks (currently telc-oriented).
+    topic_banks: dict[str, tuple[dict[str, str], ...]] | None = None
 
