@@ -36,6 +36,7 @@ const CEFR_OVERRIDE_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 // registry, not another branch.
 const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; legacyLevelValues: string[] }> = [
   { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
+  { profileId: 'goethe_c1', family: 'Goethe', legacyLevelValues: ['C1'] },
 ];
 
 export function resolveGermanExamProfileIdClient(

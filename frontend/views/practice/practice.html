@@ -106,8 +106,13 @@
            the card-list level); an unsupported-profile learner who opens an
            exam card sees that module's own explicit unsupported-profile
            message (see e.g. window._glOpenSprachbausteineView). -->
-      <div class="gl-skill-group" data-skill-group="exam">
+      <div class="gl-skill-group" data-skill-group="exam" id="glExamGroup" data-exam-state="idle">
         <h3 class="gl-skill-group-title">Exam Practice</h3>
+        <!-- Built from the learner's exam manifest (js/features/german-exam/exam-workspace.ts):
+             exam name + the modules this exam actually has. Cards below are shown/hidden from
+             the same manifest, so a module the exam lacks (e.g. Sprachbausteine for Goethe) is
+             simply absent, never disabled. -->
+        <section class="gl-exam-overview" id="glExamOverview" aria-live="polite" hidden></section>
         <div class="gl-skill-grid-v2">
           <article class="gl-skill-card-v2 gl-skill-card" data-skill="listening" role="button" tabindex="0" aria-label="Open listening practice" style="--gl-card-grad:linear-gradient(90deg,#2563eb,#38bdf8)">
             <div class="gl-skill-bar"></div>

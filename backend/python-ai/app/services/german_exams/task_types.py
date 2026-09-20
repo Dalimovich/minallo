@@ -1,0 +1,41 @@
+"""Task-type registry: which `PartBlueprint.task_type` values the engine can
+generate today. Profiles declare structure; task types decide behaviour
+(generation / validation / rendering / grading). A profile part whose task type
+is not yet implemented is still a valid part of the exam (it shows in the exam
+navigation), but generating it fails cleanly with 501 instead of being routed
+to some other exam's task type.
+
+Flip a task type to True only when its generator, validator and renderer exist.
+"""
+
+from __future__ import annotations
+
+TASK_TYPES: dict[str, bool] = {
+    # --- telc C1 Hochschule (reusable by any exam whose interaction is equivalent) ---
+    "speaker_statement_matching": True,
+    "sentence_completion_mc3": True,
+    "structured_note_completion": True,
+    "text_reconstruction_sentence_matching": True,
+    "section_statement_matching": True,
+    "detail_tristate_with_global_heading": True,
+    "cloze_mc4_language_elements": True,
+    "choice_long_form_writing": True,
+    "presentation_summary_followup": True,
+    "quote_guided_discussion": True,
+    # --- Goethe-Zertifikat C1 ---
+    "contextual_cloze_mc4": False,
+    "reading_detail_mc3": False,
+    "multi_author_statement_matching_with_none": False,
+    "multi_source_statement_matching": False,
+    "listening_tristate": False,
+    "segmented_dialogue_mc3": False,
+    "listening_detail_mc3": False,
+    "forum_discussion_post": False,
+    "formal_context_message": False,
+    "presentation_with_followup": False,
+    "guided_pair_discussion": False,
+}
+
+
+def is_task_type_implemented(task_type: str) -> bool:
+    return TASK_TYPES.get(task_type, False)

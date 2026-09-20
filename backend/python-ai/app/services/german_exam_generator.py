@@ -26,6 +26,7 @@ from .german_exam_writing import generate_writing_part
 from .german_exam_speaking import generate_speaking_part
 from .german_exam_performance import pick_topic, record_topic_used
 from .german_exams import ExamProfile, GermanExamProfileError, PartBlueprint, get_part, get_profile
+from .german_exams.task_types import is_task_type_implemented
 
 # Placeholder topic banks per module.
 # Topic is content flavor only; exam structure is untouched by topic choice.
@@ -78,6 +79,15 @@ def _topic_bank(module: str, profile: ExamProfile) -> list[dict[str, str]]:
     return _TOPIC_BANKS.get("writing" if module == "speaking" else module, [])
 
 
+def _require_available(profile: ExamProfile, part: PartBlueprint) -> None:
+    """A part that is in the exam structure but not built yet (or whose task type has no
+    implementation) must fail cleanly here — never fall through to another exam's generator."""
+    if not part.available or not is_task_type_implemented(part.task_type):
+        raise NotImplementedError(
+            f"{profile.profile_id}/{part.module}/{part.part_id} ({part.task_type}) is not available yet"
+        )
+
+
 def _dispatch_module(module: str):
     if module == "listening":
         return _generate_listening
@@ -124,6 +134,7 @@ def generate_task(
     picked normally (still avoids recent repeats), just not recorded here."""
     profile = get_profile(profile_id)
     part = get_part(profile_id, module, part_id)
+    _require_available(profile, part)
 
     # Official parts are served from pre-generated, pre-validated stock. A
     # miss (empty/exhausted stock, missing migration, any error) falls
@@ -167,6 +178,7 @@ def generate_stock_task(profile_id: str, module: str, part_id: str, topic: dict[
     generation; no user, no weakness plan, no topic-history write."""
     profile = get_profile(profile_id)
     part = get_part(profile_id, module, part_id)
+    _require_available(profile, part)
     content, validation_meta = _dispatch_module(module)(profile, part, [], topic)
     return _envelope(profile, module, part, "adaptive_practice", [], None, topic, content, validation_meta, uuid.uuid4().hex)
 

@@ -13,6 +13,8 @@ import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
+import { isRegisteredExamProfileId } from '../lib/german-learner-profile';
+import { checkExamPart, isIdentifier } from '../lib/german-exam-manifest';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const CONSUME_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_EXAM_CONSUME_RATE_LIMIT_MAX', '60'), 10);
@@ -21,9 +23,6 @@ const CONSUME_RATE_LIMIT_WINDOW = parseInt(
   10
 );
 
-const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening', 'reading', 'language_elements', 'writing', 'speaking'];
-const VALID_PART_IDS = ['hv1', 'hv2', 'hv3', 'lesen_1', 'lesen_2', 'lesen_3', 'sprachbausteine_1', 'schreiben_1', 'sprechen_1', 'sprechen_2'];
 
 interface ConsumeResponseBody {
   [key: string]: unknown;
@@ -64,14 +63,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const topicId = body.topicId;
   const generationId = body.generationId;
 
-  if (typeof profileId !== 'string' || !VALID_PROFILE_IDS.includes(profileId)) {
+  if (!isRegisteredExamProfileId(profileId)) {
     return fail(400, 'invalid or unsupported profileId');
   }
-  if (typeof module !== 'string' || !VALID_MODULES.includes(module)) {
-    return fail(400, 'invalid or unsupported module');
-  }
-  if (typeof partId !== 'string' || !VALID_PART_IDS.includes(partId)) {
-    return fail(400, 'invalid or unsupported partId');
+  if (!isIdentifier(module)) return fail(400, 'invalid or unsupported module');
+  if (!isIdentifier(partId)) return fail(400, 'invalid or unsupported partId');
+  if ((await checkExamPart(profileId, module, partId)) === 'unknown') {
+    return fail(400, 'invalid or unsupported module/partId for this exam profile');
   }
   if (typeof topicId !== 'string' || !topicId) return fail(400, 'topicId is required');
 

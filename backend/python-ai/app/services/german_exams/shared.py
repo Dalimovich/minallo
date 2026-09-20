@@ -19,10 +19,63 @@ class GermanExamProfileError(Exception):
     pass
 
 
+# ScoringSpec.mode values.
+SCORING_FIXED_PER_ITEM = "fixed_per_item"  # points = raw_correct * points_per_correct
+SCORING_LOOKUP_TABLE = "lookup_table"  # points = official raw -> result table (no arithmetic)
+SCORING_RUBRIC = "rubric"  # productive skills, graded against criteria
+
+
 @dataclass(frozen=True)
 class ScoringSpec:
+    """How a part or module is scored. Backward compatible: the original
+    two-field form `ScoringSpec(max_points=..., points_per_correct=...)` still
+    means fixed-per-item (or rubric when points_per_correct is None), so
+    every existing exam profile is unchanged."""
+
     max_points: int
-    points_per_correct: int | None  # None for productive skills
+    points_per_correct: int | None = None  # None for productive skills / lookup tables
+    mode: str | None = None  # None -> derived from points_per_correct (see resolved_mode)
+    pass_points: int | None = None
+    # lookup_table only: index = number of raw items correct, value = official result points.
+    raw_item_count: int | None = None
+    raw_to_result_points: tuple[int, ...] | None = None
+    # rubric only: official max points per criterion / band fractions (A..E), when verified.
+    criteria_max_points: dict[str, int] | None = None
+    band_fractions: dict[str, float] | None = None
+
+    @property
+    def resolved_mode(self) -> str:
+        if self.mode is not None:
+            return self.mode
+        return SCORING_FIXED_PER_ITEM if self.points_per_correct is not None else SCORING_RUBRIC
+
+    def __post_init__(self) -> None:
+        if self.resolved_mode != SCORING_LOOKUP_TABLE:
+            return
+        table = self.raw_to_result_points
+        if self.raw_item_count is None or table is None:
+            raise ValueError("lookup_table scoring needs raw_item_count and raw_to_result_points")
+        if len(table) != self.raw_item_count + 1:
+            raise ValueError("raw_to_result_points must have one entry per raw score 0..raw_item_count")
+        if table[0] != 0 or table[-1] != self.max_points:
+            raise ValueError("lookup table must map 0 -> 0 and raw_item_count -> max_points")
+        if any(b < a for a, b in zip(table, table[1:])):
+            raise ValueError("lookup table must be non-decreasing")
+        if self.points_per_correct is not None:
+            raise ValueError("lookup_table scoring must not also set points_per_correct")
+
+
+@dataclass(frozen=True)
+class ModuleSpec:
+    """Module-level facts (label, timing, module scoring) that are not a
+    property of any single part. Optional per module: a module without a
+    ModuleSpec falls back to the default label and no timing."""
+
+    label: str  # learner-facing module name, e.g. "Lesen"
+    duration_seconds: int | None = None  # official module duration, when verified
+    preparation_seconds: int | None = None  # official preparation time (speaking), when verified
+    scoring: ScoringSpec | None = None  # module-level scoring (e.g. raw->100 lookup), when verified
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,6 +91,10 @@ class PartBlueprint:
     grading_dimensions: tuple[str, ...] | None = None  # writing/speaking only
     approx_duration_seconds: int | None = None  # audio/part length per official material — NOT prep time
     time_limit_seconds: int | None = None  # reserved for future exam-simulation mode, unused in Phase 1
+    # False while the part is part of the official exam structure but Minallo cannot generate
+    # it yet: it shows in the exam navigation, generation fails cleanly (501), and it is never
+    # served by another exam's implementation. Flip to True in the exam's own profile file.
+    available: bool = True
 
 
 @dataclass(frozen=True)
@@ -53,4 +110,9 @@ class ExamProfile:
     verified_at: str  # ISO date this profile's structure was last checked against source_reference
     profile_version: int  # bump on any structural change
     modules: dict[str, tuple[PartBlueprint, ...] | None]  # module -> parts, or None if not yet implemented
+    # Learner-facing exam name (e.g. "Goethe-Zertifikat C1") and per-module facts.
+    # The ORDER of module_specs is the order the exam navigation shows modules in;
+    # modules without a spec follow in `modules` order.
+    display_name: str | None = None
+    module_specs: dict[str, ModuleSpec] | None = None
 

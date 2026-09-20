@@ -28,8 +28,13 @@ interface ProfileRow {
 // Exam profiles with a generated blueprint. Same shape as the Python registry
 // (family + exact legacy level values).
 const EXAM_PROFILE_REGISTRY: ReadonlyArray<{ profileId: string; family: string; levels: readonly string[] }> = [
-  { profileId: 'telc_c1_hochschule', family: 'telc', levels: ['C1 Hochschule'] }
+  { profileId: 'telc_c1_hochschule', family: 'telc', levels: ['C1 Hochschule'] },
+  { profileId: 'goethe_c1', family: 'Goethe', levels: ['C1'] }
 ];
+
+export function isRegisteredExamProfileId(profileId: unknown): profileId is string {
+  return typeof profileId === 'string' && EXAM_PROFILE_REGISTRY.some((p) => p.profileId === profileId);
+}
 
 export function resolveGermanExamProfileId(
   family: string | null | undefined,

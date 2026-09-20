@@ -18,6 +18,8 @@
 // /german-exam/results uses.
 
 import { jsonResponse, fail, handleOptions } from '../lib/responses';
+import { isRegisteredExamProfileId } from '../lib/german-learner-profile';
+import { checkExamPart, isIdentifier } from '../lib/german-exam-manifest';
 import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
@@ -35,8 +37,6 @@ const GRADE_UPSTREAM_TIMEOUT_MS = optionalEnv('AI_GERMAN_EXAM_GRADE_WRITING_UPST
   ? parseInt(optionalEnv('AI_GERMAN_EXAM_GRADE_WRITING_UPSTREAM_TIMEOUT_MS', ''), 10)
   : undefined;
 
-const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_PART_IDS = ['schreiben_1'];
 // Mirrors writing_coach.py's ALLOWED_TASK_TYPES — kept as a literal copy
 // here (TS edge function, can't import the Python module) rather than a
 // runtime dependency; python-ai re-validates this server-side regardless.
@@ -108,10 +108,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     return fail(400, 'selectedTopic with title, situation and instructions is required');
   }
 
-  if (typeof profileId !== 'string' || !VALID_PROFILE_IDS.includes(profileId)) {
+  if (!isRegisteredExamProfileId(profileId)) {
     return fail(400, 'invalid or unsupported profileId');
   }
-  if (typeof partId !== 'string' || !VALID_PART_IDS.includes(partId)) {
+  // This request shape (two statements, TELC-style selectedTopic) is only valid for parts whose
+  // task type is choice_long_form_writing; python-ai enforces the task type, the manifest
+  // check here rejects parts that are not even in the profile's writing module.
+  if (!isIdentifier(partId) || (await checkExamPart(profileId, 'writing', partId)) === 'unknown') {
     return fail(400, 'invalid or unsupported partId');
   }
   if (typeof topicId !== 'string' || !topicId) {

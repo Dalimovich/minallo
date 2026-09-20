@@ -4215,3 +4215,17 @@
     transition: none !important;
   }
 }
+
+/* ── Profile-driven exam overview (js/features/german-exam/exam-workspace.ts) ── */
+.gl-skill-card[hidden] { display: none !important; }
+.gl-exam-overview { margin: 0 0 14px; padding: 14px 16px; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 14px; background: var(--surface, rgba(127,127,127,.06)); }
+.gl-exam-overview[hidden] { display: none; }
+.gl-exam-title { margin: 0 0 2px; font-size: 1.05rem; }
+.gl-exam-sub { margin: 0 0 10px; opacity: .75; font-size: .85rem; }
+.gl-exam-modules { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.gl-exam-module { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgba(127,127,127,.08); }
+.gl-exam-module-name { font-weight: 600; }
+.gl-exam-module-meta { font-size: .78rem; opacity: .75; }
+.gl-exam-soon { font-size: .7rem; padding: 1px 6px; border-radius: 999px; background: rgba(127,127,127,.18); margin-left: 4px; }
+.gl-skill-card-soon .gl-skill-open-btn { opacity: .6; }
+.gl-exam-retry { margin-left: 6px; cursor: pointer; }

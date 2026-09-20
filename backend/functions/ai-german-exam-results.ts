@@ -14,6 +14,8 @@ import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
+import { isRegisteredExamProfileId } from '../lib/german-learner-profile';
+import { checkExamPart, isIdentifier } from '../lib/german-exam-manifest';
 import { logSecurityEvent } from '../lib/logger';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
@@ -23,9 +25,6 @@ const RESULTS_RATE_LIMIT_WINDOW = parseInt(
   10
 );
 
-const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening', 'reading', 'language_elements', 'writing', 'speaking'];
-const VALID_PART_IDS = ['hv1', 'hv2', 'hv3', 'lesen_1', 'lesen_2', 'lesen_3', 'sprachbausteine_1', 'schreiben_1', 'sprechen_1', 'sprechen_2'];
 const MAX_ITEMS = 50;
 
 interface ResultsResponseBody {
@@ -69,7 +68,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   if (typeof examFamily !== 'string' || !examFamily) return fail(400, 'examFamily is required');
   if (typeof targetLevel !== 'string' || !targetLevel) return fail(400, 'targetLevel is required');
-  if (typeof module !== 'string' || !VALID_MODULES.includes(module)) return fail(400, 'invalid or unsupported module');
+  if (!isIdentifier(module)) return fail(400, 'invalid or unsupported module');
   if (!Array.isArray(rawItems) || rawItems.length === 0) return fail(400, 'items is required');
   if (rawItems.length > MAX_ITEMS) return fail(400, 'too many items');
 
@@ -77,9 +76,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   for (const raw of rawItems) {
     if (!raw || typeof raw !== 'object') continue;
     const r = raw as Record<string, unknown>;
-    if (typeof r.profileId !== 'string' || !VALID_PROFILE_IDS.includes(r.profileId)) continue;
-    if (typeof r.module !== 'string' || !VALID_MODULES.includes(r.module)) continue;
-    if (typeof r.partId !== 'string' || !VALID_PART_IDS.includes(r.partId)) continue;
+    // Each item carries the profile it was attempted under (a telc attempt finishing after the
+    // learner switched to Goethe must still land in telc history), so validation is per item:
+    // registered profile -> module exists in it -> part exists in that module.
+    if (!isRegisteredExamProfileId(r.profileId)) continue;
+    if (!isIdentifier(r.module) || !isIdentifier(r.partId)) continue;
+    if ((await checkExamPart(r.profileId, r.module, r.partId)) === 'unknown') continue;
     if (typeof r.taskType !== 'string' || !r.taskType) continue;
     if (typeof r.itemId !== 'string' || !r.itemId) continue;
     items.push(r);

@@ -9,7 +9,7 @@ task-type implementations, keyed by `PartBlueprint.task_type`.
 
 from __future__ import annotations
 
-from .shared import ExamProfile, PartBlueprint, ScoringSpec
+from .shared import ExamProfile, ModuleSpec, PartBlueprint, ScoringSpec
 
 _TELC_C1_HOCHSCHULE_HOEREN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
@@ -283,6 +283,16 @@ TELC_C1_HOCHSCHULE = ExamProfile(
     source_version="verified against current telc.net exam-format description",
     verified_at="2026-09-17",
     profile_version=5,
+    display_name="telc Deutsch C1 Hochschule",
+    # Navigation order. Lesen and Sprachbausteine officially share one 90-minute
+    # block (LESEN_SPRACHBAUSTEINE_SHARED_MINUTES), so neither carries its own duration.
+    module_specs={
+        "reading": ModuleSpec(label="Lesen"),
+        "listening": ModuleSpec(label="Hören"),
+        "language_elements": ModuleSpec(label="Sprachbausteine"),
+        "writing": ModuleSpec(label="Schreiben", duration_seconds=SCHREIBEN_MINUTES * 60),
+        "speaking": ModuleSpec(label="Sprechen"),
+    },
     modules={
         "listening": _TELC_C1_HOCHSCHULE_HOEREN,
         "reading": _TELC_C1_HOCHSCHULE_LESEN,

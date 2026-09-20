@@ -12,6 +12,8 @@ import { optionalEnv, requireEnv } from '../lib/env';
 import { verifySupabaseToken, extractBearerToken } from '../lib/supabase-auth';
 import { pythonAiConfigured, forwardToPython } from '../lib/python-ai-proxy';
 import { enforceEventRateLimit } from '../lib/rate-limit';
+import { isRegisteredExamProfileId } from '../lib/german-learner-profile';
+import { checkExamModule, isIdentifier } from '../lib/german-exam-manifest';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const WEAKNESSES_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_EXAM_WEAKNESSES_RATE_LIMIT_MAX', '60'), 10);
@@ -19,9 +21,6 @@ const WEAKNESSES_RATE_LIMIT_WINDOW = parseInt(
   optionalEnv('AI_GERMAN_EXAM_WEAKNESSES_RATE_LIMIT_WINDOW_MS', String(60 * 60 * 1000)),
   10
 );
-
-const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening', 'reading', 'language_elements', 'writing', 'speaking'];
 
 interface WeaknessResponseBody {
   [key: string]: unknown;
@@ -58,10 +57,12 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
 
   const profileId = body.profileId;
   const module = body.module;
-  if (typeof profileId !== 'string' || !VALID_PROFILE_IDS.includes(profileId)) {
+  if (!isRegisteredExamProfileId(profileId)) {
     return fail(400, 'invalid or unsupported profileId');
   }
-  if (typeof module !== 'string' || !VALID_MODULES.includes(module)) {
+  // Read-only view of the learner's OWN history: any registered profile is allowed (history is
+  // namespaced by profileId), but the module must exist in that profile.
+  if (!isIdentifier(module) || (await checkExamModule(profileId, module)) === 'unknown') {
     return fail(400, 'invalid or unsupported module');
   }
 

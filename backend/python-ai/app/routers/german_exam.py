@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 from ..auth import require_internal_token
 from ..services import gen_timing
 from ..services.german_exam_generator import generate_task
+from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
 from ..services.german_exam_writing_grading import grade_writing_submission
@@ -79,6 +80,21 @@ def generate_exam_task_endpoint(payload: GenerateExamTaskRequest) -> dict[str, A
         if isinstance(result, dict):
             result["diagnostics"] = diagnostics
         return result
+
+
+class ManifestRequest(BaseModel):
+    profileId: str
+
+
+@router.post("/german-exam/manifest")
+def exam_manifest_endpoint(payload: ManifestRequest) -> dict[str, Any]:
+    """Serializable exam structure for the profile-driven exam workspace. The
+    Cloudflare function resolves profileId from the authenticated learner's saved
+    profile; this endpoint only serialises the profile file."""
+    try:
+        return build_manifest(get_profile(payload.profileId))
+    except GermanExamProfileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 class ExamResultItem(BaseModel):
@@ -181,6 +197,12 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
         part = get_part(payload.profileId, "writing", payload.partId)
     except GermanExamProfileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    # The grader registry is keyed by task type. Only TELC's choice_long_form_writing has a
+    # grader today; a Goethe task must never be scored with TELC's rubric.
+    if part.task_type != "choice_long_form_writing":
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                            detail=f"grading for task type {part.task_type!r} is not available yet")
 
     text = (payload.text or "").strip()
     if payload.selectedTopic.questionId != payload.topicId:

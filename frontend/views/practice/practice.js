@@ -108,6 +108,12 @@
       ]
     };
     var _glActiveSkill = '';
+    // Profile-specific transient state (generated part, prepared/prefetched part, TTS, part
+    // navigation) lives inside the per-module IIFEs below. Each registers a reset here; the exam
+    // workspace runs them all when the learner's resolved exam profile changes. Historical
+    // progress is server-side and namespaced by profileId, so it is never touched.
+    var _glProfileResetHooks = [];
+    window._glRegisterProfileReset = function (fn) { _glProfileResetHooks.push(fn); };
     var _glToolMode = 'quiz';
     var _glQuizItems = [];
     var _glQuizIndex = 0;
@@ -443,6 +449,13 @@
     }
 
     window._glOpenSkill = function (skill) {
+      // Exam skills come from the learner's exam manifest: a section the exam lacks, or one
+      // that is not generatable yet, never falls through to another exam's view.
+      var _glBlockReason = typeof window._glExamSkillBlocked === 'function' ? window._glExamSkillBlocked(skill) : '';
+      if (_glBlockReason) {
+        if (typeof showToast === 'function') showToast('Not available yet', _glBlockReason);
+        return;
+      }
       // Leaving Hören (or never having opened it) is a cheap no-op; this
       // guarantees speech never keeps playing invisibly once another skill
       // is opened. See the Hören IIFE below for _glCloseListeningView.
@@ -2380,6 +2393,14 @@
         window._glOpenReadingView();
       });
 
+      window._glRegisterProfileReset(function (nextProfileId) {
+        rd.genToken++; rd._genRequestToken++;
+        if (rd.profileId && rd.profileId !== nextProfileId) {
+          rd.usingGenerated = false; rd.profileId = null; rd.profileVersion = null; rd.generationId = null;
+          rd.content = null; rd.genAnswers = {}; rd.genChecked = false; rd.partId = null; rd._lastGenFailed = false;
+        }
+      });
+
       function rdWireHeader() {
         var tabsWrap = document.querySelector('.gl-reading-tabs');
         if (tabsWrap && !tabsWrap._rdWired) {
@@ -3576,6 +3597,15 @@
           sbShowGenerationError();
         }
       };
+
+      window._glRegisterProfileReset(function (nextProfileId) {
+        sb._genRequestToken++;
+        if (sb.profileId && sb.profileId !== nextProfileId) {
+          sb.usingGenerated = false; sb.profileId = null; sb.profileVersion = null; sb.generationId = null;
+          sb.content = null; sb.genAnswers = {}; sb.genChecked = false; sb._lastGenFailed = false;
+          sb._resultsSavePromise = null;
+        }
+      });
 
       // Retries opening Sprachbausteine once the profile finishes loading,
       // mirroring Lesen's/Hören's ss-profile-updated listeners. Guarded the
@@ -5812,6 +5842,13 @@
         if (lsPrefetch.state !== 'idle') return; // already prefetched/in flight/consumed this view load — never re-trigger
         var profileId = lsResolveProfileId();
         if (!profileId) return; // no supported profile — nothing to prefetch
+        // Only prefetch a part the learner's exam actually has and can generate.
+        var _avail = typeof window._glExamPartAvailability === 'function' ? window._glExamPartAvailability('listening', 'hv1') : 'yes';
+        if (_avail === 'pending') {
+          if (typeof window._glExamOnReady === 'function') window._glExamOnReady(function () { window._glMaybePrefetchHV1(); });
+          return;
+        }
+        if (_avail === 'no') return;
         var myEpoch = lsPrefetchEpoch;
         lsPrefetch.state = 'pending';
         lsPrefetch.profileId = profileId;
@@ -6054,6 +6091,18 @@
       // Called whenever the user leaves Hören (switching skill or going back
       // to the German Practice home) — see the _glOpenSkill/_glBackToHome
       // edits below. Must never leave speech playing invisibly elsewhere.
+      window._glRegisterProfileReset(function (nextProfileId) {
+        lsPlayer.pauseForLeave(); // stop any TTS from the previous exam
+        ls._genRequestToken++;
+        lsPrefetchInvalidate(); // a prepared part built for the previous exam must never be served
+        if (ls.profileId && ls.profileId !== nextProfileId) {
+          ls.usingGenerated = false; ls.profileId = null; ls.profileVersion = null; ls.generationId = null;
+          ls.set = null; ls.questions = []; ls.index = 0; ls.answers = {}; ls.hintLevel = {}; ls.transcriptRevealed = {};
+          ls.attemptsBuffer = []; ls._speakerOrder = []; ls.partId = 'hv1'; ls.done = false;
+          ls._lastGenFailed = false; ls._resultsSavePromise = null;
+        }
+      });
+
       window._glCloseListeningView = function () {
         lsPlayer.pauseForLeave();
         // Invalidate any in-flight generate request so a response that
@@ -6826,5 +6875,33 @@
 
     // Re-apply hero badge after profile loads (app.js fires this when profile is ready)
     window.addEventListener('ss-profile-updated', _glRefreshHero);
+
+    // Profile-driven exam workspace (manifest -> navigation, profile-switch reset).
+    import('/js/features/german-exam/exam-workspace.js').then(function (mod) {
+      mod.initExamWorkspace({
+        base: typeof BACKEND_URL === 'string' ? BACKEND_URL : '',
+        profileReady: function () {
+          var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+          return !!p && p.state === 'ready';
+        },
+        resolveProfileId: function () {
+          var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+          return (p && p.examProfileId) || null;
+        },
+        onProfileChange: function (prev, next) {
+          _glCancelAllGenerations();
+          if (typeof window._glCloseListeningView === 'function') window._glCloseListeningView();
+          _glProfileResetHooks.forEach(function (fn) { try { fn(next); } catch (e) { /* keep resetting the rest */ } });
+          if (prev && _glActiveSkill && typeof window._glBackToHome === 'function') window._glBackToHome();
+        },
+        activeSkill: function () { return _glActiveSkill; },
+        onActiveSkillBlocked: function (skill, reason) {
+          if (typeof window._glBackToHome === 'function') window._glBackToHome();
+          if (typeof showToast === 'function') showToast('Not available yet', reason);
+        }
+      });
+    }).catch(function (err) {
+      if (typeof console !== 'undefined' && console.warn) console.warn('[German exam] workspace failed to load.', err);
+    });
   } // end _init
 })();

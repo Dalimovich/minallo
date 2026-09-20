@@ -8,9 +8,10 @@ No exam-specific structure belongs here: to add an exam, create its own
 from __future__ import annotations
 
 from .shared import ExamProfile, GermanExamProfileError, PartBlueprint
+from .goethe_c1 import GOETHE_C1
 from .telc_c1_hochschule import TELC_C1_HOCHSCHULE
 
-_ALL_PROFILES: tuple[ExamProfile, ...] = (TELC_C1_HOCHSCHULE,)
+_ALL_PROFILES: tuple[ExamProfile, ...] = (TELC_C1_HOCHSCHULE, GOETHE_C1)
 
 GERMAN_EXAM_PROFILES: dict[str, ExamProfile] = {p.profile_id: p for p in _ALL_PROFILES}
 

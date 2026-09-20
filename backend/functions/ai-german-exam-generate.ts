@@ -20,6 +20,7 @@ import { requireActiveSubscription } from '../lib/subscription-gate';
 import { isGermanSpeakingEnabled } from '../lib/feature-flags';
 import { logSecurityEvent } from '../lib/logger';
 import { getGermanLearnerProfile, unsupportedExamProfileMessage } from '../lib/german-learner-profile';
+import { checkExamPart, isIdentifier } from '../lib/german-exam-manifest';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const GENERATE_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_RATE_LIMIT_MAX', '30'), 10);
@@ -40,11 +41,9 @@ const GENERATE_RATE_LIMIT_WINDOW = parseInt(
 // 524. AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS still overrides it.
 const GENERATE_UPSTREAM_TIMEOUT_MS = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_UPSTREAM_TIMEOUT_MS', '105000'), 10);
 
-// Phase 1 allowlist — defense in depth even though python-ai itself also
-// validates. Extend this as later phases add profiles/modules/parts.
-const VALID_PROFILE_IDS = ['telc_c1_hochschule'];
-const VALID_MODULES = ['listening', 'reading', 'language_elements', 'writing', 'speaking'];
-const VALID_PART_IDS = ['hv1', 'hv2', 'hv3', 'lesen_1', 'lesen_2', 'lesen_3', 'sprachbausteine_1', 'schreiben_1', 'sprechen_1', 'sprechen_2'];
+// No flat module/part allowlists: which modules and parts exist depends on the
+// learner's exam profile, so they are checked against that profile's manifest
+// (authoritative in python-ai, cached — see lib/german-exam-manifest.ts).
 const VALID_MODES = ['adaptive_practice'];
 const MAX_TOPIC_LENGTH = 200;
 
@@ -87,10 +86,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const learner = await getGermanLearnerProfile(serviceKey, user.id);
   if (!learner) return fail(503, 'Your profile could not be loaded right now. Please try again.');
   const profileId = learner.examProfileId;
-  if (!profileId || !VALID_PROFILE_IDS.includes(profileId)) {
+  if (!profileId) {
     return fail(422, unsupportedExamProfileMessage(learner));
   }
   const clientDisagrees = typeof earlyBody.profileId === 'string' && earlyBody.profileId !== '' && earlyBody.profileId !== profileId;
+
+  // Shape + profile-aware structure checks BEFORE any paid-usage accounting, so a request
+  // for a part that isn't in this learner's exam (e.g. sprachbausteine_1 for goethe_c1)
+  // never consumes generation cap or rate limit.
+  if (!isIdentifier(earlyBody.module)) return fail(400, 'invalid or unsupported module');
+  if (!isIdentifier(earlyBody.partId)) return fail(400, 'invalid or unsupported partId');
+  const partCheck = await checkExamPart(profileId, earlyBody.module, earlyBody.partId);
+  if (partCheck === 'unknown') return fail(400, 'invalid or unsupported module/partId for your exam');
 
   const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'ai_german_exam_generate');
   if (subBlocked) return subBlocked;
@@ -125,12 +132,8 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   // (it isn't, for speculative calls — see POST /german-exam/consume).
   const speculative = body.speculative === true;
 
-  if (typeof module !== 'string' || !VALID_MODULES.includes(module)) {
-    return fail(400, 'invalid or unsupported module');
-  }
-  if (typeof partId !== 'string' || !VALID_PART_IDS.includes(partId)) {
-    return fail(400, 'invalid or unsupported partId');
-  }
+  if (!isIdentifier(module)) return fail(400, 'invalid or unsupported module');
+  if (!isIdentifier(partId)) return fail(400, 'invalid or unsupported partId');
   if (!VALID_MODES.includes(mode)) {
     return fail(400, 'invalid mode');
   }

@@ -84,6 +84,10 @@ test('catalog: every level is valid only for its own test family', () => {
 test('exam profile id: telc + C1 Hochschule resolves, telc + B2 does not', () => {
   assert.equal(resolveGermanExamProfileIdClient('telc', 'C1 Hochschule'), 'telc_c1_hochschule');
   assert.equal(resolveGermanExamProfileIdClient('TELC', 'C1 Hochschule'), 'telc_c1_hochschule');
+  assert.equal(resolveGermanExamProfileIdClient('Goethe', 'C1'), 'goethe_c1');
+  assert.equal(resolveGermanExamProfileIdClient('goethe', 'C1'), 'goethe_c1');
+  for (const level of ['B1', 'B2', 'C2']) assert.equal(resolveGermanExamProfileIdClient('Goethe', level), null);
+  assert.equal(resolveGermanExamProfileIdClient('telc', 'C1'), null);
   assert.equal(resolveGermanExamProfileIdClient('telc', 'B2'), null);
   assert.equal(resolveGermanExamProfileIdClient('', ''), null);
 });

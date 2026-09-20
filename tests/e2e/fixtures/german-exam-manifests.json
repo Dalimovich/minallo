@@ -1,0 +1,582 @@
+{
+  "goethe_c1": {
+    "cefrLevel": "C1",
+    "displayName": "Goethe-Zertifikat C1",
+    "family": "Goethe",
+    "modules": [
+      {
+        "durationSeconds": 3900,
+        "id": "reading",
+        "label": "Lesen",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "exampleGapCount": 1,
+              "gapCount": 8,
+              "optionCount": 4,
+              "suggestedMinutes": 10,
+              "wordCountApprox": 320
+            },
+            "gradingDimensions": null,
+            "id": "lesen_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 8,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "contextual_cloze_mc4",
+            "title": "Lückentext (Multiple Choice)"
+          },
+          {
+            "constraints": {
+              "itemCount": 7,
+              "itemsFollowTextOrder": true,
+              "optionCount": 3,
+              "suggestedMinutes": 20,
+              "wordCountApprox": 680
+            },
+            "gradingDimensions": null,
+            "id": "lesen_2",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 7,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "reading_detail_mc3",
+            "title": "Sachtext verstehen"
+          },
+          {
+            "constraints": {
+              "candidateCount": 10,
+              "gapCount": 8,
+              "suggestedMinutes": 20,
+              "unusedCandidates": 2,
+              "wordCountApprox": 530
+            },
+            "gradingDimensions": null,
+            "id": "lesen_3",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 8,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "text_reconstruction_sentence_matching",
+            "title": "Text mit Sätzen rekonstruieren"
+          },
+          {
+            "constraints": {
+              "authorCount": 3,
+              "statementCount": 7,
+              "suggestedMinutes": 15,
+              "unmatchedStatements": 2,
+              "wordCountApprox": 430
+            },
+            "gradingDimensions": null,
+            "id": "lesen_4",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 7,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "multi_author_statement_matching_with_none",
+            "title": "Meinungen zuordnen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 100,
+          "mode": "lookup_table",
+          "passPoints": 60
+        }
+      },
+      {
+        "durationSeconds": 2400,
+        "id": "listening",
+        "label": "Hören",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "playsAllowed": 1,
+              "readingSeconds": 60,
+              "sourceCount": 3,
+              "statementCount": 6,
+              "wordCountApprox": 420
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 6,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "multi_source_statement_matching",
+            "title": "Podcast: drei Besprechungen zuordnen"
+          },
+          {
+            "constraints": {
+              "answerOptions": [
+                "stimmt",
+                "stimmt nicht",
+                "dazu wird nichts gesagt"
+              ],
+              "itemCount": 9,
+              "playsAllowed": 2,
+              "readingSeconds": 60,
+              "wordCountApprox": 620
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_2",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 9,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "listening_tristate",
+            "title": "Interview: stimmt / stimmt nicht / nicht im Text"
+          },
+          {
+            "constraints": {
+              "itemsPerSection": 2,
+              "optionCount": 3,
+              "playsAllowed": 1,
+              "readingSecondsPerSection": 30,
+              "sectionCount": 4,
+              "speakerCount": 3,
+              "wordCountApprox": 710
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_3",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 8,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "segmented_dialogue_mc3",
+            "title": "Gespräch in vier Abschnitten"
+          },
+          {
+            "constraints": {
+              "itemCount": 7,
+              "optionCount": 3,
+              "playsAllowed": 2,
+              "readingSeconds": 90,
+              "wordCountApprox": 540
+            },
+            "gradingDimensions": null,
+            "id": "hoeren_4",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 7,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "listening_detail_mc3",
+            "title": "Vortrag"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 100,
+          "mode": "lookup_table",
+          "passPoints": 60
+        }
+      },
+      {
+        "durationSeconds": 4500,
+        "id": "writing",
+        "label": "Schreiben",
+        "note": "Both texts together should be at least 350 words.",
+        "parts": [
+          {
+            "constraints": {
+              "contentPointCount": 4,
+              "register": "neutral",
+              "suggestedMinutes": 50,
+              "wordCountApprox": 230
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "coherence",
+              "vocabulary",
+              "structures"
+            ],
+            "id": "schreiben_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 60,
+              "mode": "rubric",
+              "passPoints": null
+            },
+            "taskType": "forum_discussion_post",
+            "title": "Diskussionsbeitrag (Forum)"
+          },
+          {
+            "constraints": {
+              "addressForm": "Sie",
+              "contentPointCount": 4,
+              "register": "formal_or_semiformal",
+              "suggestedMinutes": 25,
+              "wordCountApprox": 120
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "coherence",
+              "vocabulary",
+              "structures"
+            ],
+            "id": "schreiben_2",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 40,
+              "mode": "rubric",
+              "passPoints": null
+            },
+            "taskType": "formal_context_message",
+            "title": "(Halb-)formelle Nachricht"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 100,
+          "mode": "rubric",
+          "passPoints": 60
+        }
+      },
+      {
+        "durationSeconds": null,
+        "id": "speaking",
+        "label": "Sprechen",
+        "note": "Pair exam of about 20 minutes; the introductory warm-up is not scored.",
+        "parts": [
+          {
+            "constraints": {
+              "contentPointCount": 4,
+              "presentationMinutesApprox": 5,
+              "topicChoiceCount": 2,
+              "totalMinutesApprox": 7
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "presentation_coherence",
+              "presentation_questions_answers",
+              "vocabulary",
+              "structures",
+              "pronunciation"
+            ],
+            "id": "sprechen_1",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "presentation_with_followup",
+            "title": "Vortrag mit anschließenden Fragen"
+          },
+          {
+            "constraints": {
+              "consensusRequired": false,
+              "discussionPromptCount": 4,
+              "pairRequired": true,
+              "totalMinutesApprox": 5
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "discussion_interaction",
+              "vocabulary",
+              "structures",
+              "pronunciation"
+            ],
+            "id": "sprechen_2",
+            "implemented": false,
+            "scoring": null,
+            "taskType": "guided_pair_discussion",
+            "title": "Diskussion führen"
+          }
+        ],
+        "preparationSeconds": 1200,
+        "scoring": {
+          "maxPoints": 100,
+          "mode": "rubric",
+          "passPoints": 60
+        }
+      }
+    ],
+    "profileId": "goethe_c1",
+    "profileVersion": 1,
+    "schemaVersion": "german-exam-manifest-v1",
+    "variant": null
+  },
+  "telc_c1_hochschule": {
+    "cefrLevel": "C1",
+    "displayName": "telc Deutsch C1 Hochschule",
+    "family": "telc",
+    "modules": [
+      {
+        "durationSeconds": null,
+        "id": "reading",
+        "label": "Lesen",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "candidateCount": 8,
+              "gapCount": 6,
+              "unusedCandidates": 2,
+              "wordCountMax": 500,
+              "wordCountMin": 400
+            },
+            "gradingDimensions": null,
+            "id": "lesen_1",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 12,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "text_reconstruction_sentence_matching",
+            "title": "Textrekonstruktion"
+          },
+          {
+            "constraints": {
+              "sectionCount": 5,
+              "statementCount": 6,
+              "wordCountMax": 850,
+              "wordCountMin": 650
+            },
+            "gradingDimensions": null,
+            "id": "lesen_2",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 12,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "section_statement_matching",
+            "title": "Selektives Verstehen"
+          },
+          {
+            "constraints": {
+              "detailItemCount": 11,
+              "globalHeadingItemCount": 1,
+              "globalHeadingOptionCount": 3,
+              "wordCountMax": 1200,
+              "wordCountMin": 1000
+            },
+            "gradingDimensions": null,
+            "id": "lesen_3",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 24,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "detail_tristate_with_global_heading",
+            "title": "Detail- und Globalverstehen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": null,
+        "id": "listening",
+        "label": "Hören",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "playsAllowed": 1,
+              "speakerCount": 8,
+              "statementCount": 10,
+              "unusedStatements": 2
+            },
+            "gradingDimensions": null,
+            "id": "hv1",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 8,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "speaker_statement_matching",
+            "title": "Globalverstehen"
+          },
+          {
+            "constraints": {
+              "itemCount": 10,
+              "optionCount": 3,
+              "playsAllowed": 1,
+              "speakerCountMin": 2
+            },
+            "gradingDimensions": null,
+            "id": "hv2",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 20,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "sentence_completion_mc3",
+            "title": "Detailverstehen"
+          },
+          {
+            "constraints": {
+              "itemCount": 10,
+              "playsAllowed": 1
+            },
+            "gradingDimensions": null,
+            "id": "hv3",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 20,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "structured_note_completion",
+            "title": "Informationstransfer"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": null,
+        "id": "language_elements",
+        "label": "Sprachbausteine",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "grammarCountMax": 16,
+              "grammarCountMin": 12,
+              "itemCount": 22,
+              "lexicalCountMax": 8,
+              "lexicalCountMin": 4,
+              "optionCount": 4,
+              "orthographyCountMax": 4,
+              "orthographyCountMin": 1,
+              "wordCountMax": 350,
+              "wordCountMin": 320
+            },
+            "gradingDimensions": null,
+            "id": "sprachbausteine_1",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 22,
+              "mode": "fixed_per_item",
+              "passPoints": null
+            },
+            "taskType": "cloze_mc4_language_elements",
+            "title": "Sprachbausteine"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": 4200,
+        "id": "writing",
+        "label": "Schreiben",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "inputWordCountMax": 55,
+              "inputWordCountMin": 45,
+              "statementCount": 2,
+              "topicChoiceCount": 2,
+              "wordCountMin": 350
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "correctness",
+              "repertoire",
+              "communicative_design"
+            ],
+            "id": "schreiben_1",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 48,
+              "mode": "rubric",
+              "passPoints": null
+            },
+            "taskType": "choice_long_form_writing",
+            "title": "Schreiben"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      },
+      {
+        "durationSeconds": null,
+        "id": "speaking",
+        "label": "Sprechen",
+        "note": null,
+        "parts": [
+          {
+            "constraints": {
+              "presentationSeconds": 180,
+              "subtasks": [
+                "1A",
+                "1B"
+              ],
+              "summaryFollowupSeconds": 120,
+              "taskMaxima": {
+                "presentation": 6,
+                "summary_followup": 4
+              },
+              "topicChoiceCount": 2
+            },
+            "gradingDimensions": [
+              "presentation",
+              "summary_followup"
+            ],
+            "id": "sprechen_1",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 10,
+              "mode": "rubric",
+              "passPoints": null
+            },
+            "taskType": "presentation_summary_followup",
+            "title": "Präsentation, Zusammenfassung und Anschlussfragen"
+          },
+          {
+            "constraints": {
+              "discussionSeconds": 360,
+              "discussionTopicCount": 1,
+              "examinerTopicPoolCount": 3,
+              "taskMaxima": {
+                "discussion": 6
+              }
+            },
+            "gradingDimensions": [
+              "discussion"
+            ],
+            "id": "sprechen_2",
+            "implemented": true,
+            "scoring": {
+              "maxPoints": 6,
+              "mode": "rubric",
+              "passPoints": null
+            },
+            "taskType": "quote_guided_discussion",
+            "title": "Diskussion"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": null
+      }
+    ],
+    "profileId": "telc_c1_hochschule",
+    "profileVersion": 5,
+    "schemaVersion": "german-exam-manifest-v1",
+    "variant": "C1 Hochschule"
+  }
+}

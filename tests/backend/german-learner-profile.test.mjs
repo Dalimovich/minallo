@@ -38,6 +38,25 @@ test('registry mirrors the Python exam registry (same ids)', () => {
   for (const id of ids) assert.ok(ts.includes(`'${id}'`), `TS registry is missing ${id}`);
 });
 
+test('edge and browser registries mirror the Python registry (id, family, legacy levels)', () => {
+  const dir = resolve(ROOT, 'backend/python-ai/app/services/german_exams');
+  const py = readdirSync(dir)
+    .filter((f) => f.endsWith('.py') && !['__init__.py', 'shared.py', 'registry.py'].includes(f))
+    .map((f) => readFileSync(resolve(dir, f), 'utf8'))
+    .filter((src) => /^    profile_id="/m.test(src))
+    .map((src) => ({
+      id: /^    profile_id="(\w+)",/m.exec(src)?.[1],
+      family: /^    family="([^"]+)",/m.exec(src)?.[1],
+      levels: [.../^    legacy_level_values=\(([^)]*)\)/m.exec(src)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]),
+    }));
+  const ts = read('backend/lib/german-learner-profile.ts');
+  const client = read('frontend/js/features/auth/german-profile.ts');
+  for (const p of py) {
+    assert.ok(ts.includes(`profileId: '${p.id}', family: '${p.family}', levels: [${p.levels.map((l) => `'${l}'`).join(', ')}]`), `edge registry drifted for ${p.id}`);
+    assert.ok(client.includes(`profileId: '${p.id}', family: '${p.family}', legacyLevelValues: [${p.levels.map((l) => `'${l}'`).join(', ')}]`), `client registry drifted for ${p.id}`);
+  }
+});
+
 test('getGermanLearnerProfile reads the saved row and derives the exam profile', async () => {
   let requested = '';
   const restore = mockFetch((url) => {
