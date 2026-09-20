@@ -43,7 +43,7 @@ import random
 import re
 from .gen_timing import ContextThreadPoolExecutor as ThreadPoolExecutor
 from time import perf_counter
-from typing import Any
+from typing import Any, TypeAlias
 
 from ..config import get_settings
 
@@ -52,6 +52,7 @@ from .german_exams import ExamProfile, PartBlueprint
 from .german_exam_semantic_gate import verify_semantic_full as verify_semantic
 from .german_exam_semantic_repair import repair_items_semantic
 from .german_exam_semantic_verify import SemanticVerificationResult
+from .german_exam_semantic_chunked import verify_semantic_chunked
 from .german_exam_validator import hard_issues, validate_content
 from .llm_json import LlmResult, chat_json
 
@@ -499,6 +500,109 @@ def _repair_missing_gaps(
     return candidate
 
 
+def _single_duplicate_gap(content: dict[str, Any], gap_specs: list[dict[str, str]]) -> tuple[str, int] | None:
+    """(gapId, paragraphIndex) when Stage A's ONLY tagged-gap problem is exactly one gap id that
+    appears exactly twice, both in the same paragraph, and dropping either occurrence yields the
+    expected reading order. Anything else (a second duplicate, a missing or unknown id, a stray/
+    malformed marker, empty answers, occurrences in different paragraphs, out-of-order gaps) returns
+    None and takes the normal full Stage A regeneration. Which occurrence is the natural one is NOT
+    decided here (or anywhere in Python)."""
+    paragraphs = _tagged_paragraphs(content)
+    if paragraphs is None:
+        return None
+    joined = "\n".join(paragraphs)
+    leftover = _TAGGED_GAP_RE.sub("", joined)
+    if "{{" in leftover or "}}" in leftover:
+        return None
+    found = _extract_tagged_gaps(joined)
+    if any(not ans.strip() or "{{" in ans or "}}" in ans for _, ans in found):
+        return None
+    ids = [gid for gid, _ in found]
+    expected_ids = [g["gapId"] for g in gap_specs]
+    expected_set = set(expected_ids)
+    if any(gid not in expected_set for gid in ids):
+        return None
+    duplicated = sorted({gid for gid in ids if ids.count(gid) > 1})
+    if len(duplicated) != 1 or ids.count(duplicated[0]) != 2:
+        return None
+    dup = duplicated[0]
+    if any(ids.count(gid) != 1 for gid in expected_ids if gid != dup):
+        return None  # a missing gap (or any other non-single count)
+    first = ids.index(dup)
+    second = ids.index(dup, first + 1)
+    without_first = ids[:first] + ids[first + 1:]
+    without_second = ids[:second] + ids[second + 1:]
+    if expected_ids not in (without_first, without_second):
+        return None  # the non-duplicate gaps are not in reading order around it
+    holders = [pi for pi, para in enumerate(paragraphs) if any(gid == dup for gid, _ in _extract_tagged_gaps(para))]
+    if len(holders) != 1:
+        return None
+    return dup, holders[0]
+
+
+def _prompt_duplicate_gap_repair(
+    gap_spec: dict[str, str], paragraph: str, occurrences: list[str]
+) -> tuple[str, str]:
+    gap_id = gap_spec["gapId"]
+    system = (
+        f"This German Sprachbausteine paragraph contains the tagged gap {gap_id} TWICE (current answers: "
+        f"{json.dumps(occurrences, ensure_ascii=False)}); exactly one is allowed. Rewrite ONLY this paragraph "
+        f"so that exactly one grammatically natural {{{{{gap_id}::answer}}}} remains (category: "
+        f"{gap_spec['category']}); the other place becomes ordinary words with no marker. Preserve every other "
+        "tagged marker in the paragraph character-for-character and exactly once, in the same order. Do not "
+        "add, remove, renumber or modify any other gap. Preserve the paragraph's meaning and approximate "
+        "length. With every marker syntax removed and its answer left in place the paragraph must be natural, "
+        "correct German, and no answer may just repeat a neighbouring word.\n\n"
+        "Reply with ONLY valid JSON, no markdown fences, no commentary, shape exactly: "
+        '{"paragraph": "..."}'
+    )
+    user = f"Paragraph to rewrite:\n{json.dumps(paragraph, ensure_ascii=False)}"
+    return system, user
+
+
+def _call_duplicate_gap_repair(*, system: str, user: str) -> LlmResult:
+    # Same stronger tier as _call_stage_a / _call_missing_gap_repair: it patches a Stage A passage.
+    return chat_json(system=system, user=user, max_tokens=1500, model=get_settings().german_exam_model_stage_a)
+
+
+def _repair_duplicate_gap(
+    content: dict[str, Any], gap_specs: list[dict[str, str]], gap_id: str, paragraph_index: int
+) -> dict[str, Any] | None:
+    """ONE Stage-A-model call on the affected paragraph only. Returns the re-validated content, or
+    None (caller does the normal full regeneration) if the call fails or ANY check below fails."""
+    paragraphs = list(_tagged_paragraphs(content) or [])
+    spec = next(g for g in gap_specs if g["gapId"] == gap_id)
+    original = paragraphs[paragraph_index]
+    occurrences = [ans for gid, ans in _extract_tagged_gaps(original) if gid == gap_id]
+    system, user = _prompt_duplicate_gap_repair(spec, original, occurrences)
+    try:
+        result = _call_duplicate_gap_repair(system=system, user=user)
+        data = result.data if isinstance(result.data, dict) else None
+    except Exception:  # noqa: BLE001
+        log.warning("Sprachbausteine duplicate-gap repair attempt failed", exc_info=True)
+        return None
+    fixed = data.get("paragraph") if data else None
+    if not isinstance(fixed, str) or not fixed.strip():
+        return None
+
+    # Every OTHER marker in the paragraph survives byte-for-byte (id, answer, order).
+    others_before = [(g, a) for g, a in _extract_tagged_gaps(original) if g != gap_id]
+    others_after = [(g, a) for g, a in _extract_tagged_gaps(fixed) if g != gap_id]
+    if others_before != others_after:
+        return None
+    new_paragraphs = list(paragraphs)
+    new_paragraphs[paragraph_index] = fixed
+    text = dict(content["text"])
+    text["paragraphs"] = new_paragraphs
+    candidate = {**content, "text": text}
+    # Full Stage A structural validation: exactly one gN, all gaps once and in order, no stray braces,
+    # no adjacent-duplicate answers. Word count is NOT judged here: the existing word-count repair
+    # path runs right after (no second length system).
+    if _stage_a_structural_issues(candidate, gap_specs):
+        return None
+    return candidate
+
+
 def _prompt_passage_repair(
     gap_specs: list[dict[str, str]], text: dict[str, Any], word_min: int, word_max: int, current_count: int
 ) -> tuple[str, str]:
@@ -716,6 +820,7 @@ def _run_stage_a(
     gap_specs: list[dict[str, str]], word_min: int, word_max: int
 ) -> tuple[dict[str, Any], dict[str, str], dict[str, Any]]:
     last_issues: list[str] = []
+    duplicate_repairs = 0
     for regeneration in range(_MAX_STAGE_A_REGENERATIONS + 1):
         system, user = _prompt_stage_a(profile, part, plan, topic, gap_specs, word_min, word_max)
         result = _call_stage_a(system=system, user=user)
@@ -732,6 +837,16 @@ def _run_stage_a(
                         structural_issues = []
                         break
                     missing_ids = _missing_gap_ids(content, gap_specs) or missing_ids
+            else:
+                # One narrow shape only: exactly one duplicated gap id, nothing else wrong. One repair
+                # call per Stage A output; a failed repair falls through to full regeneration.
+                duplicate = _single_duplicate_gap(content, gap_specs)
+                if duplicate is not None:
+                    repaired = _repair_duplicate_gap(content, gap_specs, *duplicate)
+                    if repaired is not None:
+                        content = repaired
+                        structural_issues = []
+                        duplicate_repairs += 1
 
         if not structural_issues:
             content = _repair_passage_word_count(content, gap_specs, word_min, word_max)
@@ -740,7 +855,7 @@ def _run_stage_a(
                 # Every repair is finished: only NOW derive the public {{gN}} passage and the
                 # answers, both from the tagged text itself (no separate answer mapping).
                 final_text, answers_by_gap = _materialize_stage_a_text(content["text"], gap_specs)
-                return final_text, answers_by_gap, {"regenerationCount": regeneration}
+                return final_text, answers_by_gap, {"regenerationCount": regeneration, "duplicateGapRepairCount": duplicate_repairs}
             structural_issues = [f"word count still {word_count} after repair, expected {word_min}-{word_max}"]
 
         last_issues = structural_issues
@@ -988,7 +1103,7 @@ def _repair_stage_b_items(
         return items_by_gap, 0, []
 
     # (gap_id, accepted candidate | None, candidate's OWN wrongOptions, candidate's OWN reason)
-    _Outcome = tuple[str, "dict[str, Any] | None", "list[Any] | None", "str | None"]
+    _Outcome: TypeAlias = tuple[str, "dict[str, Any] | None", "list[Any] | None", "str | None"]
 
     def _fix_one(gap_id: str) -> _Outcome:
         carried = rejected.get(gap_id)
@@ -1145,6 +1260,50 @@ def _unsupported_correct_answer_only(part: PartBlueprint, item_errors: dict[str,
     }
 
 
+_FINDING_CATEGORIES = ("grammar", "lexicon", "orthography")
+_PART_WIDE_BUCKET = "part_wide"
+
+
+def _new_category_counts() -> dict[str, dict[str, int]]:
+    return {**{c: {} for c in _FINDING_CATEGORIES}, _PART_WIDE_BUCKET: {}}
+
+
+def _aggregate_findings(
+    result: SemanticVerificationResult, content: dict[str, Any],
+    counts_by_category: dict[str, dict[str, int]], item_findings: list[dict[str, Any]], verification_no: int,
+) -> None:
+    """Content-free semantic diagnostics by gap category (S7a). Category comes from the assembled
+    questions, so the generic verifier stays unaware of TELC categories. Part-wide findings get
+    their own bucket, never a category. No passage, answer or option text is recorded."""
+    question_meta = {
+        q.get("questionId"): (q.get("gapId"), q.get("category"))
+        for q in (content.get("questions") or []) if isinstance(q, dict)
+    }
+    for issue in result.part_wide_issues:
+        bucket = counts_by_category[_PART_WIDE_BUCKET]
+        bucket[issue.code] = bucket.get(issue.code, 0) + 1
+    for item in result.items:
+        if not item.issues:
+            continue
+        gap_id, category = question_meta.get(item.item_id, (None, None))
+        bucket = counts_by_category.setdefault(category if category in _FINDING_CATEGORIES else "unknown", {})
+        for issue in item.issues:
+            bucket[issue.code] = bucket.get(issue.code, 0) + 1
+        item_findings.append({
+            "verification": verification_no, "questionId": item.item_id, "gapId": gap_id,
+            "category": category, "issueCodes": sorted({i.code for i in item.issues}),
+        })
+
+
+def _verify_part(part: PartBlueprint, content: dict[str, Any]) -> SemanticVerificationResult:
+    """Sprachbausteine's 22-item verification runs as bounded concurrent chunks (8/7/7) through the
+    unchanged verify_semantic: same model, prompt, schema and reasoning effort. Only the transport
+    differs (a single 22-item call let hidden reasoning consume the whole budget and return nothing)."""
+    if part.task_type == "cloze_mc4_language_elements":
+        return verify_semantic_chunked(part, content, verify_semantic)
+    return verify_semantic(part, content)
+
+
 def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], bool]:
     """Unchanged from the monolithic version — every item-level semantic
     error here IS eligible for targeted repair (no task_type is excluded),
@@ -1158,23 +1317,23 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
     issues_resolved: list[dict[str, str]] = []
     issue_counts: dict[str, int] = {}
 
+    counts_by_category = _new_category_counts()
+    item_findings: list[dict[str, Any]] = []
+
     def record_findings(result: SemanticVerificationResult) -> None:
         findings = list(result.part_wide_issues)
         findings.extend(issue for item in result.items for issue in item.issues)
         for issue in findings:
             issue_counts[issue.code] = issue_counts.get(issue.code, 0) + 1
+        _aggregate_findings(result, content, counts_by_category, item_findings, verification_count)
 
     def check() -> SemanticVerificationResult:
+        # ONE verification per check. The chunk wrapper owns the single bounded structural fallback;
+        # restarting the whole verification here would re-run every chunk and defeat that bound.
         nonlocal verification_count
-        result: SemanticVerificationResult | None = None
-        for attempt in range(2):
-            result = verify_semantic(part, content)
-            record_findings(result)
-            verification_count += 1
-            findings = list(result.part_wide_issues) + [issue for item in result.items for issue in item.issues]
-            if not any(issue.code == "VERIFIER_RESPONSE_INVALID" for issue in findings):
-                return result
-        assert result is not None
+        result = _verify_part(part, content)
+        verification_count += 1
+        record_findings(result)
         return result
 
     result = check()
@@ -1183,6 +1342,8 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         part_wide_errors = result.part_wide_error_issues()
         item_errors = result.item_error_issues()
         if not part_wide_errors and not item_errors:
+            break
+        if result.terminal_verifier_failure:
             break
         if any(issue.code == "VERIFIER_RESPONSE_INVALID" for issues in item_errors.values() for issue in issues):
             break
@@ -1211,6 +1372,8 @@ def _semantic_phase(part: PartBlueprint, content: dict[str, Any]) -> tuple[dict[
         "repairCount": repair_count,
         "issuesResolved": issues_resolved if passed else [],
         "issueCounts": issue_counts,
+        "issueCountsByCategory": counts_by_category,
+        "itemFindings": item_findings,
         "durationMs": round((perf_counter() - started) * 1000),
     }
     return content, meta, passed

@@ -200,43 +200,126 @@ def test_small_parts_still_use_one_call():
     assert len(f.calls) == 1 and f.calls[0][1] is None and result.passed
 
 
-def test_production_check_does_not_use_the_experimental_chunk_wrapper(monkeypatch):
-    """The 8/7/7 wrapper is dormant: Sprachbausteine's check() verifies the whole part in
-    ONE call through verify_semantic, exactly as before the chunking experiment."""
+# ── Production integration: Sprachbausteine semantic verification is chunked ──
+
+
+def _valid_sb_content(monkeypatch):
+    """A valid assembled 22-item Sprachbausteine content (via the real pipeline with a passing verifier)."""
     from tests.test_german_exam_language_elements import (
         _gap_specs, _profile_and_part, _setup, _stage_a_content, _stage_b_payload,
     )
 
     specs = _gap_specs()
     mod, _ = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
-    calls = []
+    monkeypatch.setattr(mod, "verify_semantic", lambda part, content, **kw: _ok([q["questionId"] for q in content["questions"]]))
+    profile, part = _profile_and_part()
+    content, _meta = mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
+    return mod, part, content
 
-    def verify(part, content, **kw):
-        calls.append((len(content["questions"]), kw))
-        return _ok([q["questionId"] for q in content["questions"]])
+
+def test_sprachbausteine_verification_runs_as_8_7_7_chunks_with_the_chunk_cap(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    f = Fake()
+    monkeypatch.setattr(mod, "verify_semantic", f)
+    result = mod._verify_part(part, content)
+    assert sorted(len(ids) for ids, _ in f.calls) == [7, 7, 8]
+    assert {cap for _, cap in f.calls} == {ch.SPRACHBAUSTEINE_VERIFIER_CHUNK_MAX_TOKENS}
+    assert [i.item_id for i in result.items] == [f"q{i}" for i in range(1, 23)] and result.passed
+
+
+def test_other_task_types_keep_the_single_unchunked_verifier_call(monkeypatch):
+    from app.services import german_exam_language_elements as mod
+
+    calls = []
+    monkeypatch.setattr(mod, "verify_semantic", lambda part, content, **kw: calls.append((part.task_type, kw)) or _ok(["q1"]))
+    monkeypatch.setattr(mod, "verify_semantic_chunked", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not chunk")))
+    for task_type in ("sentence_completion_mc3", "reading_detail_mc3", "text_reconstruction_sentence_matching"):
+        mod._verify_part(SimpleNamespace(task_type=task_type), _content(22))
+    assert calls == [(t, {}) for t in ("sentence_completion_mc3", "reading_detail_mc3", "text_reconstruction_sentence_matching")]
+
+
+def test_semantic_rejection_in_one_chunk_is_not_retried_and_is_merged(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    f = Fake(behave=lambda ids, n: "reject" if ids[0] == "q1" else "ok")
+    monkeypatch.setattr(mod, "verify_semantic", f)
+    result = mod._verify_part(part, content)
+    assert len(f.calls) == 3, "a legitimate rejection is not a structural failure: no split, no rerun"
+    assert not result.passed and result.terminal_verifier_failure is False
+    assert list(result.item_error_issues()) == ["q2"]
+
+
+def test_structural_failure_in_one_chunk_splits_only_that_chunk(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    f = Fake(behave=lambda ids, n: "invalid" if len(ids) == 8 else "ok")
+    monkeypatch.setattr(mod, "verify_semantic", f)
+    result = mod._verify_part(part, content)
+    sizes = sorted(len(ids) for ids, _ in f.calls)
+    assert sizes == [4, 4, 7, 7, 8], "the 8-chunk splits 4+4 once; the two 7-chunks ran exactly once"
+    assert result.passed and [i.item_id for i in result.items] == [f"q{i}" for i in range(1, 23)]
+
+
+def test_failed_fallback_half_is_terminal_and_the_phase_does_not_restart_all_chunks(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    f = Fake(behave=lambda ids, n: "invalid" if "q1" in ids else "ok")
+    monkeypatch.setattr(mod, "verify_semantic", f)
+    result = mod._verify_part(part, content)
+    assert result.terminal_verifier_failure is True and not result.passed
+    first_pass_calls = len(f.calls)
+    assert first_pass_calls == 5  # 3 primary + the 2 halves of the failed chunk
+
+    f.calls.clear()
+    _, meta, passed = mod._semantic_phase(part, content)
+    assert passed is False
+    assert len(f.calls) == first_pass_calls, "no outer whole-part retry: still exactly one bounded pass"
+    assert meta["verificationCount"] == 1
+
+
+def test_phase_stops_at_terminal_failure_without_attempting_semantic_repair(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    monkeypatch.setattr(mod, "verify_semantic", Fake(behave=lambda ids, n: "invalid" if "q1" in ids else "ok"))
+    monkeypatch.setattr(mod, "repair_items_semantic", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no repair")))
+    _, meta, passed = mod._semantic_phase(part, content)
+    assert passed is False and meta["repairCount"] == 0
+
+
+# ── S7a: semantic findings by category (content-free) ─────────────────────────
+
+
+def test_issue_counts_are_aggregated_by_gap_category_with_a_part_wide_bucket(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    by_q = {q["questionId"]: q["category"] for q in content["questions"]}
+    lexicon = [q for q, c in by_q.items() if c == "lexicon"][:2]
+    grammar = [q for q, c in by_q.items() if c == "grammar"][:1]
+    ortho = [q for q, c in by_q.items() if c == "orthography"][:1]
+    wanted = {lexicon[0]: "MULTIPLE_DEFENSIBLE_ANSWERS", lexicon[1]: "MULTIPLE_DEFENSIBLE_ANSWERS",
+              grammar[0]: "UNSUPPORTED_CORRECT_ANSWER", ortho[0]: "IMPLAUSIBLE_DISTRACTOR"}
+
+    def verify(part_, content_, **kw):
+        ids = [q["questionId"] for q in content_["questions"]]
+        items = [ItemSemanticResult(i, i not in wanted, [SemanticIssue(wanted[i], "error", "x")] if i in wanted else []) for i in ids]
+        wide = [SemanticIssue("PART_WIDE_INCOHERENCE", "error", "incoherent")] if "q1" in ids else []
+        return SemanticVerificationResult(False, wide, items)
 
     monkeypatch.setattr(mod, "verify_semantic", verify)
-    profile, part = _profile_and_part()
-    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
-    assert calls == [(22, {})], "one whole-part call, no max_tokens override, no chunking"
-    assert "verify_semantic_chunked" not in inspect.getsource(mod)
-    assert "terminal_verifier_failure" not in inspect.getsource(mod)
+    monkeypatch.setattr(mod, "_MAX_SEMANTIC_REPAIR_ROUNDS", 0)
+    _, meta, passed = mod._semantic_phase(part, content)
+    assert passed is False
+    by_cat = meta["issueCountsByCategory"]
+    assert by_cat["lexicon"] == {"MULTIPLE_DEFENSIBLE_ANSWERS": 2}
+    assert by_cat["grammar"] == {"UNSUPPORTED_CORRECT_ANSWER": 1}
+    assert by_cat["orthography"] == {"IMPLAUSIBLE_DISTRACTOR": 1}
+    assert by_cat["part_wide"] == {"PART_WIDE_INCOHERENCE": 1}
+    assert meta["issueCounts"]["MULTIPLE_DEFENSIBLE_ANSWERS"] == 2  # the flat counts are unchanged
+    findings = {f["questionId"]: f for f in meta["itemFindings"]}
+    assert set(findings) == set(wanted)
+    assert findings[lexicon[0]] == {"verification": 1, "questionId": lexicon[0], "gapId": findings[lexicon[0]]["gapId"],
+                                    "category": "lexicon", "issueCodes": ["MULTIPLE_DEFENSIBLE_ANSWERS"]}
+    for f in meta["itemFindings"]:  # content-free: ids, category and codes only
+        assert set(f) == {"verification", "questionId", "gapId", "category", "issueCodes"}
 
 
-def test_check_retry_for_an_invalid_verifier_response_is_the_original_single_pass_behavior(monkeypatch):
-    from tests.test_german_exam_language_elements import (
-        _gap_specs, _profile_and_part, _setup, _stage_a_content, _stage_b_payload,
-    )
-
-    specs = _gap_specs()
-    mod, _ = _setup(monkeypatch, stage_a_calls=[_stage_a_content(specs)], stage_b_calls=[_stage_b_payload(specs)])
-    calls = []
-
-    def verify(part, content, **kw):
-        calls.append(len(content["questions"]))
-        return _invalid() if len(calls) == 1 else _ok([q["questionId"] for q in content["questions"]])
-
-    monkeypatch.setattr(mod, "verify_semantic", verify)
-    profile, part = _profile_and_part()
-    mod.generate_language_elements_part(profile, part, [], {"topicId": "t", "label": "Test"})
-    assert calls == [22, 22]
+def test_a_clean_pass_reports_empty_category_buckets(monkeypatch):
+    mod, part, content = _valid_sb_content(monkeypatch)
+    _, meta, passed = mod._semantic_phase(part, content)
+    assert passed is True and meta["itemFindings"] == []
+    assert meta["issueCountsByCategory"] == {"grammar": {}, "lexicon": {}, "orthography": {}, "part_wide": {}}

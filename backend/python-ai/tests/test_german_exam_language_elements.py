@@ -83,11 +83,12 @@ def _stage_b_payload(gap_specs, bad_gap_id: str | None = None) -> dict:
 
 def _setup(
     monkeypatch: pytest.MonkeyPatch, *, stage_a_calls, stage_b_calls=None, passage_repair=None, item_repair=None,
-    missing_gap_repair=None
+    missing_gap_repair=None, duplicate_gap_repair=None
 ):
     import app.services.german_exam_language_elements as mod
 
-    counters = {"stage_a": 0, "stage_b": 0, "passage_repair": 0, "item_repair": 0, "missing_gap_repair": 0}
+    counters = {"stage_a": 0, "stage_b": 0, "passage_repair": 0, "item_repair": 0, "missing_gap_repair": 0,
+                "duplicate_gap_repair": 0}
 
     def _stage_a(**kwargs):
         i = counters["stage_a"]
@@ -118,6 +119,13 @@ def _setup(
             raise AssertionError("missing-gap repair was not expected to be called")
         return _FakeResult(missing_gap_repair[min(counters["missing_gap_repair"] - 1, len(missing_gap_repair) - 1)])
 
+    def _duplicate_gap(**kwargs):
+        counters["duplicate_gap_repair"] += 1
+        if duplicate_gap_repair is None:
+            raise AssertionError("duplicate-gap repair was not expected to succeed")
+        return _FakeResult(duplicate_gap_repair[min(counters["duplicate_gap_repair"] - 1, len(duplicate_gap_repair) - 1)])
+
+    monkeypatch.setattr(mod, "_call_duplicate_gap_repair", _duplicate_gap)
     monkeypatch.setattr(mod, "_call_stage_a", _stage_a)
     monkeypatch.setattr(mod, "_call_stage_b", _stage_b)
     monkeypatch.setattr(mod, "_call_passage_repair", _repair)
@@ -1115,3 +1123,145 @@ def test_stage_b_call_exception_takes_the_bounded_regeneration_path(monkeypatch)
     with pytest.raises(mod.LanguageElementsGenerationError):
         mod._run_stage_b(profile, part, specs, answers, ctx)
     assert total["n"] == mod._MAX_STAGE_B_REGENERATIONS + 1
+
+
+# ── S7c: targeted repair of ONE duplicated Stage A gap marker ───────────────
+
+def _with_extra_marker(content: dict, gap_id: str, answer: str = "extra", after: str | None = None) -> dict:
+    """Stage A content with one EXTRA {{gap_id::answer}} marker right after `after`'s marker (default: gap_id's own)."""
+    anchor = "{{" + (after or gap_id) + "::antwort_" + (after or gap_id) + "}}"
+    para = content["text"]["paragraphs"][0]
+    assert anchor in para
+    fixed = para.replace(anchor, anchor + " Wort {{" + gap_id + "::" + answer + "}}", 1)
+    return {"text": {**content["text"], "paragraphs": [fixed]}}
+
+
+def _duplicate_repair_output(content: dict, gap_id: str, answer: str = "extra") -> dict:
+    """What a GOOD repair returns: the duplicate marker becomes ordinary words."""
+    return {"paragraph": content["text"]["paragraphs"][0].replace("{{" + gap_id + "::" + answer + "}}", answer)}
+
+
+def _run_a(mod, specs):
+    profile, part = _profile_and_part()
+    return mod._run_stage_a(profile, part, [], {"topicId": "t", "label": "T"}, specs, 320, 350)
+
+
+def test_single_duplicate_gap_shape_is_detected() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    assert mod._single_duplicate_gap(bad, specs) == ("g4", 0)
+    assert mod._single_duplicate_gap(_stage_a_content(specs), specs) is None  # no duplicate at all
+
+
+def test_safe_single_duplicate_is_repaired_by_one_paragraph_call(monkeypatch) -> None:
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad], duplicate_gap_repair=[_duplicate_repair_output(bad, "g4")])
+    text, answers, meta = _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 1 and counters["stage_a"] == 1, "no full regeneration"
+    assert meta == {"regenerationCount": 0, "duplicateGapRepairCount": 1}
+    assert answers["g4"] == "antwort_g4" and len(answers) == 22
+    assert "{{g4}}" in text["paragraphs"][0] and text["paragraphs"][0].count("{{g4}}") == 1
+
+
+def test_duplicate_repair_prompt_names_both_answers_and_forbids_touching_other_gaps() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    system, user = mod._prompt_duplicate_gap_repair(specs[3], bad["text"]["paragraphs"][0], ["antwort_g4", "extra"])
+    assert '["antwort_g4", "extra"]' in system and "g4" in system
+    assert "Do not add, remove, renumber or modify any other gap" in system
+    assert "character-for-character" in system and "exactly one" in system
+    assert user.startswith("Paragraph to rewrite:")
+
+
+def test_two_duplicated_gaps_do_not_attempt_targeted_repair(monkeypatch) -> None:
+    specs = _gap_specs()
+    two = _with_extra_marker(_with_extra_marker(_stage_a_content(specs), "g4"), "g8")
+    mod, counters = _setup(monkeypatch, stage_a_calls=[two, _stage_a_content(specs)])
+    _, _, meta = _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 0 and counters["stage_a"] == 2  # normal full regeneration
+    assert meta["regenerationCount"] == 1 and meta["duplicateGapRepairCount"] == 0
+
+
+def test_duplicate_plus_missing_gap_does_not_attempt_targeted_repair(monkeypatch) -> None:
+    specs = _gap_specs()
+    base = _stage_a_content(specs)
+    base["text"]["paragraphs"] = [base["text"]["paragraphs"][0].replace("{{g10::antwort_g10}}", "Wort")]
+    bad = _with_extra_marker(base, "g4")
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad, _stage_a_content(specs)])
+    from app.services import german_exam_language_elements as m2
+    assert m2._single_duplicate_gap(bad, specs) is None
+    _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 0 and counters["stage_a"] == 2
+
+
+def test_duplicate_plus_unknown_marker_does_not_attempt_targeted_repair(monkeypatch) -> None:
+    from app.services import german_exam_language_elements as mod
+
+    specs = _gap_specs()
+    bad = _with_extra_marker(_with_extra_marker(_stage_a_content(specs), "g4"), "g99", "x", after="g6")
+    assert mod._single_duplicate_gap(bad, specs) is None
+    malformed = _with_extra_marker(_stage_a_content(specs), "g4")
+    malformed["text"]["paragraphs"] = [malformed["text"]["paragraphs"][0] + " {{g5}}"]  # plain, untagged marker
+    assert mod._single_duplicate_gap(malformed, specs) is None
+
+
+def test_duplicate_in_different_paragraphs_or_out_of_order_is_not_repaired() -> None:
+    from app.services import german_exam_language_elements as mod
+
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    para = bad["text"]["paragraphs"][0]
+    cut = para.index("{{g4::extra}}")
+    split = {"text": {"title": "T", "paragraphs": [para[:cut], para[cut:]]}}
+    assert mod._single_duplicate_gap(split, specs) is None  # the two occurrences are in different paragraphs
+    swapped = _with_extra_marker(_stage_a_content(specs), "g4")
+    para = swapped["text"]["paragraphs"][0].replace("{{g5::antwort_g5}}", "@@").replace("{{g6::antwort_g6}}", "{{g5::antwort_g5}}").replace("@@", "{{g6::antwort_g6}}")
+    swapped["text"]["paragraphs"] = [para]  # the NON-duplicate gaps are out of reading order
+    assert mod._single_duplicate_gap(swapped, specs) is None
+    # ...whereas an extra g4 elsewhere in the SAME paragraph is the safe shape: dropping it restores the order.
+    far = _with_extra_marker(_stage_a_content(specs), "g4", after="g12")
+    assert mod._single_duplicate_gap(far, specs) == ("g4", 0)
+
+
+def test_repair_that_mutates_another_gap_is_rejected(monkeypatch) -> None:
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    out = _duplicate_repair_output(bad, "g4")
+    out["paragraph"] = out["paragraph"].replace("{{g6::antwort_g6}}", "{{g6::ANDERS}}")
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad, _stage_a_content(specs)], duplicate_gap_repair=[out])
+    _, answers, meta = _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 1 and counters["stage_a"] == 2  # rejected -> full regeneration
+    assert meta["duplicateGapRepairCount"] == 0 and answers["g6"] == "antwort_g6"
+
+
+def test_repair_that_leaves_the_duplicate_is_rejected(monkeypatch) -> None:
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    still_bad = {"paragraph": bad["text"]["paragraphs"][0]}
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad, _stage_a_content(specs)], duplicate_gap_repair=[still_bad])
+    _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 1 and counters["stage_a"] == 2
+
+
+def test_repair_call_failure_falls_back_to_regeneration(monkeypatch) -> None:
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad, _stage_a_content(specs)])  # repair fake raises
+    _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 1 and counters["stage_a"] == 2
+
+
+def test_repaired_duplicate_with_bad_word_count_uses_the_existing_word_count_repair(monkeypatch) -> None:
+    specs = _gap_specs()
+    bad = _with_extra_marker(_stage_a_content(specs), "g4")
+    long_fix = {"paragraph": _duplicate_repair_output(bad, "g4")["paragraph"] + " " + " ".join(["Wort"] * 40)}
+    mod, counters = _setup(monkeypatch, stage_a_calls=[bad], duplicate_gap_repair=[long_fix],
+                           passage_repair=[_stage_a_content(specs)])
+    _, answers, meta = _run_a(mod, specs)
+    assert counters["duplicate_gap_repair"] == 1 and counters["passage_repair"] >= 1 and counters["stage_a"] == 1
+    assert meta["duplicateGapRepairCount"] == 1 and len(answers) == 22
