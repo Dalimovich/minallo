@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from . import german_exam_inventory
 from .german_exam_adaptation import build_adaptation_plan, compute_weakness, instruction_to_dict
 from .german_exam_language_elements import generate_language_elements_part
 from .german_exam_listening import generate_listening_part
@@ -124,6 +125,17 @@ def generate_task(
     profile = get_profile(profile_id)
     part = get_part(profile_id, module, part_id)
 
+    # Official parts are served from pre-generated, pre-validated stock. A
+    # miss (empty/exhausted stock, missing migration, any error) falls
+    # through to live generation below, unchanged.
+    if german_exam_inventory.is_stocked(module, mode, topic_override):
+        stocked = german_exam_inventory.take(user_id, profile_id, module, part_id)
+        if stocked is not None:
+            # Consumed on serve — even for speculative/prefetch calls, so no
+            # separate consume step is needed to keep rotation honest.
+            record_topic_used(user_id, profile_id, module, part_id, stocked["topic"]["topicId"], stocked["generationId"])
+            return stocked
+
     if mode == "exam_simulation":
         # Reserved for a future phase — official blueprint only, no personalization.
         weakness = None
@@ -147,6 +159,16 @@ def generate_task(
         record_topic_used(user_id, profile_id, module, part_id, topic["topicId"], generation_id)
 
     return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta, generation_id)
+
+
+def generate_stock_task(profile_id: str, module: str, part_id: str, topic: dict[str, str]) -> dict[str, Any]:
+    """Official-blueprint, non-personalized generation for the shared stock
+    (see german_exam_inventory). Same adapters and validation as live
+    generation; no user, no weakness plan, no topic-history write."""
+    profile = get_profile(profile_id)
+    part = get_part(profile_id, module, part_id)
+    content, validation_meta = _dispatch_module(module)(profile, part, [], topic)
+    return _envelope(profile, module, part, "adaptive_practice", [], None, topic, content, validation_meta, uuid.uuid4().hex)
 
 
 def _envelope(

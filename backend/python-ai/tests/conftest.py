@@ -23,6 +23,9 @@ os.environ.setdefault("SUPABASE_URL", "https://stub.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "stub-service-role-key")
 os.environ.setdefault("OPENAI_API_KEY", "stub-openai-key")
 os.environ.setdefault("INTERNAL_SECRET", "stub-internal-token")
+# Pre-generated exam stock is off by default in tests (no network attempts from
+# generate_task); test_german_exam_inventory.py opts back in.
+os.environ.setdefault("GERMAN_EXAM_INVENTORY_ENABLED", "false")
 
 # Eagerly register the real service modules that some test files used to stub
 # with bare ``types.ModuleType`` placeholders (via
