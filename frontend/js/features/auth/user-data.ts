@@ -568,36 +568,14 @@ export function applyProfile(
     localStorage.setItem('ss_german_level_' + uid, window._germanLevel);
   }
 
-  // Canonical German Exam Engine profile id: always DERIVED from the applied
-  // (test, level) pair — the persisted column is just a cache of that
-  // derivation, so a stale/contradictory persisted value (e.g. left over from
-  // a level change made by an older client) never wins. When it differs from
-  // the derivation, the column is corrected best-effort below.
+  // A saved id identifies the exam variant; legacy levels cannot always do so.
+  // An authoritative row must never borrow the previous profile's id.
   const persistedProfileId = hasGermanExamProfileId
     ? p.german_exam_profile_id || null
-    : window._germanExamProfileId || null;
-  const derivedProfileId = resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel);
-  window._germanExamProfileId = derivedProfileId;
-  if (uid) localStorage.setItem('ss_german_exam_profile_id_' + uid, derivedProfileId || '');
-  if (
-    authoritative &&
-    hasGermanExamProfileId &&
-    persistedProfileId !== derivedProfileId &&
-    uid
-  ) {
-    // The REST wrapper (window._sb) has no update(); PATCH like the heartbeat.
-    authenticatedSupabaseFetch(
-      (window.SUPA_URL || '') + '/rest/v1/profiles?id=eq.' + encodeURIComponent(uid),
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ german_exam_profile_id: derivedProfileId }),
-      },
-      { safeToRetry: true }
-    ).catch(() => {
-      /* best-effort cache write; derivation still agrees on every load */
-    });
-  }
+    : authoritative ? null : window._germanExamProfileId || null;
+  const resolvedProfileId = resolveGermanExamProfileIdClient(window._germanTest, window._germanLevel, persistedProfileId);
+  window._germanExamProfileId = resolvedProfileId;
+  if (uid) localStorage.setItem('ss_german_exam_profile_id_' + uid, resolvedProfileId || '');
   applyUserTypeUI();
   // Only an authoritative apply (a fresh profiles-row fetch, or a just-saved
   // write) may promote this to true. A cache-sourced apply (boot-time

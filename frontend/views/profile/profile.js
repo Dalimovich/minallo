@@ -46,11 +46,11 @@ async function saveProfile() {
     }
     data.german_test = test;
     data.german_level = level;
-    // Re-resolved on every save: null (no exam-specific blueprint for this
-    // pair) is a normal value, not an error, and clears a stale id.
-    data.german_exam_profile_id = window._resolveGermanExamProfileId
-      ? window._resolveGermanExamProfileId(test, level)
-      : null;
+    // Preserve an explicitly saved variant when its target is unchanged.
+    // A changed legacy target clears/re-resolves the previous variant.
+    data.german_exam_profile_id = test === window._germanTest && level === window._germanLevel && window._germanExamProfileId
+      ? window._germanExamProfileId
+      : window._resolveGermanExamProfileId ? window._resolveGermanExamProfileId(test, level) : null;
   }
   try {
     var _pr = await _sb.from('profiles').upsert(data);

@@ -8,9 +8,8 @@ level, which may be stale (old tab, cached B2) or simply wrong.
 Deliberately NOT cached: a Profile edit must take effect on the very next AI
 request, and this is one primary-key lookup on a tiny row.
 
-The exam profile id is always DERIVED from (family, level) via the exam
-registry; the persisted ``german_exam_profile_id`` column is only a cache of
-that derivation and is never trusted over it.
+The saved ``german_exam_profile_id`` is authoritative. Legacy family/level
+resolution is used only when no saved id exists. Unknown saved ids fail closed.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from ..supabase_client import get_supabase
-from .german_exams import resolve_profile_id
+from .german_exams import resolve_profile_id, GERMAN_EXAM_PROFILES
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +70,7 @@ def get_german_learner_profile(user_id: str) -> GermanLearnerProfile | None:
         res = (
             get_supabase()
             .table("profiles")
-            .select("user_type, german_test, german_level")
+            .select("user_type, german_test, german_level, german_exam_profile_id")
             .eq("id", user_id)
             .limit(1)
             .execute()
@@ -85,11 +84,13 @@ def get_german_learner_profile(user_id: str) -> GermanLearnerProfile | None:
     row = rows[0]
     test = str(row.get("german_test") or "").strip()
     level = str(row.get("german_level") or "").strip()
+    saved_id = str(row.get("german_exam_profile_id") or "").strip()
+    resolved_id = (saved_id if saved_id in GERMAN_EXAM_PROFILES else None) if saved_id else resolve_profile_id(test, level)
     return GermanLearnerProfile(
         user_type=str(row.get("user_type") or "").strip() or "enrolled",
         test_family=test,
         target_level=level,
-        exam_profile_id=resolve_profile_id(test, level),
+        exam_profile_id=resolved_id,
     )
 
 
@@ -122,4 +123,4 @@ def learner_profile_fingerprint(profile: GermanLearnerProfile | None) -> str:
     B2 is never replayed after the learner switches to C1 Hochschule."""
     if profile is None or not profile.has_target:
         return ""
-    return f"{profile.test_family}|{profile.target_level}"
+    return f"{profile.test_family}|{profile.target_level}|{profile.exam_profile_id or chr(45)}"

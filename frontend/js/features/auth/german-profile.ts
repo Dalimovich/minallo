@@ -1,7 +1,7 @@
 // Single frontend definition of the German learner profile.
 //
 // Source of truth is the DB: profiles.german_test + profiles.german_level
-// (+ derived german_exam_profile_id). The runtime globals (window._germanTest
+// (+ authoritative german_exam_profile_id). The runtime globals (window._germanTest
 // etc.) are only ever written by applyProfile() from an authoritative row;
 // every German feature reads them through getGermanLearnerProfile() below and
 // never invents a default level.
@@ -41,8 +41,10 @@ const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; le
 
 export function resolveGermanExamProfileIdClient(
   test: string | undefined,
-  level: string | undefined
+  level: string | undefined,
+  savedProfileId?: string | null
 ): string | null {
+  if (savedProfileId?.trim()) return savedProfileId.trim();
   const familyNorm = (test || '').trim().toLowerCase();
   const levelNorm = (level || '').trim();
   if (!familyNorm || !levelNorm) return null;

@@ -170,3 +170,15 @@ test('applyProfile: a cache-sourced apply cannot override an already-authoritati
   const writer = src.indexOf('window._germanLevel = hasGermanLevel');
   assert.ok(guard > 0 && writer > guard, 'guard must run before the german globals are written');
 });
+
+
+test('saved variants win across profile switches, with legacy fallback only when absent', () => {
+  for (const id of ['telc_c1_hochschule', 'goethe_c1', 'testdaf_digital', 'telc_c1_hochschule']) {
+    assert.equal(resolveGermanExamProfileIdClient('telc', 'B2', id), id);
+    setWindow({_profileResolutionState: 'ready', _userType: 'learner', _germanTest: 'telc', _germanLevel: 'B2', _germanExamProfileId: id});
+    assert.equal(getGermanLearnerProfile().examProfileId, id);
+  }
+  assert.equal(resolveGermanExamProfileIdClient('telc', 'C1 Hochschule', null), 'telc_c1_hochschule');
+  assert.equal(resolveGermanExamProfileIdClient('TestDaF', 'TDN 4', null), null);
+  assert.equal(resolveGermanExamProfileIdClient('telc', 'C1 Hochschule', 'unknown'), 'unknown');
+});
