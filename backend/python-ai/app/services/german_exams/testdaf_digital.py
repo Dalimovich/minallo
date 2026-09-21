@@ -5,7 +5,7 @@ Module times are approximate; response times are speaking time only.
 No raw-to-scaled conversion is published in the cited sources, so executable
 ScoringSpec values remain None. TDN_BANDS apply ONLY to official scaled scores.
 Scoring metadata below is descriptive and is not yet exposed by the manifest.
-All parts are unavailable; task-type names reserve reusable interactions only.
+Only quality-gated task types can be made available; see each part below.
 Skill tags/adaptations are application policy, not official examination rules.
 """
 
@@ -14,11 +14,12 @@ from __future__ import annotations
 from .shared import ExamProfile, ModuleSpec, PartBlueprint
 
 OFFICIAL_SOURCES = {
+    "reading_mc_example": "https://www.testdaf.de/fileadmin/testdaf/downloads/Demo_Version_digitaler_TestDaF/Beispielaufgaben_Demo-Version_digitaler_TestDaF.pdf",
     "structure": "https://www.testdaf.de/de/teilnehmende/der-digitale-testdaf/aufbau-des-digitalen-testdaf/",
     "scoring": "https://www.testdaf.de/de/teilnehmende/der-digitale-testdaf/auswertung-des-digitalen-testdaf/",
 }
 VERIFIED_AT = "2026-09-20"
-PROFILE_VERSION = 1
+PROFILE_VERSION = 2
 
 TDN_BANDS = (
     {"label": "Unter TDN 3", "min": 0, "max": 4},
@@ -78,10 +79,41 @@ def _part(module: str, part_id: str, title: str, task_type: str, **constraints) 
     )
 
 
+# Demo pp. 8-9: four options, seven questions, numbered paragraphs, 15 minutes.
+# Paragraph count, word budget and per-item scopes below are our practice policy
+# modelled on that example, NOT universal official counts/length limits.
+READING_MC_CONSTRAINTS = {
+    "itemCount": 7,
+    "optionCount": 4,
+    "exampleTimeLimitSeconds": 900,
+    "sourcePages": (8, 9),
+    "sourceReference": OFFICIAL_SOURCES["reading_mc_example"],
+    "textGenre": "popular-academic explanatory article with a clear line of argument, requiring no specialist knowledge",
+    "readingRegister": "advanced B2/C1 academic reading; C1 practice target with nuanced reasoning and varied syntax",
+    "questionStyle": "paragraph meaning, paraphrase, causal explanation, paragraph heading, author's stance; final question asks the whole article's communicative purpose",
+    "itemsFollowTextOrder": True,
+    "questionScopes": ("p1", "p2", "p3", "p4", "p5", "p6", "global"),
+    "generationParagraphCount": 6,
+    "generationWordCountMin": 500,
+    "generationWordCountMax": 650,
+    "balanceOptionPositions": True,
+    # Application quality policy, not an official exam requirement.
+    "generationModel": "gpt-5.4",
+    "generationReasoningEffort": "medium",
+    "generationMaxTokens": 10000,
+    "verifierModel": "gpt-5.4",
+    "presentation": {
+        "numberParagraphs": True,
+        "optionLabels": False,
+        "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. Wählen Sie jeweils eine Antwort. Sie können Ihre Auswahl bis zur Abgabe ändern. Übungszeit: 15 Minuten.",
+    },
+}
+
+
 _READING = (
     _part("reading", "lesen_1", "Lückentext ergänzen", "lexical_cloze", itemCount=5),
     _part("reading", "lesen_2", "Textabschnitte ordnen", "paragraph_ordering", itemCount=4),
-    _part("reading", "lesen_3", "Multiple-Choice", "reading_multiple_choice", itemCount=7),
+    _part("reading", "lesen_3", "Multiple-Choice", "reading_multiple_choice", **READING_MC_CONSTRAINTS),
     _part("reading", "lesen_4", "Sprachhandlungen zuordnen", "speech_act_matching", itemCount=4),
     _part("reading", "lesen_5", "Aussagen Kategorien zuordnen", "statement_category_matching", itemCount=7),
     _part("reading", "lesen_6", "Aussagen einem Begriffspaar zuordnen", "statement_concept_pair_matching", itemCount=4),

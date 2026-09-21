@@ -11,8 +11,8 @@ from app.services.german_exams.testdaf_digital import (
 def test_profile_identity_and_no_ambiguous_legacy_mapping():
     assert get_profile("testdaf_digital") is TESTDAF_DIGITAL
     assert TESTDAF_DIGITAL.cefr_level is None
-    assert TESTDAF_DIGITAL.profile_version == 1
-    assert set(OFFICIAL_SOURCES) == {"structure", "scoring"}
+    assert TESTDAF_DIGITAL.profile_version == 2
+    assert set(OFFICIAL_SOURCES) == {"structure", "scoring", "reading_mc_example"}
     assert resolve_profile_id("TestDaF", "TDN 4") is None
 
 

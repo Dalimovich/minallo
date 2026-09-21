@@ -24,7 +24,8 @@
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "contextual_cloze_mc4",
             "title": "Lückentext (Multiple Choice)"
@@ -43,7 +44,8 @@
             "scoring": {
               "maxPoints": 7,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "reading_detail_mc3",
             "title": "Sachtext verstehen"
@@ -62,7 +64,8 @@
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "text_reconstruction_sentence_matching",
             "title": "Text mit Sätzen rekonstruieren"
@@ -81,7 +84,8 @@
             "scoring": {
               "maxPoints": 7,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "multi_author_statement_matching_with_none",
             "title": "Meinungen zuordnen"
@@ -91,7 +95,8 @@
         "scoring": {
           "maxPoints": 100,
           "mode": "lookup_table",
-          "passPoints": 60
+          "passPoints": 60,
+          "pointsPerCorrect": null
         }
       },
       {
@@ -114,7 +119,8 @@
             "scoring": {
               "maxPoints": 6,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "multi_source_statement_matching",
             "title": "Podcast: drei Besprechungen zuordnen"
@@ -137,7 +143,8 @@
             "scoring": {
               "maxPoints": 9,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "listening_tristate",
             "title": "Interview: stimmt / stimmt nicht / nicht im Text"
@@ -158,7 +165,8 @@
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "segmented_dialogue_mc3",
             "title": "Gespräch in vier Abschnitten"
@@ -177,7 +185,8 @@
             "scoring": {
               "maxPoints": 7,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "listening_detail_mc3",
             "title": "Vortrag"
@@ -187,7 +196,8 @@
         "scoring": {
           "maxPoints": 100,
           "mode": "lookup_table",
-          "passPoints": 60
+          "passPoints": 60,
+          "pointsPerCorrect": null
         }
       },
       {
@@ -214,7 +224,8 @@
             "scoring": {
               "maxPoints": 60,
               "mode": "rubric",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": null
             },
             "taskType": "forum_discussion_post",
             "title": "Diskussionsbeitrag (Forum)"
@@ -238,7 +249,8 @@
             "scoring": {
               "maxPoints": 40,
               "mode": "rubric",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": null
             },
             "taskType": "formal_context_message",
             "title": "(Halb-)formelle Nachricht"
@@ -248,7 +260,8 @@
         "scoring": {
           "maxPoints": 100,
           "mode": "rubric",
-          "passPoints": 60
+          "passPoints": 60,
+          "pointsPerCorrect": null
         }
       },
       {
@@ -303,7 +316,8 @@
         "scoring": {
           "maxPoints": 100,
           "mode": "rubric",
-          "passPoints": 60
+          "passPoints": 60,
+          "pointsPerCorrect": null
         }
       }
     ],
@@ -337,7 +351,8 @@
             "scoring": {
               "maxPoints": 12,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 2
             },
             "taskType": "text_reconstruction_sentence_matching",
             "title": "Textrekonstruktion"
@@ -355,7 +370,8 @@
             "scoring": {
               "maxPoints": 12,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 2
             },
             "taskType": "section_statement_matching",
             "title": "Selektives Verstehen"
@@ -374,7 +390,8 @@
             "scoring": {
               "maxPoints": 24,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 2
             },
             "taskType": "detail_tristate_with_global_heading",
             "title": "Detail- und Globalverstehen"
@@ -402,7 +419,8 @@
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "speaker_statement_matching",
             "title": "Globalverstehen"
@@ -420,7 +438,8 @@
             "scoring": {
               "maxPoints": 20,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 2
             },
             "taskType": "sentence_completion_mc3",
             "title": "Detailverstehen"
@@ -436,7 +455,8 @@
             "scoring": {
               "maxPoints": 20,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 2
             },
             "taskType": "structured_note_completion",
             "title": "Informationstransfer"
@@ -470,7 +490,8 @@
             "scoring": {
               "maxPoints": 22,
               "mode": "fixed_per_item",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": 1
             },
             "taskType": "cloze_mc4_language_elements",
             "title": "Sprachbausteine"
@@ -504,7 +525,8 @@
             "scoring": {
               "maxPoints": 48,
               "mode": "rubric",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": null
             },
             "taskType": "choice_long_form_writing",
             "title": "Schreiben"
@@ -542,7 +564,8 @@
             "scoring": {
               "maxPoints": 10,
               "mode": "rubric",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": null
             },
             "taskType": "presentation_summary_followup",
             "title": "Präsentation, Zusammenfassung und Anschlussfragen"
@@ -564,7 +587,8 @@
             "scoring": {
               "maxPoints": 6,
               "mode": "rubric",
-              "passPoints": null
+              "passPoints": null,
+              "pointsPerCorrect": null
             },
             "taskType": "quote_guided_discussion",
             "title": "Diskussion"
@@ -614,7 +638,40 @@
           },
           {
             "constraints": {
-              "itemCount": 7
+              "balanceOptionPositions": true,
+              "exampleTimeLimitSeconds": 900,
+              "generationMaxTokens": 10000,
+              "generationModel": "gpt-5.4",
+              "generationParagraphCount": 6,
+              "generationReasoningEffort": "medium",
+              "generationWordCountMax": 650,
+              "generationWordCountMin": 500,
+              "itemCount": 7,
+              "itemsFollowTextOrder": true,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. Wählen Sie jeweils eine Antwort. Sie können Ihre Auswahl bis zur Abgabe ändern. Übungszeit: 15 Minuten.",
+                "numberParagraphs": true,
+                "optionLabels": false
+              },
+              "questionScopes": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6",
+                "global"
+              ],
+              "questionStyle": "paragraph meaning, paraphrase, causal explanation, paragraph heading, author's stance; final question asks the whole article's communicative purpose",
+              "readingRegister": "advanced B2/C1 academic reading; C1 practice target with nuanced reasoning and varied syntax",
+              "sourcePages": [
+                8,
+                9
+              ],
+              "sourceReference": "https://www.testdaf.de/fileadmin/testdaf/downloads/Demo_Version_digitaler_TestDaF/Beispielaufgaben_Demo-Version_digitaler_TestDaF.pdf",
+              "textGenre": "popular-academic explanatory article with a clear line of argument, requiring no specialist knowledge",
+              "verifierModel": "gpt-5.4"
             },
             "gradingDimensions": null,
             "id": "lesen_3",
@@ -955,7 +1012,7 @@
       }
     ],
     "profileId": "testdaf_digital",
-    "profileVersion": 1,
+    "profileVersion": 2,
     "schemaVersion": "german-exam-manifest-v1",
     "variant": "Digital"
   }

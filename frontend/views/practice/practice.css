@@ -4229,3 +4229,8 @@
 .gl-exam-soon { font-size: .7rem; padding: 1px 6px; border-radius: 999px; background: rgba(127,127,127,.18); margin-left: 4px; }
 .gl-skill-card-soon .gl-skill-open-btn { opacity: .6; }
 .gl-exam-retry { margin-left: 6px; cursor: pointer; }
+
+/* Generic reading MC: one selectable answer per question. */
+.gl-reading-mc3-option { display: block; margin: 4px 0; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.gl-reading-mc3-option.gl-reading-opt-correct { background: rgba(16, 185, 129, .16); }
+.gl-reading-mc3-option.gl-reading-opt-wrong { background: rgba(239, 68, 68, .14); }

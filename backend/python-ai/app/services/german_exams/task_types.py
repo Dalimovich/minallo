@@ -14,7 +14,7 @@ TASK_TYPES: dict[str, bool] = {
     # Reserved reusable interactions; generation/validation/rendering not implemented.
     "lexical_cloze": False,
     "paragraph_ordering": False,
-    "reading_multiple_choice": False,
+    "reading_multiple_choice": True,
     "speech_act_matching": False,
     "statement_category_matching": False,
     "statement_concept_pair_matching": False,

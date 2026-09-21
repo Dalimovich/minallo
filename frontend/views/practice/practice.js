@@ -1838,19 +1838,43 @@
         return (p && p.examProfileId) || null;
       }
 
-      var RD_PART_LABELS = {
-        lesen_1: 'Teil 1 · Textrekonstruktion',
-        lesen_2: 'Teil 2 · Selektives Verstehen',
-        lesen_3: 'Teil 3 · Detail- & Globalverstehen'
-      };
+      var RD_FALLBACK_PARTS = [
+        { id: 'lesen_1', title: 'Textrekonstruktion', taskType: 'text_reconstruction_sentence_matching', implemented: true, scoring: { pointsPerCorrect: 2 } },
+        { id: 'lesen_2', title: 'Selektives Verstehen', taskType: 'section_statement_matching', implemented: true, scoring: { pointsPerCorrect: 2 } },
+        { id: 'lesen_3', title: 'Detail- & Globalverstehen', taskType: 'detail_tristate_with_global_heading', implemented: true, scoring: { pointsPerCorrect: 2 } }
+      ];
+      function rdParts() {
+        var st = window._glExamState && window._glExamState();
+        var mods = st && st.status === 'ready' && st.manifest ? st.manifest.modules.filter(function (m) { return m.id === 'reading'; }) : [];
+        return st && st.status === 'ready' && st.manifest ? (mods.length ? mods[0].parts : []) : RD_FALLBACK_PARTS;
+      }
+      function rdPart(partId) {
+        return rdParts().filter(function (p) { return p.id === partId; })[0] || null;
+      }
+      function rdTaskTypeFor(partId) {
+        var p = rdPart(partId);
+        return p ? p.taskType : null;
+      }
+      function rdPartLabel(partId) {
+        var parts = rdParts();
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].id === partId) return 'Teil ' + (i + 1) + ' · ' + parts[i].title;
+        }
+        return partId || '';
+      }
+      function rdFirstPartId() {
+        var p = rdParts().filter(function (x) { return x.implemented; })[0];
+        return p ? p.id : null;
+      }
+      function rdPointsPerCorrect() {
+        var p = rdPart(rd.partId);
+        var v = p && p.scoring && p.scoring.pointsPerCorrect;
+        return typeof v === 'number' ? v : null;
+      }
 
-      // Canonical generated-mode header: "telc C1 Hochschule · C1 · Lesen · Teil N"
-      // — built from the envelope's own exam fields (never hardcoded), with
-      // the part switcher's more descriptive label (e.g. "Textrekonstruktion")
-      // shown separately, not folded into this line.
       function rdGeneratedHeader() {
-        var teil = (RD_PART_LABELS[rd.partId] || '').split(' · ')[0] || rd.partId || '';
-        var examLabel = [rd.examFamily, rd.examVariant].filter(Boolean).join(' ');
+        var teil = (rdPartLabel(rd.partId) || '').split(' · ')[0] || rd.partId || '';
+        var examLabel = rd.examDisplayName || [rd.examFamily, rd.examVariant].filter(Boolean).join(' ');
         return [examLabel, rd.targetLevel, 'Lesen', teil].filter(Boolean).join(' · ');
       }
 
@@ -1861,7 +1885,7 @@
         if (!panel) return;
         panel.innerHTML =
           '<div class="gl-listen-error">' +
-            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified exam exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general reading practice instead.</p>' +
             _glFailNote() +
             '<div class="gl-listen-error-actions">' +
@@ -1895,7 +1919,7 @@
         rd.usingGenerated = true;
         rd.partId = partId;
         var panel = rdEl('glReadingQuestionPanel');
-        if (panel) panel.innerHTML = '<div class="gl-listen-loading">Generating your verified telc exercise…</div>';
+        if (panel) panel.innerHTML = '<div class="gl-listen-loading">Generating your verified exam exercise…</div>';
         var textPanel = rdEl('glReadingTextPanel');
         if (textPanel) textPanel.innerHTML = '';
         // Never let this race ahead of a just-checked part's results save —
@@ -1928,6 +1952,7 @@
         rd.content = envelope.content || {};
         rd.examFamily = exam.family || null;
         rd.examVariant = exam.variant || null;
+        rd.examDisplayName = exam.displayName || null;
         rd.targetLevel = exam.cefrLevel || exam.variant || null;
         rd.profileId = exam.profileId || null;
         rd.profileVersion = exam.profileVersion || null;
@@ -2077,6 +2102,55 @@
         rdWireCheckButton();
       }
 
+      function rdRenderMultipleChoice() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        rd.content.presentation = rd.content.presentation || {};
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' +
+          (text.paragraphs || []).map(function (p, index) {
+            return '<p data-paragraph-id="' + _glEscape(p.paragraphId) + '">' + (rd.content.presentation.numberParagraphs ? '<strong>(' + (index + 1) + ')</strong> ' : '') + _glEscape(p.text) + '</p>';
+          }).join('') + '</div>';
+        var letters = 'abcdefgh';
+        qPanel.innerHTML = '<p class="gl-reading-instructions">' + _glEscape(rd.content.presentation.instructions || '') + '</p>' + (rd.content.questions || []).map(function (q, idx) {
+          var mc3 = q.mc3 || {};
+          var selected = rd.genAnswers[q.questionId];
+          return '<div class="gl-reading-statement gl-reading-mc3" data-question-id="' + _glEscape(q.questionId) + '">' +
+            '<p><strong>' + (idx + 1) + '.</strong> ' + _glEscape(mc3.stem || '') + '</p>' +
+            (mc3.options || []).map(function (opt, i) {
+              var cls = '';
+              if (rd.genChecked) {
+                if (i === mc3.correctIndex) cls = ' gl-reading-opt-correct';
+                else if (selected === i) cls = ' gl-reading-opt-wrong';
+              }
+              return '<label class="gl-reading-mc3-option' + cls + '"><input type="radio" name="mc3-' + _glEscape(q.questionId) + '" value="' + i + '"' +
+                (selected === i ? ' checked' : '') + (rd.genChecked ? ' disabled' : '') + '> ' + (rd.content.presentation.optionLabels === false ? '' : '<span>' + (letters[i] || '?') + ')</span> ') + _glEscape(opt) + '</label>';
+            }).join('') + '</div>';
+        }).join('') + rdCheckButtonHtml();
+        qPanel.querySelectorAll('input[type="radio"]').forEach(function (input) {
+          if (input._rdWired) return;
+          input._rdWired = true;
+          input.addEventListener('change', function () {
+            var group = input.closest('[data-question-id]');
+            if (group) rd.genAnswers[group.getAttribute('data-question-id')] = parseInt(input.value, 10);
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdGradeMultipleChoice() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === (q.mc3 || {}).correctIndex, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       function rdCheckButtonHtml() {
         if (rd.genChecked) {
           return '<div class="gl-reading-result-summary">' + _glEscape(rd._lastGenScoreLabel || '') + '</div>';
@@ -2090,6 +2164,7 @@
       }
 
       var RD_GENERATED_RENDERERS = {
+        reading_multiple_choice: rdRenderMultipleChoice,
         text_reconstruction_sentence_matching: rdRenderTextReconstruction,
         section_statement_matching: rdRenderSectionMatching,
         detail_tristate_with_global_heading: rdRenderDetailGlobal
@@ -2133,6 +2208,7 @@
       }
 
       var RD_GENERATED_GRADERS = {
+        reading_multiple_choice: rdGradeMultipleChoice,
         text_reconstruction_sentence_matching: rdGradeTextReconstruction,
         section_statement_matching: rdGradeSectionMatching,
         detail_tristate_with_global_heading: rdGradeDetailGlobal
@@ -2166,7 +2242,7 @@
             taskType: rd._activeTaskType, itemId: id, skillTags: r.skillTags, difficulty: 'c1',
             attemptCount: 1, firstAttemptCorrect: r.correct, finalCorrect: r.correct, hintLevel: 0,
             replayCount: null, transcriptRevealed: null,
-            scoreValue: r.correct ? 2 : 0, maxScoreValue: 2, metadata: { generationId: rd.generationId }
+            scoreValue: rdPointsPerCorrect() === null ? null : (r.correct ? rdPointsPerCorrect() : 0), maxScoreValue: rdPointsPerCorrect(), metadata: { generationId: rd.generationId }
           };
         });
         if (!items.length) return Promise.resolve();
@@ -2200,9 +2276,9 @@
         var bar = document.createElement('div');
         bar.className = 'gl-listen-part-switcher';
         bar.id = 'glReadingPartSwitcher';
-        bar.innerHTML = ['lesen_1', 'lesen_2', 'lesen_3'].map(function (partId) {
-          return '<button type="button" class="gl-listen-part-btn" data-part-id="' + partId + '">' +
-            _glEscape(RD_PART_LABELS[partId]) + '</button>';
+        bar.innerHTML = rdParts().map(function (p) {
+          return '<button type="button" class="gl-listen-part-btn" data-part-id="' + _glEscape(p.id) + '"' +
+            (p.implemented ? '' : ' disabled title="Coming soon"') + '>' + _glEscape(rdPartLabel(p.id)) + '</button>';
         }).join('') + '<button type="button" class="gl-listen-part-btn" data-weak-areas="1">Weak areas</button>' +
           '<button type="button" class="gl-listen-part-btn" data-new-test="1">New Test</button>';
         workspace.parentNode.insertBefore(bar, workspace);
@@ -2213,7 +2289,8 @@
           if (!btn) return;
           var partId = btn.getAttribute('data-part-id');
           if (rd.usingGenerated && rd.partId === partId) return;
-          rd._activeTaskType = RD_PART_TASK_TYPES[partId];
+          if (!rdTaskTypeFor(partId) || (rdPart(partId) && !rdPart(partId).implemented)) return;
+          rd._activeTaskType = rdTaskTypeFor(partId);
           rdGenerateOrLoadPart(partId);
         });
       }
@@ -2232,8 +2309,10 @@
         rd.genChecked = false;
         rd._lastGenScoreLabel = null;
         rd.generationId = null;
-        rd._activeTaskType = RD_PART_TASK_TYPES.lesen_1;
-        rdGenerateOrLoadPart('lesen_1').then(function () {
+        var firstPartId = rdFirstPartId();
+        if (!firstPartId) return;
+        rd._activeTaskType = rdTaskTypeFor(firstPartId);
+        rdGenerateOrLoadPart(firstPartId).then(function () {
           if (!rd._lastGenFailed && typeof console !== 'undefined' && console.assert) {
             console.assert(rd.generationId !== oldGenerationId, '[Lesen] New Test did not produce a new generationId');
           }
@@ -2284,11 +2363,7 @@
         });
       }
 
-      var RD_PART_TASK_TYPES = {
-        lesen_1: 'text_reconstruction_sentence_matching',
-        lesen_2: 'section_statement_matching',
-        lesen_3: 'detail_tristate_with_global_heading'
-      };
+
 
       // Entry point for the generated path — called instead of the static
       // rdLoadSet() flow when a supported exam profile resolves. Never
@@ -2310,7 +2385,7 @@
       };
 
       function rdOpenGeneratedView(partId) {
-        rd._activeTaskType = RD_PART_TASK_TYPES[partId];
+        rd._activeTaskType = rdTaskTypeFor(partId);
         rdEnsureGeneratedSwitcher();
         rdSetStaticHeaderControlsVisible(false); // static tabs + B2/Mixed selects don't apply to the generated path
         rdEl('glReadingWorkspace').style.display = '';
@@ -2359,7 +2434,15 @@
         var profileId = rdResolveProfileId();
         if (profileId) {
           rd._awaitingProfile = false;
-          rdOpenGeneratedView(rd.partId && RD_PART_TASK_TYPES[rd.partId] ? rd.partId : 'lesen_1');
+          var st = window._glExamState && window._glExamState();
+          if (st && (st.status === 'loading' || st.status === 'idle')) {
+            rdShowWaitingForProfile();
+            if (typeof window._glExamOnReady === 'function') window._glExamOnReady(function () { if (_glActiveSkill === 'reading') window._glOpenReadingView(); });
+            return;
+          }
+          var openPartId = rd.partId && rdPart(rd.partId) && rdPart(rd.partId).implemented ? rd.partId : rdFirstPartId();
+          if (!openPartId) { rdShowWaitingForProfile(); return; }
+          rdOpenGeneratedView(openPartId);
           return;
         }
         if (!window._germanProfileLoaded) {
@@ -2395,6 +2478,8 @@
 
       window._glRegisterProfileReset(function (nextProfileId) {
         rd.genToken++; rd._genRequestToken++;
+        var switcher = rdEl('glReadingPartSwitcher');
+        if (switcher && switcher.parentNode) switcher.parentNode.removeChild(switcher);
         if (rd.profileId && rd.profileId !== nextProfileId) {
           rd.usingGenerated = false; rd.profileId = null; rd.profileVersion = null; rd.generationId = null;
           rd.content = null; rd.genAnswers = {}; rd.genChecked = false; rd.partId = null; rd._lastGenFailed = false;
@@ -3232,7 +3317,7 @@
         if (!qPanel) return;
         qPanel.innerHTML =
           '<div class="gl-listen-error">' +
-            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified exam exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry.</p>' +
             _glFailNote() +
             '<div class="gl-listen-error-actions">' +
@@ -3297,7 +3382,7 @@
         var textPanel = sbEl('glSprachbausteineTextPanel');
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
-        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified telc exercise…</div>';
+        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified exam exercise…</div>';
         sbArmWatchdog();
         return _glRunGeneration(sb, 'exam', qPanel,
           { start: 'Creating your Sprachbausteine exercise…' },
@@ -5910,7 +5995,7 @@
         if (!taskPanel) return;
         taskPanel.innerHTML =
           '<div class="gl-listen-error">' +
-            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified exam exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general listening practice instead.</p>' +
             _glFailNote() +
             '<div class="gl-listen-error-actions">' +
