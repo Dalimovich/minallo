@@ -644,6 +644,13 @@ _SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    from .german_exam_objective import SELECTION_TYPES, validate_selection
+    if part.task_type in SELECTION_TYPES:
+        try:
+            validate_selection(part, content)
+            return []
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            return [ValidationIssue(None, str(exc))]
     if part.task_type == "quote_guided_discussion":
         return validate_speaking(part, content)
     generic_keys = [("questions", "questionId")]

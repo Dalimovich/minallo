@@ -528,6 +528,9 @@ def generate_reading_part(
     item errors) -> deterministic re-validation -> semantic re-verification
     -> accept. Raises ReadingGenerationError rather than ever returning
     known-invalid content once the regeneration budget is exhausted."""
+    from .german_exam_objective import SELECTION_TYPES, generate_selection
+    if part.task_type in SELECTION_TYPES:
+        return generate_selection(profile, part, plan, topic)
     builder = _PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         raise ReadingGenerationError(f"no prompt builder for task_type {part.task_type!r}")

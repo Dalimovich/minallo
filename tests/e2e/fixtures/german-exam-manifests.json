@@ -616,7 +616,14 @@
         "parts": [
           {
             "constraints": {
-              "itemCount": 5
+              "itemCount": 5,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "W?hlen Sie f?r jede L?cke ein passendes Wort."
+              },
+              "sourcePages": [
+                5
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_1",
@@ -685,7 +692,15 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "itemCount": 4,
+              "optionCount": 8,
+              "presentation": {
+                "instructions": "Ordnen Sie jeder markierten Textstelle eine Sprachhandlung zu."
+              },
+              "sourcePages": [
+                10
+              ],
+              "uniqueMappings": true
             },
             "gradingDimensions": null,
             "id": "lesen_4",
@@ -696,7 +711,20 @@
           },
           {
             "constraints": {
-              "itemCount": 7
+              "categoryRoles": [
+                "first",
+                "second",
+                "both",
+                "neither"
+              ],
+              "itemCount": 7,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "Ordnen Sie jede Aussage einer Kategorie zu. Kategorien k?nnen mehrfach vorkommen."
+              },
+              "sourcePages": [
+                11
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_5",
@@ -707,7 +735,17 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "groupCount": 2,
+              "itemCount": 4,
+              "optionCount": 8,
+              "presentation": {
+                "instructions": "W?hlen Sie passende Aussagen f?r die Felder der beiden Begriffe. Nicht alle Aussagen passen."
+              },
+              "sourcePages": [
+                12,
+                13
+              ],
+              "uniqueMappings": true
             },
             "gradingDimensions": null,
             "id": "lesen_6",
@@ -1015,7 +1053,7 @@
       }
     ],
     "profileId": "testdaf_digital",
-    "profileVersion": 2,
+    "profileVersion": 3,
     "schemaVersion": "german-exam-manifest-v1",
     "variant": "Digital"
   }

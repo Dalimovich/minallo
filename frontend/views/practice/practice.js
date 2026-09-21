@@ -2163,7 +2163,34 @@
         if (btn && !btn._rdWired) { btn._rdWired = true; btn.addEventListener('click', rdCheckGeneratedAnswers); }
       }
 
+      function rdRenderSourceSelection() {
+        var sourcePanel = rdEl('glReadingTextPanel');
+        var questionPanel = rdEl('glReadingQuestionPanel');
+        var expectedContent = rd.content;
+        import('/js/features/german-exam/source-selection.js').then(function (mod) {
+          if (rd.content !== expectedContent) return;
+          var part = rdPart(rd.partId);
+          mod.mountSelection(sourcePanel, questionPanel, part, rd.content, rd.genAnswers, rd.genChecked);
+          questionPanel.insertAdjacentHTML('beforeend', rdCheckButtonHtml());
+          rdWireCheckButton();
+        }).catch(function () {
+          if (rd.content === expectedContent) questionPanel.textContent = 'This exercise is invalid. Please reload it.';
+        });
+      }
+
+      function rdGradeSourceSelection() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.id] = { correct: rd.genAnswers[q.id] === q.answerId, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       var RD_GENERATED_RENDERERS = {
+        speech_act_matching: rdRenderSourceSelection,
+        statement_category_matching: rdRenderSourceSelection,
+        statement_concept_pair_matching: rdRenderSourceSelection,
+        lexical_cloze: rdRenderSourceSelection,
         reading_multiple_choice: rdRenderMultipleChoice,
         text_reconstruction_sentence_matching: rdRenderTextReconstruction,
         section_statement_matching: rdRenderSectionMatching,
@@ -2208,6 +2235,10 @@
       }
 
       var RD_GENERATED_GRADERS = {
+        speech_act_matching: rdGradeSourceSelection,
+        statement_category_matching: rdGradeSourceSelection,
+        statement_concept_pair_matching: rdGradeSourceSelection,
+        lexical_cloze: rdGradeSourceSelection,
         reading_multiple_choice: rdGradeMultipleChoice,
         text_reconstruction_sentence_matching: rdGradeTextReconstruction,
         section_statement_matching: rdGradeSectionMatching,

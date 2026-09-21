@@ -19,7 +19,7 @@ OFFICIAL_SOURCES = {
     "scoring": "https://www.testdaf.de/de/teilnehmende/der-digitale-testdaf/auswertung-des-digitalen-testdaf/",
 }
 VERIFIED_AT = "2026-09-20"
-PROFILE_VERSION = 2
+PROFILE_VERSION = 3
 
 TDN_BANDS = (
     {"label": "Unter TDN 3", "min": 0, "max": 4},
@@ -114,12 +114,17 @@ READING_MC_CONSTRAINTS = {
 
 
 _READING = (
-    _part("reading", "lesen_1", "Lückentext ergänzen", "lexical_cloze", itemCount=5),
+    _part("reading", "lesen_1", "Lückentext ergänzen", "lexical_cloze", itemCount=5, optionCount=4, sourcePages=(5,),
+          presentation={"instructions": "W?hlen Sie f?r jede L?cke ein passendes Wort."}),
     _part("reading", "lesen_2", "Textabschnitte ordnen", "paragraph_ordering", itemCount=4),
     _part("reading", "lesen_3", "Multiple-Choice", "reading_multiple_choice", **READING_MC_CONSTRAINTS),
-    _part("reading", "lesen_4", "Sprachhandlungen zuordnen", "speech_act_matching", itemCount=4),
-    _part("reading", "lesen_5", "Aussagen Kategorien zuordnen", "statement_category_matching", itemCount=7),
-    _part("reading", "lesen_6", "Aussagen einem Begriffspaar zuordnen", "statement_concept_pair_matching", itemCount=4),
+    _part("reading", "lesen_4", "Sprachhandlungen zuordnen", "speech_act_matching", itemCount=4, optionCount=8, uniqueMappings=True, sourcePages=(10,),
+          presentation={"instructions": "Ordnen Sie jeder markierten Textstelle eine Sprachhandlung zu."}),
+    _part("reading", "lesen_5", "Aussagen Kategorien zuordnen", "statement_category_matching", itemCount=7, optionCount=4,
+          categoryRoles=("first", "second", "both", "neither"), sourcePages=(11,),
+          presentation={"instructions": "Ordnen Sie jede Aussage einer Kategorie zu. Kategorien k?nnen mehrfach vorkommen."}),
+    _part("reading", "lesen_6", "Aussagen einem Begriffspaar zuordnen", "statement_concept_pair_matching", itemCount=4, optionCount=8, uniqueMappings=True, groupCount=2, sourcePages=(12, 13),
+          presentation={"instructions": "W?hlen Sie passende Aussagen f?r die Felder der beiden Begriffe. Nicht alle Aussagen passen."}),
     _part("reading", "lesen_7", "Fehler in Zusammenfassung erkennen", "reading_summary_error_detection", itemCount=3),
 )
 _LISTENING = (
