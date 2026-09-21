@@ -281,6 +281,27 @@ def _verify_prompt_reading_detail_mc3(part: PartBlueprint, content: dict[str, An
     return system, user
 
 
+def _verify_prompt_multi_author(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied author texts"
+    ) + (
+        "\n\nThis is multi_author_statement_matching_with_none (Goethe-style Lesen Teil 4): several short texts "
+        "by different authors and statements that each match exactly ONE author or NO author. For each statement "
+        "verify from the texts ONLY: (A) if correctAuthorId names an author, that author genuinely expresses or "
+        "clearly implies the statement's meaning (UNSUPPORTED_CORRECT_ANSWER if not); (B) NO other author also "
+        "supports it — if a second author could equally be argued to hold that view use AMBIGUOUS_MAPPING with "
+        "evidence.questionIds listing the statement's questionId; (C) if correctAuthorId is 'none', verify that "
+        "NO author states or clearly implies it — if any author does, use UNSUPPORTED_CORRECT_ANSWER. A statement "
+        "that merely shares a keyword with an author but asserts something different is NOT supported. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the authors do not hold clearly different, natural, original positions on one "
+        "topic, or the register is not suitable for C1."
+    )
+    text = content.get("text") or {}
+    user = json.dumps({"authors": text.get("authors"), "questions": [
+        {k: v for k, v in q.items() if k != "evidenceQuote"} for q in (content.get("questions") or [])]}, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_lesen2(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     system = _base_verifier_preamble(part) + (
         "\n\nThis is section_statement_matching (telc-style Lesen Teil 2, Selektives Verstehen). For each "
@@ -443,6 +464,7 @@ _VERIFY_PROMPT_BUILDERS = {
     "structured_note_completion": _verify_prompt_hv3,
     "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
     "section_statement_matching": _verify_prompt_lesen2,
+    "multi_author_statement_matching_with_none": _verify_prompt_multi_author,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
     "cloze_mc4_language_elements": _verify_prompt_sprachbausteine,
     "choice_long_form_writing": _verify_prompt_schreiben,
@@ -555,6 +577,8 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
         audit = _object_schema({"bestCandidateId": {"type": ["string", "null"]}, "tiedCandidateIds": strings})
     elif part.task_type == "section_statement_matching":
         audit = _object_schema({"supportingSectionIds": strings})
+    elif part.task_type == "multi_author_statement_matching_with_none":
+        audit = _object_schema({"supportingAuthorIds": strings})
     elif part.task_type == "detail_tristate_with_global_heading":
         audit = _object_schema({
             "trueVerdict": {"type": ["string", "null"], "enum": ["richtig", "falsch", "nicht_im_text", None]},
@@ -647,6 +671,18 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "UNSUPPORTED_CORRECT_ANSWER"
             elif len(set(values)) > 1:
                 code = "AMBIGUOUS_MAPPING"
+        elif part.task_type == "multi_author_statement_matching_with_none":
+            values = audit.get("supportingAuthorIds")
+            expected = question.get("correctAuthorId")
+            if not isinstance(values, list) or any(not isinstance(v, str) for v in values):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif expected == "none":
+                if values:
+                    code = "UNSUPPORTED_CORRECT_ANSWER"  # some author does state it: not a 'none' statement
+            elif expected not in values:
+                code = "UNSUPPORTED_CORRECT_ANSWER"
+            elif len(set(values)) > 1:
+                code = "AMBIGUOUS_MAPPING"
         elif part.task_type == "detail_tristate_with_global_heading":
             kind = question.get("kind")
             if kind == "detail":
@@ -731,6 +767,11 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
             "supportingSectionIds lists EVERY section (not just the keyed one) that genuinely supports the "
             "statement's meaning. A section may legitimately support more than one statement — that alone "
             "is not ambiguity. "
+        )
+    elif part.task_type == "multi_author_statement_matching_with_none":
+        system += (
+            "supportingAuthorIds lists EVERY author (not just the keyed one) who genuinely states or clearly "
+            "implies the statement's meaning; it is EMPTY when no author does. Judge meaning, never keyword overlap. "
         )
     elif part.task_type == "detail_tristate_with_global_heading":
         system += (

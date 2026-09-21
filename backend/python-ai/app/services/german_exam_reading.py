@@ -374,8 +374,58 @@ def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+
+# ── multi_author_statement_matching_with_none (Goethe Lesen Teil 4) ──────────
+
+
+def _prompt_multi_author_statement_matching(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
+) -> tuple[str, str]:
+    author_count = part.constraints.get("authorCount", 3)
+    statement_count = part.constraints.get("statementCount", 7)
+    unmatched = part.constraints.get("unmatchedStatements", 2)
+    approx = part.constraints.get("wordCountApprox", 430)
+    per_author = round(approx / author_count)
+    ids = [chr(ord("a") + i) for i in range(author_count)]
+    matched = statement_count - unmatched
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): {author_count} short opinion texts by {author_count} DIFFERENT authors "
+        f"(authorId {', '.join(repr(i) for i in ids)}) on the topic '{topic['label']}', about {per_author} words each "
+        f"({approx} words in total). The authors must clearly differ in stance and reasoning, write in their own voice "
+        "and register (for example a forum post, a reader letter, a short column), and each argues from a concrete "
+        "position. Then exactly "
+        f"{statement_count} statements. {matched} statements are each asserted by exactly ONE author and NO other author; "
+        f"{unmatched} statements are asserted by NO author (correctAuthorId 'none'). A 'none' statement must be plausible "
+        "for the topic and touch things the authors discuss, but no author states or clearly implies it (it may be an "
+        "overgeneralisation, a reversal, or an aspect nobody raises) — never a statement that one author actually makes "
+        "in other words.\n\n"
+        "Rules for the statements: each statement paraphrases what an author expresses (an opinion, reason, "
+        "concession, recommendation or attitude); it must NOT reuse the author's own wording (no run of 6 or more "
+        "consecutive words) and must not be decidable by spotting one keyword. Every author must be the answer to "
+        "at least one statement. For each matched statement give evidenceQuote: a verbatim excerpt of 4-14 words "
+        "copied exactly from the named author's text that supports it, and which appears in NO other author's text. "
+        "For 'none' statements set evidenceQuote to an empty string.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item; use at least 3 different tags.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "text": {"title": "...", "authors": [{"authorId": "a", "name": "...", "text": "..."}, ...]} // exactly '
+        f"{author_count} authors\n"
+        '  "questions": [\n'
+        '    {"questionId": "q1", "statement": "...", "correctAuthorId": "a" (or "b"/"c"/"none"),\n'
+        '     "evidenceQuote": "...", "skillTags": ["author_intention"], "difficulty": "c1"},\n'
+        "    ...\n"
+        f"  ] // exactly {statement_count} entries\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
+    "multi_author_statement_matching_with_none": _prompt_multi_author_statement_matching,
     "text_reconstruction_sentence_matching": _prompt_lesen1,
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,

@@ -398,6 +398,103 @@ def validate_reading_detail_mc3(part: PartBlueprint, content: dict[str, Any]) ->
     return issues
 
 
+_NONE_ANSWER = "none"
+
+
+def validate_multi_author_statement_matching_with_none(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """Several short texts by different authors + N statements, each matching exactly one author or none
+    (Goethe Lesen Teil 4). Generic: counts, word budget and the number of unmatched statements all come
+    from the blueprint; nothing here knows which exam it is.
+
+    Every match must carry an `evidenceQuote` that really occurs in the named author's text and in no
+    other author's text, and no statement may copy a run of the source wording (it must be a paraphrase)."""
+    issues: list[ValidationIssue] = []
+    text = content.get("text")
+    questions = content.get("questions") or []
+    author_count = part.constraints.get("authorCount", 3)
+    statement_count = part.constraints.get("statementCount", 7)
+    unmatched_expected = part.constraints.get("unmatchedStatements", 2)
+
+    authors = text.get("authors") if isinstance(text, dict) else None
+    author_ids: list[str] = []
+    author_text: dict[str, str] = {}
+    author_words: dict[str, list[str]] = {}
+    if not isinstance(authors, list) or not authors:
+        issues.append(ValidationIssue(None, "text.authors must be a non-empty list"))
+    else:
+        if len(authors) != author_count:
+            issues.append(ValidationIssue(None, f"expected {author_count} authors, got {len(authors)}"))
+        for a in authors:
+            aid = a.get("authorId") if isinstance(a, dict) else None
+            name = a.get("name") if isinstance(a, dict) else None
+            body = a.get("text") if isinstance(a, dict) else None
+            if not isinstance(aid, str) or not aid.strip() or aid.strip().lower() == _NONE_ANSWER:
+                issues.append(ValidationIssue(None, "every author needs a unique authorId (not 'none')"))
+                continue
+            if not isinstance(name, str) or not name.strip() or not isinstance(body, str) or not body.strip():
+                issues.append(ValidationIssue(None, f"author {aid} needs a name and non-empty text"))
+                continue
+            author_ids.append(aid)
+            author_text[aid] = " ".join(_normalized_words(body))
+            author_words[aid] = _normalized_words(body)
+        if len(set(author_ids)) != len(author_ids):
+            issues.append(ValidationIssue(None, "duplicate authorId"))
+        approx = part.constraints.get("wordCountApprox")
+        total = sum(len(w) for w in author_words.values())
+        if approx and not round(approx * 0.75) <= total <= round(approx * 1.25):
+            issues.append(ValidationIssue(None, f"texts have {total} words in total, expected about {approx} ({round(approx * 0.75)}-{round(approx * 1.25)})"))
+        for aid, words in author_words.items():
+            if len(words) < 40:
+                issues.append(ValidationIssue(None, f"author {aid} has only {len(words)} words; each author needs a substantial text"))
+
+    if len(questions) != statement_count:
+        issues.append(ValidationIssue(None, f"expected {statement_count} statements, got {len(questions)}"))
+
+    valid_answers = set(author_ids) | {_NONE_ANSWER}
+    counts: dict[str, int] = {}
+    statements: list[str] = []
+    for q in questions:
+        qid = q.get("questionId")
+        statement = q.get("statement")
+        answer = q.get("correctAuthorId")
+        if not isinstance(statement, str) or not statement.strip():
+            issues.append(ValidationIssue(qid, "statement is empty"))
+        else:
+            statements.append(statement.strip().lower())
+        if answer not in valid_answers:
+            issues.append(ValidationIssue(qid, "correctAuthorId must be an author id or 'none'"))
+            continue
+        counts[answer] = counts.get(answer, 0) + 1
+        if isinstance(statement, str):
+            swords = _normalized_words(statement)
+            for aid, words in author_words.items():
+                if _copied_run(statement, words, 6):
+                    issues.append(ValidationIssue(qid, f"statement copies 6+ consecutive words of author {aid}; it must be a paraphrase"))
+                    break
+        if answer == _NONE_ANSWER:
+            continue
+        quote = q.get("evidenceQuote")
+        if not isinstance(quote, str) or not quote.strip():
+            issues.append(ValidationIssue(qid, "a matched statement needs an evidenceQuote from the named author"))
+            continue
+        needle = " ".join(_normalized_words(quote))
+        if not needle or needle not in author_text.get(answer, ""):
+            issues.append(ValidationIssue(qid, f"evidenceQuote does not occur in author {answer}'s text"))
+        elif any(needle in body for aid, body in author_text.items() if aid != answer):
+            issues.append(ValidationIssue(qid, "evidenceQuote also occurs in another author's text (ambiguous evidence)"))
+
+    if len(set(statements)) != len(statements):
+        issues.append(ValidationIssue(None, "duplicate statements"))
+    if questions and counts.get(_NONE_ANSWER, 0) != unmatched_expected:
+        issues.append(ValidationIssue(None, f"expected {unmatched_expected} statements with no matching author, got {counts.get(_NONE_ANSWER, 0)}"))
+    for aid in author_ids:
+        if questions and counts.get(aid, 0) < 1:
+            issues.append(ValidationIssue(None, f"author {aid} is not the answer to any statement"))
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+
 def validate_section_statement_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     sections = content.get("sections") or []
@@ -679,6 +776,7 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "section_statement_matching": validate_section_statement_matching,
     "detail_tristate_with_global_heading": validate_detail_tristate_with_global_heading,
     "reading_detail_mc3": validate_reading_detail_mc3,
+    "multi_author_statement_matching_with_none": validate_multi_author_statement_matching_with_none,
     "cloze_mc4_language_elements": validate_cloze_mc4_language_elements,
     "choice_long_form_writing": validate_choice_long_form_writing,
 }

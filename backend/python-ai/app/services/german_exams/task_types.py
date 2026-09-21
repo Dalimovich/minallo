@@ -49,7 +49,7 @@ TASK_TYPES: dict[str, bool] = {
     # --- Goethe-Zertifikat C1 ---
     "contextual_cloze_mc4": False,
     "reading_detail_mc3": True,
-    "multi_author_statement_matching_with_none": False,
+    "multi_author_statement_matching_with_none": True,
     "multi_source_statement_matching": False,
     "listening_tristate": False,
     "segmented_dialogue_mc3": False,

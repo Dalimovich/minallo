@@ -2159,6 +2159,61 @@
         return results;
       }
 
+      // multi_author_statement_matching_with_none — several short texts by different authors; every statement
+      // is matched to exactly one author or to "nobody". The letters and the "no author" choice come from the
+      // content (authorId / 'none'), not from any exam.
+      function rdRenderMultiAuthor() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        var authors = text.authors || [];
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' + authors.map(function (a) {
+            return '<section class="gl-reading-author" data-author-id="' + _glEscape(a.authorId) + '">' +
+              '<h4>' + _glEscape(String(a.authorId || '').toUpperCase()) + ' — ' + _glEscape(a.name || '') + '</h4>' +
+              '<p>' + _glEscape(a.text || '') + '</p></section>';
+          }).join('') + '</div>';
+        var choices = authors.map(function (a) {
+          return { id: a.authorId, label: String(a.authorId || '').toUpperCase() };
+        }).concat([{ id: 'none', label: 'Keine Person' }]);
+        qPanel.innerHTML = (rd.content.questions || []).map(function (q, idx) {
+          var selected = rd.genAnswers[q.questionId] || '';
+          return '<div class="gl-reading-statement gl-reading-multi-author" data-question-id="' + _glEscape(q.questionId) + '">' +
+            '<p><strong>' + (idx + 1) + '.</strong> ' + _glEscape(q.statement) + '</p>' +
+            '<div class="gl-reading-author-choices">' + choices.map(function (c) {
+              var cls = '';
+              if (rd.genChecked) {
+                if (c.id === q.correctAuthorId) cls = ' gl-reading-opt-correct';
+                else if (selected === c.id) cls = ' gl-reading-opt-wrong';
+              }
+              return '<label class="gl-reading-mc3-option' + cls + '"><input type="radio" name="author-' + _glEscape(q.questionId) +
+                '" value="' + _glEscape(c.id) + '"' + (selected === c.id ? ' checked' : '') + (rd.genChecked ? ' disabled' : '') +
+                '> ' + _glEscape(c.label) + '</label>';
+            }).join('') + '</div></div>';
+        }).join('') + rdCheckButtonHtml();
+        qPanel.querySelectorAll('input[type="radio"]').forEach(function (input) {
+          if (input._rdWired) return;
+          input._rdWired = true;
+          input.addEventListener('change', function () {
+            var group = input.closest('[data-question-id]');
+            if (group) rd.genAnswers[group.getAttribute('data-question-id')] = input.value;
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdGradeMultiAuthor() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === q.correctAuthorId, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       function rdCheckButtonHtml() {
         if (rd.genChecked) {
           return '<div class="gl-reading-result-summary">' + _glEscape(rd._lastGenScoreLabel || '') + '</div>';
@@ -2175,7 +2230,8 @@
         text_reconstruction_sentence_matching: rdRenderTextReconstruction,
         section_statement_matching: rdRenderSectionMatching,
         detail_tristate_with_global_heading: rdRenderDetailGlobal,
-        reading_detail_mc3: rdRenderDetailMc3
+        reading_detail_mc3: rdRenderDetailMc3,
+        multi_author_statement_matching_with_none: rdRenderMultiAuthor
       };
 
       function rdRenderGeneratedWorkspace() {
@@ -2219,7 +2275,8 @@
         text_reconstruction_sentence_matching: rdGradeTextReconstruction,
         section_statement_matching: rdGradeSectionMatching,
         detail_tristate_with_global_heading: rdGradeDetailGlobal,
-        reading_detail_mc3: rdGradeDetailMc3
+        reading_detail_mc3: rdGradeDetailMc3,
+        multi_author_statement_matching_with_none: rdGradeMultiAuthor
       };
 
       function rdCheckGeneratedAnswers() {
