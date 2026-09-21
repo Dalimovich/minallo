@@ -52,6 +52,7 @@ async function saveProfile() {
       ? window._resolveGermanExamProfileId(test, level)
       : null;
   }
+  var _dbSaved = false;
   try {
     var _pr = await _sb.from('profiles').upsert(data);
     if (_pr && _pr.error) {
@@ -63,40 +64,78 @@ async function saveProfile() {
       var _pr2 = await _sb.from('profiles').upsert(_fb);
       if (_pr2 && _pr2.error) throw new Error(_pr2.error.message || 'save failed');
     }
+    _dbSaved = true;
     // Read the real saved row back: server first, then runtime, then cache.
     var saved = await _sb.from('profiles').select('*').eq('id', _currentUser.id).single();
     if (!saved) throw new Error('Could not confirm the saved profile');
     if (isLearner && (saved.german_test !== data.german_test || saved.german_level !== data.german_level)) {
       throw new Error('Your German level was not saved. Please try again.');
     }
-    showToast(_t('toast_profile_saved'), _t('toast_profile_saved_sub'));
-    if (data.vertiefung) {
-      _userVertiefung = data.vertiefung;
-      localStorage.setItem('ss_vertiefung', data.vertiefung);
-    }
-    if (data.programme) {
-      var _spRaw = data.programme.split(',')[0].trim();
-      var _spM = MAJOR_LIST.find(function (m) {
-        return m.toLowerCase() === _spRaw.toLowerCase();
-      });
-      if (_spM) {
-        _userMajor = _spM;
-        localStorage.setItem('ss_major', _spM);
+    // Local, non-critical form/state updates. A failure here must never turn a
+    // successful save into a "save failed" message.
+    try {
+      if (data.vertiefung) {
+        _userVertiefung = data.vertiefung;
+        localStorage.setItem('ss_vertiefung', data.vertiefung);
       }
+      if (data.programme) {
+        var _spRaw = data.programme.split(',')[0].trim();
+        var _spM = MAJOR_LIST.find(function (m) {
+          return m.toLowerCase() === _spRaw.toLowerCase();
+        });
+        if (_spM) {
+          _userMajor = _spM;
+          localStorage.setItem('ss_major', _spM);
+        }
+      }
+      var init = document.getElementById('profileInitial');
+      if (init && data.full_name) init.textContent = data.full_name.charAt(0).toUpperCase();
+      updateAuthIndicator(_currentUser);
+    } catch (_uiErr) {
+      if (typeof console !== 'undefined' && console.warn) console.warn('[Profile] local UI update failed', _uiErr);
     }
-    var init = document.getElementById('profileInitial');
-    if (init && data.full_name) init.textContent = data.full_name.charAt(0).toUpperCase();
-    updateAuthIndicator(_currentUser);
-    // Make the saved row the authoritative runtime profile: updates
+    // The saved row is now the authoritative runtime profile. This updates
     // window._germanTest/_germanLevel/_germanExamProfileId, the profile cache,
-    // and fires ss-profile-updated so every open surface (practice level
-    // selectors, sidebar chip, Writing Coach badge, Sprachbausteine) reacts
-    // with no reload.
+    // and fires ss-profile-updated, which makes the German exam workspace drop
+    // the previous exam and load the new manifest. It runs BEFORE the success
+    // notification so nothing can announce a change the UI has not adopted.
     if (typeof window._applySavedProfile === 'function') window._applySavedProfile(saved);
     else if (typeof window.applyProfile === 'function') window.applyProfile(saved);
+    // Let the new exam manifest land so the first thing the user sees is the
+    // new exam, but never hold the notification hostage to a slow network: the
+    // workspace shows its own loading state meanwhile.
+    await _settleExamRefresh(1500);
+    showToast(_t('toast_profile_saved'), _t('toast_profile_saved_sub'));
   } catch (e) {
+    // If the row WAS written but we could not confirm/apply it, the server is
+    // now the truth: resync the runtime profile from it rather than leaving the
+    // UI on a profile that no longer matches the saved one.
+    if (_dbSaved && typeof window._ensureUserProfile === 'function') {
+      try {
+        window._ensureUserProfile({ force: true });
+      } catch (_resyncErr) {
+        /* best effort */
+      }
+    }
     showToast(_t('toast_save_failed'), String((e && e.message) || e));
   }
+}
+
+// Resolves when the German exam workspace has adopted the just-saved profile
+// (manifest loaded or failed), or after maxMs, whichever comes first. A no-op
+// when German Practice has not been opened yet.
+function _settleExamRefresh(maxMs) {
+  var refresh = window._glExamRefreshNow;
+  if (typeof refresh !== 'function') return Promise.resolve();
+  var settled = Promise.resolve()
+    .then(function () {
+      return refresh();
+    })
+    .catch(function () {});
+  var timeout = new Promise(function (resolve) {
+    setTimeout(resolve, maxMs);
+  });
+  return Promise.race([settled, timeout]);
 }
 
 // The profile form HTML is lazy-loaded, so the Save button doesn't exist when

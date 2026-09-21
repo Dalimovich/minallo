@@ -6982,6 +6982,14 @@
           var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
           return (p && p.examProfileId) || null;
         },
+        // The SAVED exam selection is the cache/refresh key; the server resolves which exam profile it maps to,
+        // so the workspace follows the saved profile without a client-side exam registry.
+        savedProfileKey: function () {
+          var p = window.getGermanLearnerProfile && window.getGermanLearnerProfile();
+          return p && p.state === 'ready' && p.userType === 'learner' && p.testFamily && p.targetLevel
+            ? p.testFamily + '|' + p.targetLevel
+            : '';
+        },
         onProfileChange: function (prev, next) {
           _glCancelAllGenerations();
           if (typeof window._glCloseListeningView === 'function') window._glCloseListeningView();

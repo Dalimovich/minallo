@@ -2,7 +2,7 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 9999;
+  z-index: var(--layer-notification, 20000); /* above every modal root; see css/base.css */
   display: flex;
   flex-direction: column;
   gap: 10px;

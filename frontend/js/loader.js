@@ -349,7 +349,7 @@
     // Inject feature CSS
     (function () {
         [
-            'css/base.css?v=7',
+            'css/base.css?v=8',
             'css/theme.css?v=7',
             'css/styles.css?v=45',
             'css/courses-redesign.css?v=46',
@@ -360,7 +360,7 @@
             'css/mobile-responsive.css?v=4',
             'css/auth.css?v=6',
             'css/onboarding.css?v=2',
-            'views/toast/toast.css?v=2',
+            'views/toast/toast.css?v=3',
             'views/games/games.css',
             // Light-mode polish loads LAST so it wins source-order ties
             // against feature CSS that still hard-codes greys.

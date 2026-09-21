@@ -134,16 +134,16 @@ export function renderOverviewHtml(manifest: ExamManifest): string {
   );
 }
 
-const manifestCache = new Map<string, ExamManifest>();
-
 export async function fetchManifest(
   fetcher: typeof authenticatedFetch = authenticatedFetch,
-  base = ''
+  base = '',
+  signal?: AbortSignal
 ): Promise<{ profileId: string; manifest: ExamManifest }> {
   const res = await fetcher(base + '/api/ai/german-exam/manifest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
+    ...(signal ? { signal } : {}),
   });
   if (res.status === 422) throw Object.assign(new Error('unsupported'), { unsupported: true });
   if (!res.ok) throw new Error('manifest_http_' + res.status);
@@ -153,8 +153,13 @@ export async function fetchManifest(
 }
 
 export interface ExamWorkspaceHooks {
-  /** Learner's resolved exam profile id (null = no exam-specific profile). */
+  /** Learner's resolved exam profile id (null = no exam-specific profile). Only a fallback for `savedProfileKey`. */
   resolveProfileId: () => string | null;
+  /**
+   * Identity of the SAVED exam selection (e.g. "Goethe|C1"). The workspace re-reads the manifest whenever this
+   * changes; the SERVER resolves which exam profile it maps to, so adding an exam needs no client registry entry.
+   */
+  savedProfileKey?: () => string;
   /** False while the saved profile is still loading (never guess an exam meanwhile). */
   profileReady: () => boolean;
   /** Discard every piece of profile-specific transient state (generated part, prefetch, TTS, part nav). */
@@ -166,21 +171,166 @@ export interface ExamWorkspaceHooks {
   base?: string;
 }
 
-const state: ExamWorkspaceState = { profileId: null, manifest: null, status: 'idle' };
-const readyWaiters: Array<() => void> = [];
-let epoch = 0;
-
-function flushWaiters(): void {
-  readyWaiters.splice(0).forEach((cb) => {
-    try {
-      cb();
-    } catch {
-      /* a waiter must never break the workspace */
-    }
-  });
+export interface ExamWorkspaceDeps {
+  fetchManifest: (signal: AbortSignal) => Promise<{ profileId: string; manifest: ExamManifest }>;
+  render: (state: ExamWorkspaceState) => void;
 }
 
-function applyDom(): void {
+export interface ExamWorkspaceController {
+  state: ExamWorkspaceState;
+  /** Re-read the saved selection and (re)load the manifest. Resolves when THIS state has settled (or was superseded). */
+  refresh: () => Promise<void>;
+  /** Resolves once the most recent refresh has settled — safe to await after a profile save. */
+  whenSettled: () => Promise<void>;
+  onReady: (cb: () => void) => void;
+  clearCache: () => void;
+}
+
+type CacheEntry = { profileId: string; manifest: ExamManifest } | { unsupported: true };
+
+/**
+ * The single owner of "which exam is the UI showing".
+ *
+ *  - Keyed by the SAVED exam selection, not by a client-side profile registry.
+ *  - A selection change clears the previous exam's manifest and transient state IMMEDIATELY
+ *    (loading state, never the old exam's modules), then loads the new manifest.
+ *  - Every refresh gets a sequence number; a response is applied only if it is still the newest request
+ *    for the currently saved selection. A late response for an old selection is discarded and never cached.
+ *  - A throwing hook can never abort the refresh.
+ */
+export function createExamWorkspace(hooks: ExamWorkspaceHooks, deps: ExamWorkspaceDeps): ExamWorkspaceController {
+  const state: ExamWorkspaceState = { profileId: null, manifest: null, status: 'idle' };
+  let key: string | null = null;
+  let seq = 0;
+  let pendingAbort: AbortController | null = null;
+  let settled: Promise<void> = Promise.resolve();
+  const cache = new Map<string, CacheEntry>();
+  const waiters: Array<() => void> = [];
+
+  const flush = (): void => {
+    waiters.splice(0).forEach((cb) => {
+      try {
+        cb();
+      } catch {
+        /* a waiter must never break the workspace */
+      }
+    });
+  };
+  const safe = (fn: () => void): void => {
+    try {
+      fn();
+    } catch {
+      /* keep the refresh going: a failing reset hook must not leave the UI on the previous exam */
+    }
+  };
+  const render = (): void => safe(() => deps.render(state));
+  const savedKey = (): string => (hooks.savedProfileKey ? hooks.savedProfileKey() : hooks.resolveProfileId() || '');
+  const activeSkill = (): string => {
+    try {
+      return hooks.activeSkill() || '';
+    } catch {
+      return '';
+    }
+  };
+
+  async function run(mine: number): Promise<void> {
+    if (!hooks.profileReady()) {
+      pendingAbort?.abort();
+      state.status = 'loading';
+      render();
+      return;
+    }
+    const wanted = savedKey();
+    if (wanted !== (key ?? '')) {
+      // The saved exam changed: drop everything that belongs to the previous one BEFORE anything can render.
+      const prev = state.profileId;
+      key = wanted;
+      state.profileId = null;
+      state.manifest = null;
+      state.status = wanted ? 'loading' : 'unsupported';
+      pendingAbort?.abort();
+      safe(() => hooks.onProfileChange(prev, null));
+      render();
+    }
+    if (!wanted) {
+      state.status = 'unsupported';
+      render();
+      flush();
+      return;
+    }
+    const hit = cache.get(wanted);
+    if (hit) {
+      if ('unsupported' in hit) {
+        state.profileId = null;
+        state.manifest = null;
+        state.status = 'unsupported';
+      } else {
+        state.profileId = hit.profileId;
+        state.manifest = hit.manifest;
+        state.status = 'ready';
+      }
+    } else {
+      state.profileId = null;
+      state.manifest = null;
+      state.status = 'loading';
+      render();
+      pendingAbort?.abort();
+      const ac = new AbortController();
+      pendingAbort = ac;
+      let entry: CacheEntry | null = null;
+      let failed = false;
+      try {
+        entry = await deps.fetchManifest(ac.signal);
+      } catch (err) {
+        if ((err as { unsupported?: boolean })?.unsupported) entry = { unsupported: true };
+        else failed = true;
+      }
+      // Superseded by a newer refresh, or the saved selection moved on while we waited: apply nothing, cache nothing.
+      if (mine !== seq || wanted !== key) return;
+      if (failed || !entry) {
+        state.status = 'error';
+      } else if ('unsupported' in entry) {
+        cache.set(wanted, entry);
+        state.status = 'unsupported';
+      } else {
+        cache.set(wanted, entry);
+        state.profileId = entry.profileId; // the SERVER's resolution of the saved selection is authoritative
+        state.manifest = entry.manifest;
+        state.status = 'ready';
+      }
+    }
+    render();
+    const active = activeSkill();
+    const reason = active ? skillBlockReason(state, active) : '';
+    if (reason) safe(() => hooks.onActiveSkillBlocked(active, reason));
+    flush();
+  }
+
+  const refresh = (): Promise<void> => {
+    const mine = ++seq;
+    const p = run(mine).catch(() => {
+      if (mine === seq && state.status === 'loading') {
+        state.status = 'error';
+        render();
+      }
+    });
+    settled = p;
+    return p;
+  };
+
+  return {
+    state,
+    refresh,
+    whenSettled: () => settled,
+    onReady: (cb) => {
+      if (state.status === 'ready' || state.status === 'unsupported' || state.status === 'error') cb();
+      else waiters.push(cb);
+    },
+    clearCache: () => cache.clear(),
+  };
+}
+
+function applyDom(state: ExamWorkspaceState): void {
   const root = document.getElementById('glExamGroup');
   const overview = document.getElementById('glExamOverview');
   if (!root) return;
@@ -202,6 +352,9 @@ function applyDom(): void {
     if (state.status === 'ready' && state.manifest) {
       overview.innerHTML = renderOverviewHtml(state.manifest);
       overview.hidden = false;
+    } else if (state.status === 'loading') {
+      overview.innerHTML = '<p class="gl-exam-sub gl-exam-loading" role="status">Loading your exam…</p>';
+      overview.hidden = false;
     } else if (state.status === 'error') {
       overview.innerHTML =
         '<p class="gl-exam-sub">Your exam structure could not be loaded. ' +
@@ -214,85 +367,38 @@ function applyDom(): void {
   }
 }
 
-async function refresh(hooks: ExamWorkspaceHooks): Promise<void> {
-  const mine = ++epoch;
-  if (!hooks.profileReady()) {
-    state.status = 'loading';
-    applyDom();
-    return;
-  }
-  const wanted = hooks.resolveProfileId();
-  if (profileChanged(state.profileId, wanted)) {
-    const prev = state.profileId;
-    state.profileId = wanted;
-    state.manifest = null;
-    hooks.onProfileChange(prev, wanted);
-  }
-  if (!wanted) {
-    state.status = 'unsupported';
-    applyDom();
-    flushWaiters();
-    return;
-  }
-  const cached = manifestCache.get(wanted);
-  if (cached) {
-    state.manifest = cached;
-    state.status = 'ready';
-  } else {
-    state.status = 'loading';
-    applyDom();
-    try {
-      const data = await fetchManifest(undefined, hooks.base || '');
-      if (mine !== epoch) return; // a newer refresh superseded this one
-      // The SERVER's resolution of the saved profile is authoritative.
-      manifestCache.set(data.profileId, data.manifest);
-      if (data.profileId !== wanted) {
-        // Local view was stale; adopt the server's exam.
-        const prev = state.profileId;
-        state.profileId = data.profileId;
-        hooks.onProfileChange(prev, data.profileId);
-      }
-      state.manifest = data.manifest;
-      state.status = 'ready';
-    } catch (err) {
-      if (mine !== epoch) return;
-      state.manifest = null;
-      state.status = (err as { unsupported?: boolean })?.unsupported ? 'unsupported' : 'error';
-    }
-  }
-  applyDom();
-  const active = hooks.activeSkill();
-  const reason = active ? skillBlockReason(state, active) : '';
-  if (reason) hooks.onActiveSkillBlocked(active, reason);
-  flushWaiters();
-}
-
 declare global {
   interface Window {
     _glExamState?: () => ExamWorkspaceState;
     _glExamSkillBlocked?: (skill: string) => string;
     _glExamPartAvailability?: (moduleId: string, partId: string) => 'yes' | 'no' | 'pending';
     _glExamOnReady?: (cb: () => void) => void;
+    /** Resolves when the workspace has adopted the most recently saved exam (manifest applied or failed). Used right after a Profile save. */
+    _glExamRefreshNow?: () => Promise<void>;
   }
 }
 
-export function initExamWorkspace(hooks: ExamWorkspaceHooks): void {
-  window._glExamState = () => state;
-  window._glExamSkillBlocked = (skill) => skillBlockReason(state, skill);
-  window._glExamPartAvailability = (moduleId, partId) => partAvailability(state, moduleId, partId);
-  window._glExamOnReady = (cb) => {
-    if (state.status === 'ready' || state.status === 'unsupported' || state.status === 'error') cb();
-    else readyWaiters.push(cb);
-  };
-  const run = (): void => {
-    void refresh(hooks);
-  };
-  window.addEventListener('ss-profile-updated', run);
+export function initExamWorkspace(hooks: ExamWorkspaceHooks): ExamWorkspaceController {
+  const ctl = createExamWorkspace(hooks, {
+    fetchManifest: (signal) => fetchManifest(undefined, hooks.base || '', signal),
+    render: applyDom,
+  });
+  window._glExamState = () => ctl.state;
+  window._glExamSkillBlocked = (skill) => skillBlockReason(ctl.state, skill);
+  window._glExamPartAvailability = (moduleId, partId) => partAvailability(ctl.state, moduleId, partId);
+  window._glExamOnReady = (cb) => ctl.onReady(cb);
+  // The 'ss-profile-updated' listener below has already started the refresh synchronously by the time a Profile
+  // save calls this, so just wait for it instead of starting (and aborting) a second request.
+  window._glExamRefreshNow = () => ctl.whenSettled();
+  window.addEventListener('ss-profile-updated', () => {
+    void ctl.refresh();
+  });
   document.addEventListener('click', (e) => {
     if ((e.target as HTMLElement | null)?.closest?.('.gl-exam-retry')) {
-      manifestCache.clear();
-      run();
+      ctl.clearCache();
+      void ctl.refresh();
     }
   });
-  run();
+  void ctl.refresh();
+  return ctl;
 }
