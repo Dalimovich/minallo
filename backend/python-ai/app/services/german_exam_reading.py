@@ -341,6 +341,18 @@ def _prompt_reading_detail_mc3(profile: ExamProfile, part: PartBlueprint, plan: 
     return system, user
 
 
+def _option_holder(question: Any) -> dict[str, Any] | None:
+    """The dict that carries `options` + `correctIndex`: `mc3` for comprehension items, the item itself for cloze gaps."""
+    if not isinstance(question, dict):
+        return None
+    mc3 = question.get("mc3")
+    if isinstance(mc3, dict) and isinstance(mc3.get("options"), list):
+        return mc3
+    if isinstance(question.get("options"), list):
+        return question
+    return None
+
+
 def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
     """Deterministically move each item's correct option to a balanced, seeded position (LLMs put the
     key in the middle far too often). Only swaps two options inside one item; text and keys stay consistent."""
@@ -355,22 +367,22 @@ def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
     rng = random.Random(seed)
     width = 3
     for q in questions:
-        mc3 = q.get("mc3") if isinstance(q, dict) else None
-        if isinstance(mc3, dict) and isinstance(mc3.get("options"), list):
-            width = len(mc3["options"]) or 3
+        holder = _option_holder(q)
+        if holder is not None:
+            width = len(holder["options"]) or 3
             break
     targets = [i % width for i in range(len(questions))]
     rng.shuffle(targets)
     out = copy.deepcopy(content)
     for q, target in zip(out["questions"], targets):
-        mc3 = q.get("mc3") if isinstance(q, dict) else None
-        if not isinstance(mc3, dict) or not isinstance(mc3.get("options"), list):
+        holder = _option_holder(q)
+        if holder is None:
             continue
-        idx = mc3.get("correctIndex")
-        options = mc3["options"]
+        idx = holder.get("correctIndex")
+        options = holder["options"]
         if isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < len(options) and target < len(options):
             options[idx], options[target] = options[target], options[idx]
-            mc3["correctIndex"] = target
+            holder["correctIndex"] = target
     return out
 
 
@@ -423,9 +435,54 @@ def _prompt_multi_author_statement_matching(
     return system, user
 
 
+
+# ── contextual_cloze_mc4 (Goethe Lesen Teil 1) ──────────────────────────────
+
+
+def _prompt_contextual_cloze_mc4(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
+) -> tuple[str, str]:
+    gap_count = part.constraints.get("gapCount", 8)
+    example = part.constraints.get("exampleGapCount", 0)
+    option_count = part.constraints.get("optionCount", 4)
+    approx = part.constraints.get("wordCountApprox", 320)
+    gap_ids = ([" {{g0}}"] if example else []) + [f"{{{{g{i}}}}}" for i in range(1, gap_count + 1)]
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one coherent, natural expository text of about {approx} words on the topic "
+        f"'{topic['label']}', written for an educated general readership. Replace {gap_count + example} single words or short "
+        f"fixed phrases by the literal placeholders {', '.join(p.strip() for p in gap_ids)} (each EXACTLY once, in this reading order, "
+        "spread across the whole text). "
+        + ("{{g0}} is the solved EXAMPLE: it is given a full item like the others, and it should be one of the easier gaps. " if example else "")
+        + f"Every gap is answered by an item with exactly {option_count} options and one correct answer.\n\n"
+        "The gaps must test how the WORDING fits the CONTEXT of the whole sentence and the surrounding sentences at C1 level: "
+        "precise lexical choice and collocation, connectors and text-cohesive words, a word the argument requires, fixed "
+        "expressions, register. Every wrong option is a real word of the same word class and form that fits the immediate "
+        "grammar of the gap but is wrong for the meaning or the collocation in THIS text; exactly one option is defensible. "
+        "Never use a synonym that could also be correct, and never a wrong option that is absurd or of a different word class "
+        "(no giveaways by grammar alone). Do not gap words whose only alternatives are equally acceptable.\n\n"
+        "IMPORTANT — the correct answer must sit in a different position across items: do not keep it mostly in the same slot. "
+        "Choose skillTags per item and use at least 3 different tags.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "text": {"title": "...", "paragraphs": ["... {{g0}} ...", "..."]},\n'
+        + ('  "example": {"gapId": "g0", "options": ["...", "...", "...", "..."], "correctIndex": 0},\n' if example else "")
+        + '  "questions": [\n'
+        '    {"questionId": "q1", "gapId": "g1", "options": ["...", "...", "...", "..."], "correctIndex": 2,\n'
+        '     "skillTags": ["paraphrase_mapping"], "difficulty": "c1"},\n'
+        "    ...\n"
+        f"  ] // exactly {gap_count} entries for g1..g{gap_count}\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
     "multi_author_statement_matching_with_none": _prompt_multi_author_statement_matching,
+    "contextual_cloze_mc4": _prompt_contextual_cloze_mc4,
     "text_reconstruction_sentence_matching": _prompt_lesen1,
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,

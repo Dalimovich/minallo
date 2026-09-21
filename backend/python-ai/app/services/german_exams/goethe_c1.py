@@ -86,7 +86,7 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
         part_id="lesen_1", module="reading", title="Lückentext (Multiple Choice)",
         task_type="contextual_cloze_mc4",
         constraints={"gapCount": 8, "exampleGapCount": 1, "optionCount": 4, "wordCountApprox": 320,
-                     "suggestedMinutes": 10},
+                     "suggestedMinutes": 10, "balanceOptionPositions": True},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("lexical_specificity", "grammar_complexity"),
         scoring=ScoringSpec(max_points=8, points_per_correct=1), available=False,
     ),

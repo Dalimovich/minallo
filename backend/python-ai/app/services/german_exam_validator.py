@@ -576,6 +576,77 @@ def validate_detail_tristate_with_global_heading(part: PartBlueprint, content: d
 _LANGUAGE_ELEMENT_CATEGORIES = {"grammar", "lexicon", "orthography"}
 
 
+_PLACEHOLDER = re.compile(r"\{\{(g\d+)\}\}")
+
+
+def validate_contextual_cloze_mc4(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """One continuous text with an already-solved example gap and N four-option gaps (Goethe Lesen Teil 1).
+
+    Gaps are the literal placeholders {{g0}} (the example) and {{g1}}..{{gN}}, each exactly once and in
+    reading order. Counts, option count and length come from the blueprint; nothing here knows the exam."""
+    issues: list[ValidationIssue] = []
+    text = content.get("text")
+    questions = content.get("questions") or []
+    example = content.get("example")
+    gap_count = part.constraints.get("gapCount", 8)
+    example_count = part.constraints.get("exampleGapCount", 0)
+    option_count = part.constraints.get("optionCount", 4)
+
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    joined = ""
+    if not isinstance(paragraphs, list) or not paragraphs or any(not isinstance(p, str) or not p.strip() for p in paragraphs):
+        issues.append(ValidationIssue(None, "text.paragraphs must be a non-empty list of strings"))
+    else:
+        joined = "\n".join(paragraphs)
+        expected = ([f"g0"] if example_count else []) + [f"g{i}" for i in range(1, gap_count + 1)]
+        found = _PLACEHOLDER.findall(joined)
+        if found != expected:
+            issues.append(ValidationIssue(None, f"gap placeholders must be exactly {expected} once each in reading order, found {found}"))
+        if "{{" in _PLACEHOLDER.sub("", joined) or "}}" in _PLACEHOLDER.sub("", joined):
+            issues.append(ValidationIssue(None, "malformed gap placeholder in the text"))
+        approx = part.constraints.get("wordCountApprox")
+        if approx:
+            words = len(_PLACEHOLDER.sub("X", joined).split())
+            if not round(approx * 0.8) <= words <= round(approx * 1.2):
+                issues.append(ValidationIssue(None, f"text has {words} words, expected about {approx} ({round(approx * 0.8)}-{round(approx * 1.2)})"))
+
+    def check_item(item: Any, item_id: str | None, gap_id: str) -> int | None:
+        if not isinstance(item, dict):
+            issues.append(ValidationIssue(item_id, "item is missing"))
+            return None
+        if item.get("gapId") != gap_id:
+            issues.append(ValidationIssue(item_id, f"gapId must be {gap_id}"))
+        options = item.get("options")
+        if not isinstance(options, list) or len(options) != option_count or any(not isinstance(o, str) or not o.strip() for o in options):
+            issues.append(ValidationIssue(item_id, f"expected {option_count} non-empty options"))
+            return None
+        if len({o.strip().lower() for o in options}) != len(options):
+            issues.append(ValidationIssue(item_id, "duplicate options within one item"))
+        correct = item.get("correctIndex")
+        if not isinstance(correct, int) or isinstance(correct, bool) or not 0 <= correct < option_count:
+            issues.append(ValidationIssue(item_id, "correctIndex missing or out of range"))
+            return None
+        return correct
+
+    if example_count:
+        check_item(example, "example", "g0")
+    if len(questions) != gap_count:
+        issues.append(ValidationIssue(None, f"expected {gap_count} gap items, got {len(questions)}"))
+    keys: list[int] = []
+    for i, q in enumerate(questions, start=1):
+        key = check_item(q, q.get("questionId"), f"g{i}")
+        if key is not None:
+            keys.append(key)
+    if part.constraints.get("balanceOptionPositions") and len(keys) == gap_count:
+        most = max(keys.count(k) for k in set(keys))
+        if most > -(-gap_count // 2):
+            issues.append(ValidationIssue(None, f"the correct option sits in the same position for {most} of {gap_count} items"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+
 def validate_cloze_mc4_language_elements(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
     """telc-style Sprachbausteine: one continuous text with N numbered gaps
     (marked inline as the literal placeholder "{{gapId}}", same convention as
@@ -778,6 +849,7 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "reading_detail_mc3": validate_reading_detail_mc3,
     "multi_author_statement_matching_with_none": validate_multi_author_statement_matching_with_none,
     "cloze_mc4_language_elements": validate_cloze_mc4_language_elements,
+    "contextual_cloze_mc4": validate_contextual_cloze_mc4,
     "choice_long_form_writing": validate_choice_long_form_writing,
 }
 

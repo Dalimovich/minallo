@@ -47,7 +47,7 @@ TASK_TYPES: dict[str, bool] = {
     "presentation_summary_followup": True,
     "quote_guided_discussion": True,
     # --- Goethe-Zertifikat C1 ---
-    "contextual_cloze_mc4": False,
+    "contextual_cloze_mc4": True,
     "reading_detail_mc3": True,
     "multi_author_statement_matching_with_none": True,
     "multi_source_statement_matching": False,

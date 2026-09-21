@@ -2214,6 +2214,67 @@
         return results;
       }
 
+      // contextual_cloze_mc4 — one text with inline gaps; each gap is its own four-option item. g0 is the
+      // already-solved example (shown filled, never scored). Nothing here knows which exam it is.
+      function rdRenderContextualCloze() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        var questions = rd.content.questions || [];
+        var byGap = {};
+        questions.forEach(function (q) { byGap[q.gapId] = q; });
+        var example = rd.content.example || null;
+        var letters = 'abcd';
+        var body = (text.paragraphs || []).map(function (para) {
+          var out = '';
+          var last = 0;
+          String(para).replace(/\{\{(g\d+)\}\}/g, function (match, gapId, offset) {
+            out += _glEscape(para.slice(last, offset));
+            last = offset + match.length;
+            if (example && gapId === example.gapId) {
+              out += '<strong class="gl-reading-cloze-example">(0) ' + _glEscape((example.options || [])[example.correctIndex] || '') + '</strong>';
+              return match;
+            }
+            var q = byGap[gapId];
+            if (!q) { out += _glEscape(match); return match; }
+            var selected = rd.genAnswers[q.questionId];
+            var cls = '';
+            if (rd.genChecked) cls = selected === q.correctIndex ? ' gl-reading-opt-correct' : ' gl-reading-opt-wrong';
+            out += '<select class="gl-reading-cloze-select' + cls + '" data-question-id="' + _glEscape(q.questionId) + '"' +
+              (rd.genChecked ? ' disabled' : '') + ' aria-label="Gap ' + _glEscape(gapId.slice(1)) + '"><option value="">' + _glEscape(gapId.slice(1)) + '</option>' +
+              (q.options || []).map(function (opt, i) {
+                return '<option value="' + i + '"' + (selected === i ? ' selected' : '') + '>' + letters[i] + ') ' + _glEscape(opt) + '</option>';
+              }).join('') + '</select>';
+            return match;
+          });
+          out += _glEscape(para.slice(last));
+          return '<p>' + out + '</p>';
+        }).join('');
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' + body + '</div>';
+        qPanel.innerHTML = rdCheckButtonHtml();
+        textPanel.querySelectorAll('.gl-reading-cloze-select').forEach(function (sel) {
+          if (sel._rdWired) return;
+          sel._rdWired = true;
+          sel.addEventListener('change', function () {
+            rd.genAnswers[sel.getAttribute('data-question-id')] = sel.value === '' ? null : parseInt(sel.value, 10);
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdGradeContextualCloze() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === q.correctIndex, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       function rdCheckButtonHtml() {
         if (rd.genChecked) {
           return '<div class="gl-reading-result-summary">' + _glEscape(rd._lastGenScoreLabel || '') + '</div>';
@@ -2231,7 +2292,8 @@
         section_statement_matching: rdRenderSectionMatching,
         detail_tristate_with_global_heading: rdRenderDetailGlobal,
         reading_detail_mc3: rdRenderDetailMc3,
-        multi_author_statement_matching_with_none: rdRenderMultiAuthor
+        multi_author_statement_matching_with_none: rdRenderMultiAuthor,
+        contextual_cloze_mc4: rdRenderContextualCloze
       };
 
       function rdRenderGeneratedWorkspace() {
@@ -2276,7 +2338,8 @@
         section_statement_matching: rdGradeSectionMatching,
         detail_tristate_with_global_heading: rdGradeDetailGlobal,
         reading_detail_mc3: rdGradeDetailMc3,
-        multi_author_statement_matching_with_none: rdGradeMultiAuthor
+        multi_author_statement_matching_with_none: rdGradeMultiAuthor,
+        contextual_cloze_mc4: rdGradeContextualCloze
       };
 
       function rdCheckGeneratedAnswers() {

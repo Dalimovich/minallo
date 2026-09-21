@@ -341,6 +341,25 @@ def _verify_prompt_lesen3(part: PartBlueprint, content: dict[str, Any]) -> tuple
     return system, user
 
 
+def _verify_prompt_contextual_cloze(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied text"
+    ) + (
+        "\n\nThis is contextual_cloze_mc4 (Goethe-style Lesen Teil 1, Lückentext): one text with gaps, each answered by "
+        "the item's own 4 options. Gap g0 is a solved example and is not scored. For each item verify: (A) the option at "
+        "correctIndex fits the gap in the full text in meaning, collocation and register (UNSUPPORTED_CORRECT_ANSWER if "
+        "not); (B) no OTHER option of that item would also be acceptable — if one could, use MULTIPLE_DEFENSIBLE_ANSWERS "
+        "with evidence.optionIndexes listing both; (C) the wrong options are plausible near-misses of the same word "
+        "class, not absurd or decidable by grammar alone (IMPLAUSIBLE_DISTRACTOR); (D) TRIVIAL_ITEM if the answer can be "
+        "found without reading the context. Part-wide: PART_WIDE_INCOHERENCE if the text is not one coherent, natural, "
+        "original C1-level text once the gaps are filled."
+    )
+    text = content.get("text") or {}
+    user = json.dumps({"text": {"title": text.get("title"), "paragraphs": text.get("paragraphs")},
+                       "example": content.get("example"), "questions": content.get("questions") or []}, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_sprachbausteine(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     system = _base_verifier_preamble(part) + (
         "\n\nThis is cloze_mc4_language_elements (telc-style Sprachbausteine). You are given the full text "
@@ -452,6 +471,9 @@ def _verify_prompt_speaking(part: PartBlueprint, content: dict[str, Any]) -> tup
     return system, json.dumps(content, ensure_ascii=False)
 
 
+# Cloze task types whose items carry their own 4 options and are audited with per-option verdicts.
+_CLOZE_MC4_TASK_TYPES = frozenset({"cloze_mc4_language_elements", "contextual_cloze_mc4"})
+
 # Task types whose items are `mc3` (three options, one key) and are audited with per-option verdicts.
 _MC3_TASK_TYPES = frozenset({"sentence_completion_mc3", "reading_detail_mc3"})
 
@@ -467,6 +489,7 @@ _VERIFY_PROMPT_BUILDERS = {
     "multi_author_statement_matching_with_none": _verify_prompt_multi_author,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
     "cloze_mc4_language_elements": _verify_prompt_sprachbausteine,
+    "contextual_cloze_mc4": _verify_prompt_contextual_cloze,
     "choice_long_form_writing": _verify_prompt_schreiben,
 }
 
@@ -585,7 +608,7 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
             "bestHeadingId": {"type": ["string", "null"]},
             "tiedHeadingIds": strings,
         })
-    elif part.task_type == "cloze_mc4_language_elements":
+    elif part.task_type in _CLOZE_MC4_TASK_TYPES:
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
     else:
@@ -641,7 +664,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "MULTIPLE_DEFENSIBLE_ANSWERS"
             elif values[question["mc3"]["correctIndex"]] != "supported":
                 code = "UNSUPPORTED_CORRECT_ANSWER"
-        elif part.task_type == "cloze_mc4_language_elements":
+        elif part.task_type in _CLOZE_MC4_TASK_TYPES:
             values = audit.get("optionVerdicts")
             if (not isinstance(values, list) or len(values) != 4
                     or any(v not in ("supported", "plausible_wrong", "implausible_wrong") for v in values)):
@@ -781,6 +804,14 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
             "For the 'global_heading' item, bestHeadingId is whichever of the 3 options best summarizes the "
             "WHOLE text, tiedHeadingIds lists any other option that is an equally good global summary "
             "(not just a good detail-level description); leave trueVerdict null. "
+        )
+    elif part.task_type == "contextual_cloze_mc4":
+        system += (
+            "optionVerdicts classifies EACH of the item's own 4 options in order: supported, plausible_wrong, or "
+            "implausible_wrong. Judge every option by substituting it into the gap in the full text: a wrong option is "
+            "implausible_wrong only if it is nonsensical or a giveaway by word class/grammar; a real near-miss in "
+            "meaning, collocation or register is plausible_wrong. Mark a second option supported only if it would be "
+            "equally acceptable to a careful native reader in this text. "
         )
     elif part.task_type == "cloze_mc4_language_elements":
         system += (

@@ -107,7 +107,7 @@ test('the Reading view takes its parts, task types and per-item points from the 
   assert.match(practice, /window\._glExamState/);
   assert.match(practice, /rdPointsPerCorrect\(\)/);
   // renderers and graders are dispatched by task type, one entry per task type
-  for (const taskType of ['text_reconstruction_sentence_matching', 'section_statement_matching', 'detail_tristate_with_global_heading', 'reading_detail_mc3', 'multi_author_statement_matching_with_none']) {
+  for (const taskType of ['text_reconstruction_sentence_matching', 'section_statement_matching', 'detail_tristate_with_global_heading', 'reading_detail_mc3', 'multi_author_statement_matching_with_none', 'contextual_cloze_mc4']) {
     assert.match(practice, new RegExp(`${taskType}: rdRender`), `renderer for ${taskType}`);
     assert.match(practice, new RegExp(`${taskType}: rdGrade`), `grader for ${taskType}`);
   }

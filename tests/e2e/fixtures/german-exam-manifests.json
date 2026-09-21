@@ -12,6 +12,7 @@
         "parts": [
           {
             "constraints": {
+              "balanceOptionPositions": true,
               "exampleGapCount": 1,
               "gapCount": 8,
               "optionCount": 4,
