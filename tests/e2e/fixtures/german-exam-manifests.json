@@ -777,8 +777,16 @@
         "parts": [
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
+              "answerWordMax": 2,
               "itemCount": 5,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                17
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_1",
@@ -789,8 +797,15 @@
           },
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
               "itemCount": 4,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                18
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_2",
@@ -802,7 +817,11 @@
           {
             "constraints": {
               "itemCount": 2,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "revealQuestionsAfterMedia": true,
+              "sourcePages": [
+                19
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_3",
@@ -813,8 +832,18 @@
           },
           {
             "constraints": {
+              "categoryRoles": [
+                "first",
+                "second",
+                "both",
+                "neither"
+              ],
               "itemCount": 6,
-              "mediaType": "video"
+              "mediaType": "video",
+              "optionCount": 4,
+              "sourcePages": [
+                20
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_4",
@@ -825,8 +854,15 @@
           },
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
               "itemCount": 4,
-              "mediaType": "video"
+              "mediaType": "video",
+              "sourcePages": [
+                21
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_5",
@@ -838,7 +874,11 @@
           {
             "constraints": {
               "itemCount": 5,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "optionCount": 4,
+              "sourcePages": [
+                22
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_6",
@@ -850,7 +890,10 @@
           {
             "constraints": {
               "itemCount": 4,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                23
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_7",

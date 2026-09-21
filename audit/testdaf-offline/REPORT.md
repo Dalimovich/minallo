@@ -17,3 +17,10 @@ All seven reading parts remain disabled. Existing reading MC retained. No offici
 Source: https://www.testdaf.de/fileadmin/testdaf/downloads/Demo_Version_digitaler_TestDaF/Beispielaufgaben_Demo-Version_digitaler_TestDaF.pdf
 
 All editable exam facts remain in german_exams/testdaf_digital.py. Fixture copies are test data, not runtime configuration.
+
+## T2 checkpoint
+All seven listening interaction contracts implemented: overview short answers, grouped notes, summary sentence errors, video speaker categories, video outline notes, multiple choice, and aligned spoken/displayed words. Script generation is independent of media delivery; generator-supplied assets are rejected. Explicit answer variants and profile normalization only, with no semantic-equivalence claim. Source-only audits require coverage and reject ambiguity, unsupported keys, outside knowledge and implausible distractors.
+
+A shared task workspace now dispatches renderers from manifest task types and rejects stale/mismatched envelopes. Media teardown aborts listeners, pauses playback and clears URLs. Summary reveal-after-media is profile-driven. Video uses a video element, never audio substitution. 100 backend cases and 7 mocked browser media cases passed; existing 8 workspace tests passed; frontend typecheck passed.
+
+Release blockers: all parts need live linguistic qualification. All listening parts need playable, script-aligned media delivery. Video acquisition/generation is not implemented. Short-answer variants are practice scoring only, not a replacement for official human assessment. No paid media calls occurred.

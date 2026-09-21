@@ -79,6 +79,8 @@ def _part(module: str, part_id: str, title: str, task_type: str, **constraints) 
     )
 
 
+# Selection option counts and banks below follow the cited demo as practice policy;
+# they are not a claim that every future official task uses the same bank size.
 # Demo pp. 8-9: four options, seven questions, numbered paragraphs, 15 minutes.
 # Paragraph count, word budget and per-item scopes below are our practice policy
 # modelled on that example, NOT universal official counts/length limits.
@@ -128,13 +130,14 @@ _READING = (
     _part("reading", "lesen_7", "Fehler in Zusammenfassung erkennen", "reading_summary_error_detection", itemCount=3),
 )
 _LISTENING = (
-    _part("listening", "hoeren_1", "Kurzantwort: Übersicht ergänzen", "listening_overview_completion", itemCount=5, mediaType="audio"),
-    _part("listening", "hoeren_2", "Kurzantwort: Textstellen zu Begriffspaar notieren", "listening_concept_pair_notes", itemCount=4, mediaType="audio"),
-    _part("listening", "hoeren_3", "Fehler in Zusammenfassung erkennen", "listening_summary_error_detection", itemCount=2, mediaType="audio"),
-    _part("listening", "hoeren_4", "Aussagen Personen zuordnen", "video_speaker_statement_matching", itemCount=6, mediaType="video"),
-    _part("listening", "hoeren_5", "Kurzantwort: Gliederungspunkte zu Vortrag ergänzen", "video_outline_completion", itemCount=4, mediaType="video"),
-    _part("listening", "hoeren_6", "Multiple-Choice", "listening_multiple_choice", itemCount=5, mediaType="audio"),
-    _part("listening", "hoeren_7", "Laut- und Schriftbild abgleichen", "sound_script_comparison", itemCount=4, mediaType="audio"),
+    _part("listening", "hoeren_1", "Kurzantwort: Übersicht ergänzen", "listening_overview_completion", itemCount=5, mediaType="audio", answerWordMax=2,
+          answerNormalization={"ignoreCase": True, "ignorePunctuation": True}, sourcePages=(17,)),
+    _part("listening", "hoeren_2", "Kurzantwort: Textstellen zu Begriffspaar notieren", "listening_concept_pair_notes", itemCount=4, mediaType="audio", answerNormalization={"ignoreCase": True, "ignorePunctuation": True}, sourcePages=(18,)),
+    _part("listening", "hoeren_3", "Fehler in Zusammenfassung erkennen", "listening_summary_error_detection", itemCount=2, mediaType="audio", revealQuestionsAfterMedia=True, sourcePages=(19,)),
+    _part("listening", "hoeren_4", "Aussagen Personen zuordnen", "video_speaker_statement_matching", itemCount=6, mediaType="video", optionCount=4, categoryRoles=("first", "second", "both", "neither"), sourcePages=(20,)),
+    _part("listening", "hoeren_5", "Kurzantwort: Gliederungspunkte zu Vortrag ergänzen", "video_outline_completion", itemCount=4, mediaType="video", answerNormalization={"ignoreCase": True, "ignorePunctuation": True}, sourcePages=(21,)),
+    _part("listening", "hoeren_6", "Multiple-Choice", "listening_multiple_choice", itemCount=5, mediaType="audio", optionCount=4, sourcePages=(22,)),
+    _part("listening", "hoeren_7", "Laut- und Schriftbild abgleichen", "sound_script_comparison", itemCount=4, mediaType="audio", sourcePages=(23,)),
 )
 _WRITING = (
     _part("writing", "schreiben_1", "Argumentativen Text schreiben", "argumentative_essay", wordCountMin=200),
