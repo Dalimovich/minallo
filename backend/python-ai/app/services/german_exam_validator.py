@@ -644,6 +644,13 @@ _SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    from .german_exam_productive import WRITING_TYPES, SPEAKING_TYPES, validate_productive
+    if part.task_type in WRITING_TYPES | SPEAKING_TYPES:
+        try:
+            validate_productive(part, content)
+            return []
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            return [ValidationIssue(None, str(exc))]
     from .german_exam_media_tasks import MEDIA_TASKS, validate_media_task
     if part.task_type in MEDIA_TASKS:
         try:

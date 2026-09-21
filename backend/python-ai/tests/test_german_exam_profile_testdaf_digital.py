@@ -30,8 +30,8 @@ def test_scored_core_structure_and_counts():
 
 def test_productive_constraints_preserve_exact_and_approximate_requirements():
     first, second = TESTDAF_DIGITAL.modules["writing"]
-    assert first.constraints == {"wordCountMin": 200}
-    assert second.constraints == {"wordCountMinApprox": 100, "wordCountMaxApprox": 150}
+    assert first.constraints["wordCountMin"] == 200
+    assert (second.constraints["wordCountMinApprox"], second.constraints["wordCountMaxApprox"]) == (100, 150)
     assert [p.constraints["speakingSeconds"] for p in TESTDAF_DIGITAL.modules["speaking"]] == [45, 90, 120, 90, 150, 120, 90]
 
 

@@ -24,3 +24,8 @@ All seven listening interaction contracts implemented: overview short answers, g
 A shared task workspace now dispatches renderers from manifest task types and rejects stale/mismatched envelopes. Media teardown aborts listeners, pauses playback and clears URLs. Summary reveal-after-media is profile-driven. Video uses a video element, never audio substitution. 100 backend cases and 7 mocked browser media cases passed; existing 8 workspace tests passed; frontend typecheck passed.
 
 Release blockers: all parts need live linguistic qualification. All listening parts need playable, script-aligned media delivery. Video acquisition/generation is not implemented. Short-answer variants are practice scoring only, not a replacement for official human assessment. No paid media calls occurred.
+
+## T3 checkpoint
+Both writing task types have content generation/validation, editor, word guidance/count, timer, local draft recovery, submission lifecycle and injectable practice-feedback contracts. Structured graphics render accessible tables. Grader output rejects invented official scores, wrong dimension coverage, wrong word counts and fabricated learner quotes. 26 backend tests and two browser tests passed. Draft identity includes account, profile/version, part and generation identity.
+
+Remaining implementation: connect the injected productive grader to the authenticated production grading service. Current default fails visibly and preserves the draft; no fake success or fake grading. This is a release blocker in addition to live qualification.

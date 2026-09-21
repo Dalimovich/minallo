@@ -914,6 +914,11 @@
         "parts": [
           {
             "constraints": {
+              "practiceTimeLimitSeconds": 1800,
+              "requiredSourceKinds": [],
+              "sourcePages": [
+                25
+              ],
               "wordCountMin": 200
             },
             "gradingDimensions": [
@@ -931,6 +936,15 @@
           },
           {
             "constraints": {
+              "practiceTimeLimitSeconds": 1800,
+              "requiredSourceKinds": [
+                "text",
+                "graphic"
+              ],
+              "sourcePages": [
+                26,
+                27
+              ],
               "wordCountMaxApprox": 150,
               "wordCountMinApprox": 100
             },

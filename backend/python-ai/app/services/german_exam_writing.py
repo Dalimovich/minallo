@@ -255,6 +255,9 @@ def generate_writing_part(
     key — nothing here is ever graded against this generated content; see
     german_exam_writing_grading.py for how a learner's own submission is
     actually graded."""
+    from .german_exam_productive import WRITING_TYPES, generate_productive
+    if part.task_type in WRITING_TYPES:
+        return generate_productive(profile, part, plan, topic)
     builder = _PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         raise WritingGenerationError(f"no prompt builder for task_type {part.task_type!r}")

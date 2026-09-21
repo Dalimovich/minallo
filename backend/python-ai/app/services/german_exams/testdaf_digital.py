@@ -140,8 +140,10 @@ _LISTENING = (
     _part("listening", "hoeren_7", "Laut- und Schriftbild abgleichen", "sound_script_comparison", itemCount=4, mediaType="audio", sourcePages=(23,)),
 )
 _WRITING = (
-    _part("writing", "schreiben_1", "Argumentativen Text schreiben", "argumentative_essay", wordCountMin=200),
-    _part("writing", "schreiben_2", "Informationen aus Lesetext und Grafik zusammenfassen", "text_graph_summary", wordCountMinApprox=100, wordCountMaxApprox=150),
+    _part("writing", "schreiben_1", "Argumentativen Text schreiben", "argumentative_essay", wordCountMin=200, requiredSourceKinds=(),
+          practiceTimeLimitSeconds=1800, sourcePages=(25,)),
+    _part("writing", "schreiben_2", "Informationen aus Lesetext und Grafik zusammenfassen", "text_graph_summary", wordCountMinApprox=100, wordCountMaxApprox=150,
+          requiredSourceKinds=("text", "graphic"), practiceTimeLimitSeconds=1800, sourcePages=(26, 27)),
 )
 _SPEAKING = (
     _part("speaking", "sprechen_1", "Rat geben", "spoken_advice", speakingSeconds=45),
