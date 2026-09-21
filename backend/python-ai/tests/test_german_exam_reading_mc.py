@@ -114,7 +114,7 @@ def test_four_option_repair_preserves_key_and_other_fields():
 
 def test_pipeline_verifies_before_accepting_and_copies_presentation(monkeypatch):
     c = content()
-    monkeypatch.setattr(reading, "chat_json", lambda **kw: SimpleNamespace(completion_tokens=0, data=copy.deepcopy(c)))
+    monkeypatch.setattr(reading, "chat_json", lambda **kw: SimpleNamespace(completion_tokens=0, data=copy.deepcopy(c["text"] if kw["user"] == "Write the article now." else {"questions": c["questions"]})))
     seen = []
     def check(part, generated):
         seen.append(copy.deepcopy(generated))
@@ -129,8 +129,34 @@ def test_pipeline_verifies_before_accepting_and_copies_presentation(monkeypatch)
 
 
 def test_pipeline_never_accepts_semantic_failure(monkeypatch):
-    monkeypatch.setattr(reading, "chat_json", lambda **kw: SimpleNamespace(completion_tokens=0, data=content()))
+    monkeypatch.setattr(reading, "chat_json", lambda **kw: SimpleNamespace(completion_tokens=0, data=content()["text"] if kw["user"] == "Write the article now." else {"questions": content()["questions"]}))
     failure = verify.SemanticVerificationResult(passed=False, items=[], part_wide_issues=[verify.SemanticIssue("PART_WIDE_INCOHERENCE", "error", "Unsuitable register")])
     monkeypatch.setattr(reading, "verify_semantic", lambda *a: failure)
     with pytest.raises(reading.ReadingGenerationError, match="semantically valid"):
         reading.generate_reading_part(get_profile("testdaf_digital"), PART, [], {"label": "Forschung"})
+
+
+def test_split_writer_preserves_article_and_discards_editorial_notes(monkeypatch):
+    c = content()
+    written = copy.deepcopy(c["text"])
+    calls = []
+    def chat(**kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            assert "Do not write questions yet" in kw["system"]
+            assert kw["model"] == PART.constraints["sourceModel"]
+            return SimpleNamespace(data=written)
+        assert json.loads(kw["user"]) == written
+        assert kw["model"] == PART.constraints["generationModel"]
+        questions = copy.deepcopy(c["questions"])
+        for q in questions:
+            q["optionChecks"] = ["writer editorial note"] * PART.constraints["optionCount"]
+        return SimpleNamespace(data={"questions": questions})
+    monkeypatch.setattr(reading, "chat_json", chat)
+    generated = reading._generate_mc_article_then_items(get_profile("testdaf_digital"), PART, {"label": "Forschung"})
+    assert len(calls) == 2
+    assert generated["text"] == c["text"]
+    assert generated["questions"] == c["questions"]
+    _, verifier_payload = verify._verify_prompt_reading_multiple_choice(PART, generated)
+    assert "editorial note" not in verifier_payload
+    assert json.loads(verifier_payload)["article"] == c["text"]["paragraphs"]

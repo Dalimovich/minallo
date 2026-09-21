@@ -1,0 +1,131 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [],
+  "status": "fail",
+  "error": "RateLimitError: Error code: 429 - {'error': {'message': 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.', 'type': 'insufficient_quota', 'param': None, 'code': 'credit_balance_exhausted'}}",
+  "diagnostics": {
+    "requestId": "5e1adc936bcd",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "fail",
+    "totalMs": 26466,
+    "budgetS": 95.0,
+    "llmCalls": 6,
+    "providerMsSum": 3559,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 2175,
+    "promptTokens": 0,
+    "cachedTokens": 0,
+    "completionTokens": 0,
+    "reasoningTokens": 0,
+    "estimatedCostUsd": 0.0,
+    "unpricedModels": [],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 6,
+        "models": [
+          "gpt-5.4-mini:default"
+        ],
+        "providerMs": 3559,
+        "slotWaitMs": 0,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 2175,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 496,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 427,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 143,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 178,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 140,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      }
+    ],
+    "models": [
+      "gpt-5.4-mini:default"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 26.467
+}

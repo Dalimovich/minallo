@@ -357,6 +357,21 @@
       ],
       "verifiedFinalEnvelope": false,
       "regenerations": 0
+    },
+    {
+      "file": "live-v3-pilot/sample-1.json",
+      "seconds": 26.467,
+      "recordedUsageCostUsd": 0,
+      "automaticResult": "provider_quota_blocked",
+      "releaseResult": "NOT QUALIFIED",
+      "manualGrade": null,
+      "manualReview": "No generated content to grade; provider credit balance exhausted.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 0,
+      "semanticFindings": [],
+      "verifiedFinalEnvelope": false
     }
-  ]
+  ],
+  "latestRevisionStatus": "article_then_items implemented and offline-tested; live pilot blocked before source generation by credit_balance_exhausted",
+  "pushedImplementationCheckpoint": "391765cf"
 }

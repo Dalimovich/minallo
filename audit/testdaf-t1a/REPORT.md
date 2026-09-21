@@ -1,5 +1,21 @@
 # TestDaF T1a checkpoint — not released
 
+Latest update (2026-09-21): after checkpoint `391765cf` was pushed, work continued
+within T1a at the user's request. Generation now separates article writing from
+question design. The item writer supplies short text-based editorial checks for
+each option; these are discarded before independent verification to avoid feeding
+the verifier the writer's conclusions. The article is preserved unchanged.
+
+The first pilot of this revision (`live-v3-pilot/sample-1.json`) stopped before
+any content was generated: the provider returned HTTP 429 with
+`credit_balance_exhausted` / no credits remaining. Existing bounded retries ended
+after 26.467 seconds. Returned usage and estimated cost were zero; manual grade
+is **N/A**, since there is no candidate. No more live calls were attempted.
+This revised pipeline is offline-tested, **not live-qualified**. Restoring API
+credits is required before its quality and latency can be measured. Availability
+remains false, and the six earlier sample records below are historical evidence,
+not claims that the revised pipeline passed.
+
 T0 checkpoint: `fd224858` (already pushed separately to main).
 T1a is implemented on `feat/testdaf-t1a`. **available=False**. All 23 TestDaF
 parts remain disabled because live quality/latency QA did not pass. No inventory
@@ -86,7 +102,7 @@ can incur additional charges without returned usage; this is not a final invoice
 
 ## Verification
 
-- 430 German-exam backend tests passed, including TELC, Goethe, profile/manifest,
+- 431 German-exam backend tests passed, including TELC, Goethe, profile/manifest,
   generator, deterministic and semantic validation/repair regressions.
 - 10 frontend/component checks passed using the existing workspace tests and
   real headless Chromium. These cover partial availability, disabled parts,
@@ -98,6 +114,8 @@ can incur additional charges without returned usage; this is not a final invoice
   defensible answers, implausible distractors, and incomplete option audits.
   Tests assert that the semantic verifier receives the complete article and
   that semantic failure cannot produce an accepted task.
+- A split-writer test verifies that the item writer receives the exact finished
+  article, preserves it, and does not pass editorial notes to the verifier.
 - A release-candidate manifest test proves only Lesen 3 would become enabled
   if its profile availability flag were approved after QA; the actual flag is false.
 
@@ -134,4 +152,5 @@ request budget without weakening the quality gate.
 - `frontend/views/practice/practice.css`
 - `tests/frontend/reading-mc-browser.spec.mjs`
 - `tests/e2e/fixtures/german-exam-manifests.json`
-- `audit/testdaf-t1a/REPORT.md`, `summary.json`, and six raw sample records
+- `audit/testdaf-t1a/REPORT.md`, `summary.json`, six raw sample records and the
+  quota-blocked follow-up pilot record

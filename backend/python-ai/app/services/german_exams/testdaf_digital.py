@@ -98,6 +98,9 @@ READING_MC_CONSTRAINTS = {
     "generationWordCountMax": 650,
     "balanceOptionPositions": True,
     # Application quality policy, not an official exam requirement.
+    "generationMode": "article_then_items",
+    "sourceModel": "gpt-5.4-mini",
+    "sourceMaxTokens": 3000,
     "generationModel": "gpt-5.4",
     "generationReasoningEffort": "medium",
     "generationMaxTokens": 10000,

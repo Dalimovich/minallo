@@ -316,6 +316,65 @@ def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _generate_mc_article_then_items(profile: ExamProfile, part: PartBlueprint, topic: dict[str, str]) -> dict[str, Any]:
+    """Separate source writing from close-reading item design; blueprint owns policy.
+
+    Writer option notes force concrete text-based distractors but are discarded:
+    the independent verifier receives only the article and the learner items.
+    """
+    c = part.constraints
+    source_system = _base_system_preamble(profile, part) + (
+        f" Write only an original {c['textGenre']} on {topic['label']}. "
+        f"Use {c['generationParagraphCount']} paragraphs, IDs p1, p2, ...; "
+        f"{c['generationWordCountMin']}-{c['generationWordCountMax']} words total. "
+        f"Register: {c['readingRegister']}. "
+        "Each paragraph must advance a distinct point with concrete mechanisms, qualifications, "
+        "and at least two related but distinguishable facts. Avoid a generic advantages/disadvantages "
+        "essay whose conclusion is simply 'it depends'. Use an informative opening, a specific tension "
+        "or surprising finding, and an argued conclusion. Do not invent citations or precise study "
+        "statistics. Explain specialist terms in context. Do not write questions yet. "
+        'Return {"title":"...", "paragraphs":[{"paragraphId":"p1","text":"..."}, ...]}.'
+    )
+    article = chat_json(system=source_system, user="Write the article now.",
+                        model=c["sourceModel"], max_tokens=c["sourceMaxTokens"]).data
+    item_system = (
+        "Design a demanding German reading comprehension exercise from the supplied finished article. "
+        "Do NOT rewrite or change the article. Return JSON only. "
+        f"Create {c['itemCount']} questions in sequence q1..q{c['itemCount']}, each with exactly "
+        f"{c['optionCount']} options and one correctIndex. "
+        f"Question scopes in order: {c['questionScopes']}. Scope pN means use that paragraph ONLY; "
+        "global means the communicative purpose of the whole article. "
+        f"Question styles: {c['questionStyle']}. Register: {c['readingRegister']}. "
+        "For each distractor FIRST identify a real detail in the article, THEN change just one relation "
+        "(cause, agent, condition, scope, sequence, or the author's aim). All choices must sound like "
+        "credible claims from this very article. Avoid options about missing topics, ridiculous behavior, "
+        "blanket dismissal of the article's premise, or obvious common-sense falsehoods. Do not sprinkle "
+        "only/always/never/automatically into wrong answers: these shortcuts destroy the exercise. "
+        "Global distractors should elevate a real subordinate argument into the article's main purpose. "
+        "Keep options parallel and similar in specificity and length. No two options may be defensible "
+        "answers, even if one is a shorter or less precise paraphrase of the other. "
+        "Correct answers must be paraphrases, never copying seven consecutive article words. "
+        "Use explicit paragraph references in scoped stems. "
+        f"Allowed skillTags: {list(part.allowed_skill_tags)}; use diverse tags. "
+        "For each question also provide optionChecks: one short editorial note per option citing "
+        "the concrete source detail and why this choice answers the stem or misrepresents that detail. "
+        "If you cannot cite a real source detail for a distractor, replace that distractor before replying. "
+        "These are concise evidence annotations, not a reasoning transcript. "
+        'Return {"questions":[{"questionId":"q1","skillTags":["detail_comprehension"],'
+        '"difficulty":"c1","mc3":{"stem":"...","options":[...],"correctIndex":0,'
+        '"evidenceParagraphIds":["p1"]},"optionChecks":["...", ...]}, ...]}. '
+        "For global questions evidenceParagraphIds lists every paragraph."
+    )
+    result = chat_json(system=item_system, user=json.dumps(article, ensure_ascii=False),
+                       model=c["generationModel"], max_tokens=c["generationMaxTokens"],
+                       reasoning_effort=c["generationReasoningEffort"]).data
+    questions = result.get("questions", []) if isinstance(result, dict) else []
+    for question in questions if isinstance(questions, list) else []:
+        if isinstance(question, dict):
+            question.pop("optionChecks", None)
+    return {"text": article, "questions": questions}
+
+
 _PROMPT_BUILDERS = {
     "reading_multiple_choice": _prompt_reading_multiple_choice,
     "text_reconstruction_sentence_matching": _prompt_lesen1,
@@ -480,9 +539,12 @@ def generate_reading_part(
     total_issue_counts: dict[str, int] = {}
 
     for regeneration in range(_MAX_FULL_REGENERATIONS + 1):
-        system, user = builder(profile, part, plan, topic)
-        result = chat_json(system=system, user=user, max_tokens=part.constraints.get("generationMaxTokens", 6000), model=part.constraints.get("generationModel") or get_settings().german_exam_model, **({"reasoning_effort": part.constraints["generationReasoningEffort"]} if part.constraints.get("generationReasoningEffort") else {}))
-        content = result.data if isinstance(result.data, dict) else {}
+        if part.constraints.get("generationMode") == "article_then_items":
+            content = _generate_mc_article_then_items(profile, part, topic)
+        else:
+            system, user = builder(profile, part, plan, topic)
+            result = chat_json(system=system, user=user, max_tokens=part.constraints.get("generationMaxTokens", 6000), model=part.constraints.get("generationModel") or get_settings().german_exam_model, **({"reasoning_effort": part.constraints["generationReasoningEffort"]} if part.constraints.get("generationReasoningEffort") else {}))
+            content = result.data if isinstance(result.data, dict) else {}
         content = _postprocess(part, content)
 
         issues = validate_content(part, content)
