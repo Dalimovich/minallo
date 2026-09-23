@@ -128,3 +128,23 @@ a human's attention (not a bug) is that `german_exam_speaking_practice.py`'s gen
 could be mistaken for shared infrastructure by someone extending Goethe/TestDaF speaking grading
 later; and the `TASK_TYPES` registry staleness above is the one genuine (if currently harmless)
 implementation-audit defect found in this phase.
+
+## 2026-09-23 follow-up: registry staleness fixed
+
+The headline finding above (`TASK_TYPES` marking all 7 TestDaF speaking task types `False` despite
+a real generator/renderer existing for them) has been fixed on branch
+`fix/testdaf-speaking-registry-and-e2e`: `spoken_advice`, `spoken_option_comparison`,
+`spoken_text_summary`, `spoken_information_comparison`, `recorded_topic_presentation`,
+`spoken_argument_response`, and `spoken_measure_critique` are now registered `True` in
+`german_exams/task_types.py`. This is a registry-only change — it reflects an already-true fact
+about the engine (generator/validator/renderer exist), it does not flip any `PartBlueprint.available`
+flag anywhere (TestDaF speaking parts, and every other still-unreleased Goethe/TestDaF part, remain
+`available=False`), and it does not implement recording grading (still open, see
+`GRADING_AUDIT.md`). `german_exam_generator.py`'s double-gate (`if not part.available or not
+is_task_type_implemented(part.task_type)`) still blocks TestDaF speaking generation on the
+`available` check alone, confirmed by a new regression test
+(`test_testdaf_speaking_task_types_are_now_registered_implemented_but_parts_stay_gated_by_available`
+in `test_german_exam_audit_regressions.py`). The "flag for whoever runs live qualification" note in
+the per-exam structural table above is now stale in the sense that the registry half of that future
+work is done; the `available` flip itself is still deliberately not done and out of scope for this
+follow-up.
