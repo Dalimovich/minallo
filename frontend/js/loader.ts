@@ -978,7 +978,13 @@ interface LandingTranslation {
       const name = SECTIONS[i];
       if (name) wrapper.setAttribute('data-section', name.replace('.html', ''));
       wrapper.innerHTML = html;
-      while (wrapper.firstChild) root.appendChild(wrapper.firstChild);
+      // Notifications are a global overlay layer: mount at document.body, a true
+      // sibling of body-level modal roots (.mn-workspace-modal-root), not nested
+      // inside #ss-sections-root — a future ancestor stacking-context change there
+      // (transform/filter/opacity/isolation) would otherwise silently trap the
+      // toast stack below every modal despite its higher z-index.
+      const destination = name === 'views/toast/toast.html' ? document.body : root;
+      while (wrapper.firstChild) destination.appendChild(wrapper.firstChild);
     });
     detachLegacyPortalRuntime();
     if (SS) SS.markReady('sections', { count: htmls.length });
