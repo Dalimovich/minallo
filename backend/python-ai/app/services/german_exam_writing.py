@@ -111,8 +111,87 @@ def _prompt_schreiben1(
     return system, user
 
 
+# ── Goethe C1 Schreiben: single-scenario task types (no topic choice) ───────
+
+
+def _prompt_goethe_single_scenario(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    *, scenario_description: str, extra_field: str | None = None,
+) -> tuple[str, str]:
+    content_point_count = part.constraints.get("contentPointCount", 4)
+    word_count_approx = part.constraints.get("wordCountApprox")
+    register = part.constraints.get("register", "neutral")
+
+    extra_field_line = ""
+    extra_field_json = ""
+    if extra_field == "addressForm":
+        address_form = part.constraints.get("addressForm", "Sie")
+        extra_field_line = f" Include \"addressForm\": {address_form!r} verbatim (the required form of address).\n"
+        extra_field_json = f', "addressForm": {address_form!r}'
+
+    system = (
+        f"You generate ORIGINAL German writing-exam TASK PROMPTS (not a written response) for "
+        f"{profile.family} {profile.variant or ''}, matching the official {part.task_type} task format "
+        "(Goethe-style Schreiben, one scenario the candidate must respond to — no topic choice). You must "
+        "NOT copy any real exam content, and you must NEVER write a model answer, example response, or "
+        "sample text anywhere in your output — this task has no answer key; a learner will write their "
+        "own free-text response, graded separately by a different process. Reply with ONLY valid JSON, no "
+        "markdown fences, no commentary.\n\n"
+        f"Task structure (IMMUTABLE): exactly ONE scenario — {scenario_description} — in {register} "
+        f"register. Exactly {content_point_count} distinct content points the response MUST address (not "
+        "near-duplicates of each other, not so broad they overlap). A short title; a clear communicative "
+        "situation (who is writing to whom, in what context, and why); precise task instructions that "
+        "reference all "
+        f"{content_point_count} content points explicitly; and a writingCoachTaskType classifying how the "
+        f"scenario is framed, exactly one of {sorted(TELC_SCHREIBEN_TASK_TYPES)} — use 'stellungnahme' for "
+        "a take-a-position framing, 'argumentation' for a build-a-case framing, 'freier_text' only if "
+        "neither fits. Do not require niche specialist/professional knowledge.\n"
+        f"{extra_field_line}\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "questions": [\n'
+        '    {"questionId": "a", "title": "...", "communicativeSituation": "...",\n'
+        '     "contentPoints": ["point one", "point two", "point three", "point four"],\n'
+        f'     "taskInstructions": "...", "writingCoachTaskType": "stellungnahme"{extra_field_json}}}\n'
+        "  ] // exactly 1 entry\n"
+        "}"
+    )
+    user = f"Generate the task now. Broad subject-area steer (not the scenario itself): {topic['label']}."
+    return system, user
+
+
+def _prompt_forum_discussion_post(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
+) -> tuple[str, str]:
+    return _prompt_goethe_single_scenario(
+        profile, part, plan, topic,
+        scenario_description=(
+            "an online forum discussion (e.g. a university/study-life forum) the candidate joins with "
+            "their own contribution, engaging with the discussion topic and the content points"
+        ),
+    )
+
+
+def _prompt_formal_context_message(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]
+) -> tuple[str, str]:
+    return _prompt_goethe_single_scenario(
+        profile, part, plan, topic,
+        scenario_description=(
+            "a (semi-)formal message the candidate must write to an institution, organization or person "
+            "they do not know well (e.g. requesting something, complaining, clarifying an issue), always "
+            "addressing the recipient with 'Sie'"
+        ),
+        extra_field="addressForm",
+    )
+
+
 _PROMPT_BUILDERS = {
     "choice_long_form_writing": _prompt_schreiben1,
+    # --- Goethe-Zertifikat C1 ---
+    "forum_discussion_post": _prompt_forum_discussion_post,
+    "formal_context_message": _prompt_formal_context_message,
 }
 
 
