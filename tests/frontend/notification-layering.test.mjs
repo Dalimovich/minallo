@@ -74,8 +74,19 @@ test('the notification root is a global body-level portal, not owned by Profile 
   }
   assert.match(read('frontend/views/toast/toast.html'), /id="ss-toast-stack"/);
   assert.match(read('frontend/js/loader.js'), /'views\/toast\/toast\.html'/);
-  // the workspace modal mounts on <body>: both roots are siblings, so only z-index decides which is on top
+  // the workspace modal mounts on <body>: both roots must be TRUE siblings there, so only
+  // z-index decides which is on top — nesting the toast one level deeper (e.g. inside
+  // #ss-sections-root) would make it depend on that ancestor never gaining a stacking
+  // context of its own (transform/filter/opacity/isolation), which is not guaranteed.
   assert.match(read('frontend/js/features/chatbot-new/workspace-modals/workspace-modal-shell.ts'), /document\.body\.appendChild\(mount\)/);
+  for (const loaderPath of ['frontend/js/loader.ts', 'frontend/js/loader.js']) {
+    const loader = read(loaderPath);
+    assert.match(
+      loader,
+      /destination\s*=\s*name === 'views\/toast\/toast\.html' \? document\.body : root/,
+      `${loaderPath} must append the toast section directly to document.body, not #ss-sections-root`
+    );
+  }
 });
 
 test('the toast stack does not create a stacking context inside the modal (no transform/filter on its ancestors)', () => {

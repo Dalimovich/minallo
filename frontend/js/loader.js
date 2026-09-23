@@ -44,6 +44,7 @@
         const splash = document.getElementById('ss-splash');
         if (splash)
             splash.style.display = 'none';
+        document.documentElement.classList.add('mn-boot-done');
         try {
             window.dispatchEvent(new Event('ss-ready'));
         }
@@ -441,6 +442,11 @@
             return loadScript('js/app-data.js', 'app-data-script');
         })
             .then(() => loadScript('js/main.js', 'app-script', { type: 'module' }))
+            // Do not continue (and therefore never fire ss-ready) until app.js and the
+            // auth/profile bridge it installs have finished initialising.
+            .then(() => Promise.resolve(window.__minalloAppInitPromise).catch((err) => {
+            console.error('[loader] app.js failed to initialise:', err);
+        }))
             .then(() => {
             // app-storage.js and app-pdf.js extend app.js globals — load after app.js
             return Promise.all([
@@ -705,7 +711,6 @@
                     });
                 };
                 async function mountAuthenticatedChatbotHome() {
-                    const bootGuard = document.getElementById('minalloChatbotBootGuard');
                     try {
                         await loadPortalRoute('aipage');
                         const mountPromise = window._ncbMountPromise;
@@ -724,14 +729,11 @@
                             window.setNavActive?.('psbAIPage');
                         }
                         document.body.classList.remove('minallo-chatbot-booting');
-                        bootGuard?.remove();
                     }
                     catch (error) {
                         console.error('[loader] chatbot home failed to mount', error);
-                        if (bootGuard) {
-                            bootGuard.innerHTML = '<div><span>Minallo could not open.</span><button type="button">Retry</button></div>';
-                            bootGuard.querySelector('button')?.addEventListener('click', () => window.location.reload());
-                        }
+                        // One centralized recovery surface (boot cover): Retry / Sign out.
+                        window.MinalloBoot?.recovery('auth');
                     }
                 }
                 void mountAuthenticatedChatbotHome();
@@ -801,6 +803,17 @@
                         console.error('[loader] js/ai.js failed or timed out — falling back');
                         if (SS)
                             SS.markReady('app', { ai: false });
+                    }
+                    // The auth/profile bridge is installed by app.js (via main.js). If it
+                    // is missing, announcing readiness would let a restored session
+                    // reach _enterApp with no profile resolver and hang forever, so
+                    // surface a boot error instead of continuing.
+                    if (typeof window._beginProfileResolution !== 'function' ||
+                        typeof window.loadUserData !== 'function' ||
+                        typeof window._ensureUserProfile !== 'function') {
+                        console.error('[loader] auth/profile bridge missing — not announcing ss-ready');
+                        window.MinalloBoot?.recovery('auth');
+                        return;
                     }
                     window.dispatchEvent(new Event('ss-ready'));
                     const scheduleDashboard = window.requestIdleCallback
@@ -909,8 +922,14 @@
             if (name)
                 wrapper.setAttribute('data-section', name.replace('.html', ''));
             wrapper.innerHTML = html;
+            // Notifications are a global overlay layer: mount at document.body, a true
+            // sibling of body-level modal roots (.mn-workspace-modal-root), not nested
+            // inside #ss-sections-root — a future ancestor stacking-context change there
+            // (transform/filter/opacity/isolation) would otherwise silently trap the
+            // toast stack below every modal despite its higher z-index.
+            const destination = name === 'views/toast/toast.html' ? document.body : root;
             while (wrapper.firstChild)
-                root.appendChild(wrapper.firstChild);
+                destination.appendChild(wrapper.firstChild);
         });
         detachLegacyPortalRuntime();
         if (SS)
