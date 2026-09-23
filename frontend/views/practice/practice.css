@@ -4230,7 +4230,7 @@
 .gl-skill-card-soon .gl-skill-open-btn { opacity: .6; }
 .gl-exam-retry { margin-left: 6px; cursor: pointer; }
 
-/* reading_detail_mc3 (shared renderer) */
+/* Generic reading MC (shared renderer): reading_detail_mc3, reading_multiple_choice — one selectable answer per question. */
 .gl-reading-mc3-option { display: block; margin: 4px 0; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
 .gl-reading-mc3-option.gl-reading-opt-correct { background: rgba(16, 185, 129, .16); }
 .gl-reading-mc3-option.gl-reading-opt-wrong { background: rgba(239, 68, 68, .14); }

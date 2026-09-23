@@ -341,6 +341,69 @@ def _prompt_reading_detail_mc3(profile: ExamProfile, part: PartBlueprint, plan: 
     return system, user
 
 
+# ── reading_multiple_choice (Digital TestDaF Lesen 3) ───────────────────────
+
+
+def _prompt_reading_multiple_choice(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints["itemCount"]
+    option_count = part.constraints["optionCount"]
+    word_min, word_max = (part.constraints["generationWordCountMin"], part.constraints["generationWordCountMax"])
+    genre = part.constraints.get("textGenre") or "informational article"
+    follow_order = part.constraints.get("itemsFollowTextOrder")
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one original {genre} on the topic '{topic['label']}', "
+        f"{word_min}-{word_max} words, split into {part.constraints['generationParagraphCount']} paragraphs "
+        f"with stable ids (p1, p2, ...). The whole text must NOT be shorter "
+        f"than {word_min} words. Then exactly {item_count} multiple-choice items, each with a question or "
+        f"sentence stem and exactly {option_count} options, exactly one of which is correct."
+        + (" The items must follow the ORDER of the text (each item's evidence is at or after the previous item's), except a global-scope item refers to the whole article." if follow_order else "")
+        + "\n\nItem design — test real comprehension, not phrase matching:\n"
+        "- Mix the item types across the set: a detail that must be located and understood; the relationship "
+        "between two facts (cause, condition, contrast, consequence); what the AUTHOR reasons, criticises or "
+        "concludes; what follows implicitly from a passage; which option correctly rephrases a statement; "
+        "the purpose of an example.\n"
+        "- The correct option must be a PARAPHRASE of the text. Never reuse a run of seven or more consecutive "
+        "words from the text in the correct option, and do not let the stem quote the text either.\n"
+        "- Each wrong option must be plausible and arise from the text: a true detail attached to the wrong "
+        "thing, a partial truth, a wrong cause/effect or wrong attribution, a distorted or over-generalised "
+        "paraphrase, or something from a nearby passage that does not answer THIS question. Never an absurd "
+        "option, never one decidable from general knowledge alone, never one that is ALSO supported by the "
+        "text. Never use options like 'alle genannten' or 'keine der Aussagen'.\n"
+        "- A distractor must differ from a text-supported proposition in ONE subtle respect (scope, "
+        "attribution, causal direction, timing, or inference). Do not make every wrong answer an extreme "
+        "claim using always, only, all, never, automatically, or a blanket rejection. Global-purpose "
+        "distractors must describe real secondary emphases of THIS text, not unrelated genres or topics. "
+        "Silently test every option against the full paragraph: no two options may be synonymous or "
+        "both entailments. Supply concrete mechanisms, qualifications and competing explanations in the "
+        "article so questions cannot be solved from generic common sense.\n"
+        "- All options of an item must have the same grammatical form and similar length; the correct "
+        "one must not be systematically the longest or the most detailed.\n"
+        "- Do not try to balance the position of the correct option; the application scrambles the options.\n\n"
+        "IMPORTANT — choose skillTags per item, do not copy one tag for every item, and use at least 4 "
+        f"different tags across the {item_count} items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        f"Reading register and difficulty: {part.constraints['readingRegister']}.\n"
+        f"Question design: {part.constraints['questionStyle']}.\n"
+        f"Per-question scope in order: {part.constraints['questionScopes']}.\n"
+        "For scope pN cite only that paragraph; for scope global cite all paragraphs.\n"
+        "Every item lists evidenceParagraphIds: the paragraph id(s) that decide the answer.\n\n"
+        "Output JSON shape exactly (skillTags illustrative):\n"
+        "{\n"
+        '  "text": {"title": "...", "paragraphs": [{"paragraphId": "p1", "text": "..."}, ...]},\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "skillTags": ["detail_comprehension"], "difficulty": "c1",\n'
+        f'     "mc3": {{"stem": "...", "options": {json.dumps(["..."] * option_count)}, "correctIndex": 1,\n'
+        '             "evidenceParagraphIds": ["p2"]}},\n'
+        "    ...\n"
+        f"  ] // exactly {item_count} items\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
 def _option_holder(question: Any) -> dict[str, Any] | None:
     """The dict that carries `options` + `correctIndex`: `mc3` for comprehension items, the item itself for cloze gaps."""
     if not isinstance(question, dict):
@@ -384,7 +447,6 @@ def balance_option_positions(content: dict[str, Any]) -> dict[str, Any]:
             options[idx], options[target] = options[target], options[idx]
             holder["correctIndex"] = target
     return out
-
 
 
 # ── multi_author_statement_matching_with_none (Goethe Lesen Teil 4) ──────────
@@ -479,8 +541,68 @@ def _prompt_contextual_cloze_mc4(
     return system, user
 
 
+def _generate_mc_article_then_items(profile: ExamProfile, part: PartBlueprint, topic: dict[str, str]) -> dict[str, Any]:
+    """Separate source writing from close-reading item design; blueprint owns policy.
+
+    Writer option notes force concrete text-based distractors but are discarded:
+    the independent verifier receives only the article and the learner items.
+    """
+    c = part.constraints
+    source_system = _base_system_preamble(profile, part) + (
+        f" Write only an original {c['textGenre']} on {topic['label']}. "
+        f"Use {c['generationParagraphCount']} paragraphs, IDs p1, p2, ...; "
+        f"{c['generationWordCountMin']}-{c['generationWordCountMax']} words total. "
+        f"Register: {c['readingRegister']}. "
+        "Each paragraph must advance a distinct point with concrete mechanisms, qualifications, "
+        "and at least two related but distinguishable facts. Avoid a generic advantages/disadvantages "
+        "essay whose conclusion is simply 'it depends'. Use an informative opening, a specific tension "
+        "or surprising finding, and an argued conclusion. Do not invent citations or precise study "
+        "statistics. Explain specialist terms in context. Do not write questions yet. "
+        'Return {"title":"...", "paragraphs":[{"paragraphId":"p1","text":"..."}, ...]}.'
+    )
+    article = chat_json(system=source_system, user="Write the article now.",
+                        model=c["sourceModel"], max_tokens=c["sourceMaxTokens"]).data
+    item_system = (
+        "Design a demanding German reading comprehension exercise from the supplied finished article. "
+        "Do NOT rewrite or change the article. Return JSON only. "
+        f"Create {c['itemCount']} questions in sequence q1..q{c['itemCount']}, each with exactly "
+        f"{c['optionCount']} options and one correctIndex. "
+        f"Question scopes in order: {c['questionScopes']}. Scope pN means use that paragraph ONLY; "
+        "global means the communicative purpose of the whole article. "
+        f"Question styles: {c['questionStyle']}. Register: {c['readingRegister']}. "
+        "For each distractor FIRST identify a real detail in the article, THEN change just one relation "
+        "(cause, agent, condition, scope, sequence, or the author's aim). All choices must sound like "
+        "credible claims from this very article. Avoid options about missing topics, ridiculous behavior, "
+        "blanket dismissal of the article's premise, or obvious common-sense falsehoods. Do not sprinkle "
+        "only/always/never/automatically into wrong answers: these shortcuts destroy the exercise. "
+        "Global distractors should elevate a real subordinate argument into the article's main purpose. "
+        "Keep options parallel and similar in specificity and length. No two options may be defensible "
+        "answers, even if one is a shorter or less precise paraphrase of the other. "
+        "Correct answers must be paraphrases, never copying seven consecutive article words. "
+        "Use explicit paragraph references in scoped stems. "
+        f"Allowed skillTags: {list(part.allowed_skill_tags)}; use diverse tags. "
+        "For each question also provide optionChecks: one short editorial note per option citing "
+        "the concrete source detail and why this choice answers the stem or misrepresents that detail. "
+        "If you cannot cite a real source detail for a distractor, replace that distractor before replying. "
+        "These are concise evidence annotations, not a reasoning transcript. "
+        'Return {"questions":[{"questionId":"q1","skillTags":["detail_comprehension"],'
+        '"difficulty":"c1","mc3":{"stem":"...","options":[...],"correctIndex":0,'
+        '"evidenceParagraphIds":["p1"]},"optionChecks":["...", ...]}, ...]}. '
+        "For global questions evidenceParagraphIds lists every paragraph."
+    )
+    result = chat_json(system=item_system, user=json.dumps(article, ensure_ascii=False),
+                       model=c["generationModel"], max_tokens=c["generationMaxTokens"],
+                       reasoning_effort=c["generationReasoningEffort"]).data
+    questions = result.get("questions", []) if isinstance(result, dict) else []
+    for question in questions if isinstance(questions, list) else []:
+        if isinstance(question, dict):
+            question.pop("optionChecks", None)
+    return {"text": article, "questions": questions}
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
+    "reading_multiple_choice": _prompt_reading_multiple_choice,
     "multi_author_statement_matching_with_none": _prompt_multi_author_statement_matching,
     "contextual_cloze_mc4": _prompt_contextual_cloze_mc4,
     "text_reconstruction_sentence_matching": _prompt_lesen1,
@@ -816,6 +938,11 @@ def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[Val
 
 
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
+    if "presentation" in part.constraints:
+        from copy import deepcopy
+        content["presentation"] = deepcopy(part.constraints["presentation"])
+    if part.constraints.get("balanceOptionPositions"):
+        content = balance_option_positions(content)
     # No evidence postprocessors needed for reading — evidence is
     # LLM-supplied (paragraph ids), like Hören's HV2/HV3. Kept for
     # pipeline-shape parity with generate_listening_part.
@@ -1127,6 +1254,9 @@ def generate_reading_part(
     item errors) -> deterministic re-validation -> semantic re-verification
     -> accept. Raises ReadingGenerationError rather than ever returning
     known-invalid content once the regeneration budget is exhausted."""
+    from .german_exam_objective import SELECTION_TYPES, generate_selection
+    if part.task_type in SELECTION_TYPES:
+        return generate_selection(profile, part, plan, topic)
     builder = _PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         raise ReadingGenerationError(f"no prompt builder for task_type {part.task_type!r}")
@@ -1140,9 +1270,11 @@ def generate_reading_part(
     for regeneration in range(_MAX_FULL_REGENERATIONS + 1):
         if part.constraints.get("generationMode") == "article_first":
             content = _generate_reconstruction_article_first(profile, part, plan, topic)
+        elif part.constraints.get("generationMode") == "article_then_items":
+            content = _generate_mc_article_then_items(profile, part, topic)
         else:
             system, user = builder(profile, part, plan, topic)
-            result = chat_json(system=system, user=user, max_tokens=6000, model=get_settings().german_exam_model)
+            result = chat_json(system=system, user=user, max_tokens=part.constraints.get("generationMaxTokens", 6000), model=part.constraints.get("generationModel") or get_settings().german_exam_model, **({"reasoning_effort": part.constraints["generationReasoningEffort"]} if part.constraints.get("generationReasoningEffort") else {}))
             content = result.data if isinstance(result.data, dict) else {}
         content = _postprocess(part, content)
 

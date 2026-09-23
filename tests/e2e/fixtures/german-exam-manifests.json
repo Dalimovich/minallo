@@ -1,6 +1,7 @@
 {
   "goethe_c1": {
     "cefrLevel": "C1",
+    "deliveryPolicy": null,
     "displayName": "Goethe-Zertifikat C1",
     "family": "Goethe",
     "modules": [
@@ -343,6 +344,7 @@
   },
   "telc_c1_hochschule": {
     "cefrLevel": "C1",
+    "deliveryPolicy": null,
     "displayName": "telc Deutsch C1 Hochschule",
     "family": "telc",
     "modules": [
@@ -620,6 +622,11 @@
   },
   "testdaf_digital": {
     "cefrLevel": null,
+    "deliveryPolicy": {
+      "additionalUnscoredTrialTasks": true,
+      "backNavigationAllowed": false,
+      "fixedTaskOrder": true
+    },
     "displayName": "Digitaler TestDaF",
     "family": "TestDaF",
     "modules": [
@@ -631,7 +638,14 @@
         "parts": [
           {
             "constraints": {
-              "itemCount": 5
+              "itemCount": 5,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "W?hlen Sie f?r jede L?cke ein passendes Wort."
+              },
+              "sourcePages": [
+                5
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_1",
@@ -642,7 +656,10 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "itemCount": 5,
+              "sourcePages": [
+                6
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_2",
@@ -653,7 +670,43 @@
           },
           {
             "constraints": {
-              "itemCount": 7
+              "balanceOptionPositions": true,
+              "exampleTimeLimitSeconds": 900,
+              "generationMaxTokens": 10000,
+              "generationMode": "article_then_items",
+              "generationModel": "gpt-5.4",
+              "generationParagraphCount": 6,
+              "generationReasoningEffort": "medium",
+              "generationWordCountMax": 650,
+              "generationWordCountMin": 500,
+              "itemCount": 7,
+              "itemsFollowTextOrder": true,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. Wählen Sie jeweils eine Antwort. Sie können Ihre Auswahl bis zur Abgabe ändern. Übungszeit: 15 Minuten.",
+                "numberParagraphs": true,
+                "optionLabels": false
+              },
+              "questionScopes": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6",
+                "global"
+              ],
+              "questionStyle": "paragraph meaning, paraphrase, causal explanation, paragraph heading, author's stance; final question asks the whole article's communicative purpose",
+              "readingRegister": "advanced B2/C1 academic reading; C1 practice target with nuanced reasoning and varied syntax",
+              "sourceMaxTokens": 3000,
+              "sourceModel": "gpt-5.4-mini",
+              "sourcePages": [
+                8,
+                9
+              ],
+              "sourceReference": "https://www.testdaf.de/fileadmin/testdaf/downloads/Demo_Version_digitaler_TestDaF/Beispielaufgaben_Demo-Version_digitaler_TestDaF.pdf",
+              "textGenre": "popular-academic explanatory article with a clear line of argument, requiring no specialist knowledge",
+              "verifierModel": "gpt-5.4"
             },
             "gradingDimensions": null,
             "id": "lesen_3",
@@ -664,7 +717,15 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "itemCount": 4,
+              "optionCount": 8,
+              "presentation": {
+                "instructions": "Ordnen Sie jeder markierten Textstelle eine Sprachhandlung zu."
+              },
+              "sourcePages": [
+                10
+              ],
+              "uniqueMappings": true
             },
             "gradingDimensions": null,
             "id": "lesen_4",
@@ -675,7 +736,20 @@
           },
           {
             "constraints": {
-              "itemCount": 7
+              "categoryRoles": [
+                "first",
+                "second",
+                "both",
+                "neither"
+              ],
+              "itemCount": 7,
+              "optionCount": 4,
+              "presentation": {
+                "instructions": "Ordnen Sie jede Aussage einer Kategorie zu. Kategorien k?nnen mehrfach vorkommen."
+              },
+              "sourcePages": [
+                11
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_5",
@@ -686,7 +760,17 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "groupCount": 2,
+              "itemCount": 4,
+              "optionCount": 8,
+              "presentation": {
+                "instructions": "W?hlen Sie passende Aussagen f?r die Felder der beiden Begriffe. Nicht alle Aussagen passen."
+              },
+              "sourcePages": [
+                12,
+                13
+              ],
+              "uniqueMappings": true
             },
             "gradingDimensions": null,
             "id": "lesen_6",
@@ -697,7 +781,15 @@
           },
           {
             "constraints": {
-              "itemCount": 3
+              "itemCount": 3,
+              "requiredSourceKinds": [
+                "text",
+                "graphic"
+              ],
+              "sourcePages": [
+                13,
+                14
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_7",
@@ -718,8 +810,16 @@
         "parts": [
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
+              "answerWordMax": 2,
               "itemCount": 5,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                17
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_1",
@@ -730,8 +830,15 @@
           },
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
               "itemCount": 4,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                18
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_2",
@@ -743,7 +850,11 @@
           {
             "constraints": {
               "itemCount": 2,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "revealQuestionsAfterMedia": true,
+              "sourcePages": [
+                19
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_3",
@@ -754,8 +865,18 @@
           },
           {
             "constraints": {
+              "categoryRoles": [
+                "first",
+                "second",
+                "both",
+                "neither"
+              ],
               "itemCount": 6,
-              "mediaType": "video"
+              "mediaType": "video",
+              "optionCount": 4,
+              "sourcePages": [
+                20
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_4",
@@ -766,8 +887,15 @@
           },
           {
             "constraints": {
+              "answerNormalization": {
+                "ignoreCase": true,
+                "ignorePunctuation": true
+              },
               "itemCount": 4,
-              "mediaType": "video"
+              "mediaType": "video",
+              "sourcePages": [
+                21
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_5",
@@ -779,7 +907,11 @@
           {
             "constraints": {
               "itemCount": 5,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "optionCount": 4,
+              "sourcePages": [
+                22
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_6",
@@ -791,7 +923,10 @@
           {
             "constraints": {
               "itemCount": 4,
-              "mediaType": "audio"
+              "mediaType": "audio",
+              "sourcePages": [
+                23
+              ]
             },
             "gradingDimensions": null,
             "id": "hoeren_7",
@@ -812,6 +947,11 @@
         "parts": [
           {
             "constraints": {
+              "practiceTimeLimitSeconds": 1800,
+              "requiredSourceKinds": [],
+              "sourcePages": [
+                25
+              ],
               "wordCountMin": 200
             },
             "gradingDimensions": [
@@ -829,6 +969,15 @@
           },
           {
             "constraints": {
+              "practiceTimeLimitSeconds": 1800,
+              "requiredSourceKinds": [
+                "text",
+                "graphic"
+              ],
+              "sourcePages": [
+                26,
+                27
+              ],
               "wordCountMaxApprox": 150,
               "wordCountMinApprox": 100
             },
@@ -857,6 +1006,16 @@
         "parts": [
           {
             "constraints": {
+              "preparationSeconds": 30,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [],
+              "sourcePages": [
+                29
+              ],
               "speakingSeconds": 45
             },
             "gradingDimensions": [
@@ -876,6 +1035,16 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 45,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [],
+              "sourcePages": [
+                29
+              ],
               "speakingSeconds": 90
             },
             "gradingDimensions": [
@@ -895,6 +1064,19 @@
           },
           {
             "constraints": {
+              "hideSourceAfterPreparation": true,
+              "preparationSeconds": 240,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [
+                "text"
+              ],
+              "sourcePages": [
+                30
+              ],
               "speakingSeconds": 120
             },
             "gradingDimensions": [
@@ -914,6 +1096,20 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 90,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [
+                "graphic",
+                "script"
+              ],
+              "sourcePages": [
+                31
+              ],
+              "sourcePlaybackSecondsApprox": 50,
               "speakingSeconds": 90
             },
             "gradingDimensions": [
@@ -933,6 +1129,18 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 120,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [
+                "text"
+              ],
+              "sourcePages": [
+                32
+              ],
               "speakingSeconds": 150
             },
             "gradingDimensions": [
@@ -952,6 +1160,19 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 90,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [
+                "script"
+              ],
+              "sourcePages": [
+                33
+              ],
+              "sourcePlaybackSecondsApprox": 58,
               "speakingSeconds": 120
             },
             "gradingDimensions": [
@@ -971,6 +1192,18 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 90,
+              "recordingPolicy": {
+                "autoStop": true,
+                "manualStopAllowed": true,
+                "retryAllowed": true
+              },
+              "requiredSourceKinds": [
+                "text"
+              ],
+              "sourcePages": [
+                34
+              ],
               "speakingSeconds": 90
             },
             "gradingDimensions": [
@@ -994,7 +1227,7 @@
       }
     ],
     "profileId": "testdaf_digital",
-    "profileVersion": 1,
+    "profileVersion": 3,
     "schemaVersion": "german-exam-manifest-v1",
     "variant": "Digital"
   }

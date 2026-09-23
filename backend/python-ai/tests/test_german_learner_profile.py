@@ -222,3 +222,19 @@ def test_practice_unreadable_profile_is_503(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         _run_practice(monkeypatch, None, level="B2")
     assert exc.value.status_code == 503
+
+
+@pytest.mark.parametrize("saved", ["telc_c1_hochschule", "goethe_c1", "testdaf_digital", "telc_c1_hochschule"])
+def test_saved_variant_is_authoritative_and_loads_manifest(monkeypatch, saved):
+    from app.services.german_exams import get_profile, build_manifest
+    # Deliberately stale legacy fields must not override an explicit variant.
+    row = {"user_type": "learner", "german_test": "telc", "german_level": "B2", "german_exam_profile_id": saved}
+    monkeypatch.setattr(glp, "get_supabase", lambda: _FakeSupabase([row]))
+    resolved = glp.get_german_learner_profile(UID)
+    assert build_manifest(get_profile(resolved.exam_profile_id))["profileId"] == saved
+
+
+def test_unknown_saved_variant_does_not_fall_back(monkeypatch):
+    row = {"user_type": "learner", "german_test": "telc", "german_level": "C1 Hochschule", "german_exam_profile_id": "unknown"}
+    monkeypatch.setattr(glp, "get_supabase", lambda: _FakeSupabase([row]))
+    assert glp.get_german_learner_profile(UID).exam_profile_id is None

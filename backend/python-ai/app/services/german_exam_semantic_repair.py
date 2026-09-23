@@ -89,9 +89,9 @@ def _constrain_repair(original: dict, fixed: dict, issues: list[SemanticIssue], 
     } for i in issues):
         candidate = fixed.get("mc3", {}).get("options")
         result = deepcopy(original)
-        if isinstance(candidate, list) and len(candidate) == 3:
+        if isinstance(candidate, list) and len(candidate) == len(original["mc3"]["options"]):
             index = original["mc3"]["correctIndex"]
-            for n in range(3):
+            for n in range(len(candidate)):
                 if n != index:
                     result["mc3"]["options"][n] = candidate[n]
         return result
@@ -116,7 +116,7 @@ def repair_items_semantic(
         for _attempt in range(_MAX_ITEM_REPAIR_ATTEMPTS):
             try:
                 system, user = _repair_prompt(part, content, item_id, issues)
-                result = chat_json(system=system, user=user, max_tokens=1200, model=get_settings().german_exam_model)
+                result = chat_json(system=system, user=user, max_tokens=1200, model=part.constraints.get("generationModel") or get_settings().german_exam_model)
                 fixed = result.data
                 if isinstance(fixed, dict) and fixed.get("questionId") == item_id:
                     return item_id, _constrain_repair(questions_by_id[item_id], fixed, issues, part)

@@ -531,11 +531,48 @@ def _verify_prompt_speaking(part: PartBlueprint, content: dict[str, Any]) -> tup
     return system, json.dumps(content, ensure_ascii=False)
 
 
+def _verify_prompt_reading_multiple_choice(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied article"
+    ) + (
+        "\n\nThis is reading_multiple_choice: one article and multiple-choice comprehension items, judged ONLY "
+        "from the article text. For each item verify: (A) the option at mc3.correctIndex is clearly and "
+        "uniquely supported by the article (UNSUPPORTED_CORRECT_ANSWER if not); (B) exactly one option is "
+        "defensible — if another option could ALSO be argued correct from the article, use "
+        "MULTIPLE_DEFENSIBLE_ANSWERS with evidence.optionIndexes listing both; (C) each wrong option is "
+        "plausible — it should arise from the article (a true detail attached to the wrong thing, a partial "
+        "truth, a wrong cause or attribution, a distorted paraphrase); reject an absurd option or one "
+        "decidable without reading using IMPLAUSIBLE_DISTRACTOR; (D) a 'wrong' option that is as well "
+        "supported as the key is DISTRACTOR_ACCIDENTALLY_CORRECT; (E) QUESTION_NOT_ANSWERABLE if the stem asks "
+        "for something the article does not state or imply; (F) PARAPHRASE_TOO_LITERAL if the correct "
+        "option merely copies the article's wording so it can be solved by matching words. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the article is not one coherent, natural, original text or its register "
+        f"does not match {part.constraints['readingRegister']}. "
+        f"Question design must match: {part.constraints['questionStyle']}. "
+        f"Question scopes in order: {part.constraints['questionScopes']}; global scope is exempt "
+        "from paragraph order. Check every scoped question against its specified paragraph. "
+        "Audit every option independently before considering correctIndex. Classify an option as "
+        "supported when it answers the stem and follows from the scoped source, even if it paraphrases "
+        "another option, is shorter than the key, or was labelled wrong. Two reasonable summaries of the "
+        "same point are MULTIPLE_DEFENSIBLE_ANSWERS, not a matter of preferring the intended key. "
+        "An option rejectable by common sense without reading, an unrelated topic, a cartoonishly extreme "
+        "claim, or a global-purpose distractor unrelated to any real emphasis of this article is "
+        "implausible_wrong. The fact that an option is clearly contradicted does not itself make it a "
+        "GOOD distractor. Classify each option as supported, plausible_wrong or implausible_wrong."
+    )
+    text = content.get("text") or {}
+    user = json.dumps({"article": text.get("paragraphs"), "questions": content.get("questions") or []}, ensure_ascii=False)
+    return system, user
+
+
 # Cloze task types whose items carry their own 4 options and are audited with per-option verdicts.
 _CLOZE_MC4_TASK_TYPES = frozenset({"cloze_mc4_language_elements", "contextual_cloze_mc4"})
 
 # Task types whose items are `mc3` (three options, one key) and are audited with per-option verdicts.
-_MC3_TASK_TYPES = frozenset({"sentence_completion_mc3", "reading_detail_mc3", "segmented_dialogue_mc3", "listening_detail_mc3"})
+_MC3_TASK_TYPES = frozenset({
+    "sentence_completion_mc3", "reading_detail_mc3", "segmented_dialogue_mc3", "listening_detail_mc3",
+    "reading_multiple_choice",
+})
 
 # Task types whose items are speaker/source-matching statements, sharing speaker_statement_matching's
 # `matching.correctSpeakerId` / `matching.isDistractor` audit shape (see _verify_prompt_hv1).
@@ -543,6 +580,7 @@ _SPEAKER_MATCHING_TASK_TYPES = frozenset({"speaker_statement_matching", "multi_s
 
 _VERIFY_PROMPT_BUILDERS = {
     "reading_detail_mc3": _verify_prompt_reading_detail_mc3,
+    "reading_multiple_choice": _verify_prompt_reading_multiple_choice,
     "presentation_summary_followup": _verify_prompt_speaking,
     "quote_guided_discussion": _verify_prompt_speaking,
     "speaker_statement_matching": _verify_prompt_hv1,
@@ -736,7 +774,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "TRISTATE_VERDICT_MISMATCH"
         elif part.task_type in _MC3_TASK_TYPES:
             values = audit.get("optionVerdicts")
-            if (not isinstance(values, list) or len(values) != 3
+            if (not isinstance(values, list) or len(values) != (part.constraints["optionCount"] if part.task_type == "reading_multiple_choice" else 3)
                     or any(v not in ("supported", "plausible_wrong", "implausible_wrong") for v in values)):
                 code = "VERIFIER_RESPONSE_INVALID"
             elif "implausible_wrong" in values:
@@ -924,7 +962,7 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
     system += "Use the appropriate issue codes for audit failures. Return concise judgments only, not explanations of your reasoning process."
     user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user
     try:
-        model = get_settings().german_exam_model
+        model = part.constraints.get("verifierModel") or get_settings().german_exam_model
         # german_exam_model defaults to a gpt-5-class reasoning model, whose
         # hidden reasoning tokens are drawn from the SAME max_completion_tokens
         # budget as the visible JSON (see llm_json._token_limit_param). A flat

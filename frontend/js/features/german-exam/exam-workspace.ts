@@ -9,6 +9,7 @@
 // Profile decides structure; task type decides behaviour. This module knows
 // nothing exam-specific: there is no per-exam branching anywhere in it.
 
+import { mountTaskWorkspace } from './task-workspace.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 
 export interface ExamManifestPart {
@@ -16,6 +17,7 @@ export interface ExamManifestPart {
   title: string;
   taskType: string;
   implemented: boolean;
+  constraints?: Record<string, unknown>;
 }
 
 export interface ExamManifestModule {
@@ -330,7 +332,12 @@ export function createExamWorkspace(hooks: ExamWorkspaceHooks, deps: ExamWorkspa
   };
 }
 
+let disposeTaskWorkspace: (() => void) | undefined;
+let workspaceBase = '';
+
 function applyDom(state: ExamWorkspaceState): void {
+  disposeTaskWorkspace?.();
+  disposeTaskWorkspace = undefined;
   const root = document.getElementById('glExamGroup');
   const overview = document.getElementById('glExamOverview');
   if (!root) return;
@@ -351,6 +358,16 @@ function applyDom(state: ExamWorkspaceState): void {
   if (overview) {
     if (state.status === 'ready' && state.manifest) {
       overview.innerHTML = renderOverviewHtml(state.manifest);
+      const taskRoot = document.createElement('div');
+      overview.append(taskRoot);
+      disposeTaskWorkspace = mountTaskWorkspace(taskRoot, state.manifest, async (module, part, signal) => {
+        const response = await authenticatedFetch(workspaceBase + '/api/ai/german-exam/generate', {
+          method: 'POST', signal, headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({profileId:state.profileId, module, partId:part.id, mode:'adaptive_practice'})
+        });
+        if (!response.ok) throw new Error('generation failed');
+        return response.json();
+      });
       overview.hidden = false;
     } else if (state.status === 'loading') {
       overview.innerHTML = '<p class="gl-exam-sub gl-exam-loading" role="status">Loading your exam…</p>';
@@ -379,6 +396,7 @@ declare global {
 }
 
 export function initExamWorkspace(hooks: ExamWorkspaceHooks): ExamWorkspaceController {
+  workspaceBase = hooks.base || '';
   const ctl = createExamWorkspace(hooks, {
     fetchManifest: (signal) => fetchManifest(undefined, hooks.base || '', signal),
     render: applyDom,

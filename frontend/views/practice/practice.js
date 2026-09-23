@@ -1849,7 +1849,7 @@
       function rdParts() {
         var st = window._glExamState && window._glExamState();
         var mods = st && st.status === 'ready' && st.manifest ? st.manifest.modules.filter(function (m) { return m.id === 'reading'; }) : [];
-        return mods.length ? mods[0].parts : RD_FALLBACK_PARTS;
+        return st && st.status === 'ready' && st.manifest ? (mods.length ? mods[0].parts : []) : RD_FALLBACK_PARTS;
       }
       function rdPart(partId) {
         return rdParts().filter(function (p) { return p.id === partId; })[0] || null;
@@ -1872,7 +1872,7 @@
       function rdPointsPerCorrect() {
         var p = rdPart(rd.partId);
         var v = p && p.scoring && p.scoring.pointsPerCorrect;
-        return typeof v === 'number' ? v : 2;
+        return typeof v === 'number' ? v : null;
       }
       var RD_LETTERS = 'ABCDEFGHIJKL';
 
@@ -2159,6 +2159,58 @@
         return results;
       }
 
+      // reading_multiple_choice (Digital TestDaF Lesen 3) — same mc3 item shape as reading_detail_mc3, plus an
+      // optional `presentation` block (paragraph numbering, instructions text, hidable option letters) driven
+      // by the generated content, not by which exam this is.
+      function rdRenderMultipleChoice() {
+        var textPanel = rdEl('glReadingTextPanel');
+        var qPanel = rdEl('glReadingQuestionPanel');
+        if (!textPanel || !qPanel) return;
+        var text = rd.content.text || {};
+        rd.content.presentation = rd.content.presentation || {};
+        textPanel.innerHTML =
+          '<div class="gl-reading-text-eyebrow">' + _glEscape(rdGeneratedHeader()) +
+          (rd.topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(rd.topicLabel) + '</span>' : '') + '</div>' +
+          '<h3 class="gl-reading-text-title">' + _glEscape(text.title || '') + '</h3>' +
+          '<div class="gl-reading-text-body">' +
+          (text.paragraphs || []).map(function (p, index) {
+            return '<p data-paragraph-id="' + _glEscape(p.paragraphId) + '">' + (rd.content.presentation.numberParagraphs ? '<strong>(' + (index + 1) + ')</strong> ' : '') + _glEscape(p.text) + '</p>';
+          }).join('') + '</div>';
+        var letters = 'abcdefgh';
+        qPanel.innerHTML = '<p class="gl-reading-instructions">' + _glEscape(rd.content.presentation.instructions || '') + '</p>' + (rd.content.questions || []).map(function (q, idx) {
+          var mc3 = q.mc3 || {};
+          var selected = rd.genAnswers[q.questionId];
+          return '<div class="gl-reading-statement gl-reading-mc3" data-question-id="' + _glEscape(q.questionId) + '">' +
+            '<p><strong>' + (idx + 1) + '.</strong> ' + _glEscape(mc3.stem || '') + '</p>' +
+            (mc3.options || []).map(function (opt, i) {
+              var cls = '';
+              if (rd.genChecked) {
+                if (i === mc3.correctIndex) cls = ' gl-reading-opt-correct';
+                else if (selected === i) cls = ' gl-reading-opt-wrong';
+              }
+              return '<label class="gl-reading-mc3-option' + cls + '"><input type="radio" name="mc3-' + _glEscape(q.questionId) + '" value="' + i + '"' +
+                (selected === i ? ' checked' : '') + (rd.genChecked ? ' disabled' : '') + '> ' + (rd.content.presentation.optionLabels === false ? '' : '<span>' + (letters[i] || '?') + ')</span> ') + _glEscape(opt) + '</label>';
+            }).join('') + '</div>';
+        }).join('') + rdCheckButtonHtml();
+        qPanel.querySelectorAll('input[type="radio"]').forEach(function (input) {
+          if (input._rdWired) return;
+          input._rdWired = true;
+          input.addEventListener('change', function () {
+            var group = input.closest('[data-question-id]');
+            if (group) rd.genAnswers[group.getAttribute('data-question-id')] = parseInt(input.value, 10);
+          });
+        });
+        rdWireCheckButton();
+      }
+
+      function rdGradeMultipleChoice() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === (q.mc3 || {}).correctIndex, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       // multi_author_statement_matching_with_none — several short texts by different authors; every statement
       // is matched to exactly one author or to "nobody". The letters and the "no author" choice come from the
       // content (authorId / 'none'), not from any exam.
@@ -2287,7 +2339,35 @@
         if (btn && !btn._rdWired) { btn._rdWired = true; btn.addEventListener('click', rdCheckGeneratedAnswers); }
       }
 
+      function rdRenderSourceSelection() {
+        var sourcePanel = rdEl('glReadingTextPanel');
+        var questionPanel = rdEl('glReadingQuestionPanel');
+        var expectedContent = rd.content;
+        import('/js/features/german-exam/source-selection.js').then(function (mod) {
+          if (rd.content !== expectedContent) return;
+          var part = rdPart(rd.partId);
+          mod.mountSelection(sourcePanel, questionPanel, part, rd.content, rd.genAnswers, rd.genChecked);
+          questionPanel.insertAdjacentHTML('beforeend', rdCheckButtonHtml());
+          rdWireCheckButton();
+        }).catch(function () {
+          if (rd.content === expectedContent) questionPanel.textContent = 'This exercise is invalid. Please reload it.';
+        });
+      }
+
+      function rdGradeSourceSelection() {
+        var results = {};
+        (rd.content.questions || []).forEach(function (q) {
+          results[q.id] = { correct: rd.genAnswers[q.id] === q.answerId, skillTags: q.skillTags || [] };
+        });
+        return results;
+      }
+
       var RD_GENERATED_RENDERERS = {
+        speech_act_matching: rdRenderSourceSelection,
+        statement_category_matching: rdRenderSourceSelection,
+        statement_concept_pair_matching: rdRenderSourceSelection,
+        lexical_cloze: rdRenderSourceSelection,
+        reading_multiple_choice: rdRenderMultipleChoice,
         text_reconstruction_sentence_matching: rdRenderTextReconstruction,
         section_statement_matching: rdRenderSectionMatching,
         detail_tristate_with_global_heading: rdRenderDetailGlobal,
@@ -2334,6 +2414,11 @@
       }
 
       var RD_GENERATED_GRADERS = {
+        speech_act_matching: rdGradeSourceSelection,
+        statement_category_matching: rdGradeSourceSelection,
+        statement_concept_pair_matching: rdGradeSourceSelection,
+        lexical_cloze: rdGradeSourceSelection,
+        reading_multiple_choice: rdGradeMultipleChoice,
         text_reconstruction_sentence_matching: rdGradeTextReconstruction,
         section_statement_matching: rdGradeSectionMatching,
         detail_tristate_with_global_heading: rdGradeDetailGlobal,
@@ -2370,7 +2455,7 @@
             taskType: rd._activeTaskType, itemId: id, skillTags: r.skillTags, difficulty: 'c1',
             attemptCount: 1, firstAttemptCorrect: r.correct, finalCorrect: r.correct, hintLevel: 0,
             replayCount: null, transcriptRevealed: null,
-            scoreValue: r.correct ? rdPointsPerCorrect() : 0, maxScoreValue: rdPointsPerCorrect(), metadata: { generationId: rd.generationId }
+            scoreValue: rdPointsPerCorrect() === null ? null : (r.correct ? rdPointsPerCorrect() : 0), maxScoreValue: rdPointsPerCorrect(), metadata: { generationId: rd.generationId }
           };
         });
         if (!items.length) return Promise.resolve();
@@ -3446,7 +3531,7 @@
         if (!qPanel) return;
         qPanel.innerHTML =
           '<div class="gl-listen-error">' +
-            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified exam exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry.</p>' +
             _glFailNote() +
             '<div class="gl-listen-error-actions">' +
@@ -3511,7 +3596,7 @@
         var textPanel = sbEl('glSprachbausteineTextPanel');
         var qPanel = sbEl('glSprachbausteineQuestionPanel');
         if (textPanel) textPanel.innerHTML = '';
-        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified telc exercise…</div>';
+        if (qPanel) qPanel.innerHTML = '<div class="gl-listen-generating">Generating your verified exam exercise…</div>';
         sbArmWatchdog();
         return _glRunGeneration(sb, 'exam', qPanel,
           { start: 'Creating your Sprachbausteine exercise…' },
@@ -6124,7 +6209,7 @@
         if (!taskPanel) return;
         taskPanel.innerHTML =
           '<div class="gl-listen-error">' +
-            '<p class="gl-listen-error-title">Couldn’t create your verified telc exercise.</p>' +
+            '<p class="gl-listen-error-title">Couldn’t create your verified exam exercise.</p>' +
             '<p class="gl-listen-error-sub">Generation didn’t complete this time — nothing was recorded. You can retry, or switch to general listening practice instead.</p>' +
             _glFailNote() +
             '<div class="gl-listen-error-actions">' +

@@ -1063,9 +1063,113 @@ def validate_speaking(part: PartBlueprint, content: dict[str, Any]) -> list[Vali
     return issues
 
 
+def _normalized_words(text: str) -> list[str]:
+    return re.findall(r"[\wäöüÄÖÜß]+", text.lower())
+
+
+def _copied_run(option: str, article_words: list[str], run: int) -> bool:
+    """True if `option` reproduces `run` consecutive words of the article (a phrase-copy answer)."""
+    words = _normalized_words(option)
+    if len(words) < run:
+        return False
+    grams = {tuple(article_words[i:i + run]) for i in range(len(article_words) - run + 1)}
+    return any(tuple(words[i:i + run]) in grams for i in range(len(words) - run + 1))
+
+
+def validate_reading_multiple_choice(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """One informational article + N multiple-choice comprehension items.
+
+    Generic: counts, option count, text order and length all come from the blueprint."""
+    issues: list[ValidationIssue] = []
+    text = content.get("text")
+    questions = content.get("questions") or []
+    item_count = part.constraints["itemCount"]
+    option_count = part.constraints["optionCount"]
+
+    paragraphs = text.get("paragraphs") if isinstance(text, dict) else None
+    para_ids: list[str] = []
+    article_words: list[str] = []
+    if not isinstance(paragraphs, list) or not paragraphs:
+        issues.append(ValidationIssue(None, "text.paragraphs must be a non-empty list"))
+    else:
+        for p in paragraphs:
+            pid = p.get("paragraphId") if isinstance(p, dict) else None
+            body = p.get("text") if isinstance(p, dict) else None
+            if not isinstance(pid, str) or not pid.strip() or not isinstance(body, str) or not body.strip():
+                issues.append(ValidationIssue(None, "every paragraph needs a paragraphId and non-empty text"))
+                continue
+            para_ids.append(pid)
+            article_words.extend(_normalized_words(body))
+        if len(set(para_ids)) != len(para_ids):
+            issues.append(ValidationIssue(None, "duplicate paragraphId"))
+        expected_paragraphs = part.constraints["generationParagraphCount"]
+        if para_ids != [f"p{i}" for i in range(1, expected_paragraphs + 1)]:
+            issues.append(ValidationIssue(None, "paragraph IDs must match the configured numbered paragraph sequence"))
+        count = sum(len(p["text"].split()) for p in paragraphs if isinstance(p, dict) and isinstance(p.get("text"), str))
+        low, high = part.constraints["generationWordCountMin"], part.constraints["generationWordCountMax"]
+        if not low <= count <= high:
+            issues.append(ValidationIssue(None, f"article has {count} words, practice target is {low}-{high}"))
+
+    if len(questions) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} items, got {len(questions)}"))
+
+    stems: list[str] = []
+    previous_first = -1
+    order_broken = False
+    for index, q in enumerate(questions):
+        qid = q.get("questionId")
+        mc3 = q.get("mc3") or {}
+        if qid != f"q{index + 1}":
+            issues.append(ValidationIssue(None, "question IDs must be sequential q1..qN"))
+        if not isinstance(mc3, dict):
+            issues.append(ValidationIssue(qid, "mc3 must be an object"))
+            continue
+        stem = mc3.get("stem")
+        options = mc3.get("options")
+        if not isinstance(stem, str) or not stem.strip():
+            issues.append(ValidationIssue(qid, "mc3.stem is missing"))
+        else:
+            stems.append(stem.strip().lower())
+        if not isinstance(options, list) or len(options) != option_count or any(not isinstance(o, str) or not o.strip() for o in options):
+            issues.append(ValidationIssue(qid, f"expected {option_count} non-empty options"))
+            continue
+        if len({o.strip().lower() for o in options}) != len(options):
+            issues.append(ValidationIssue(qid, "duplicate options within one item"))
+        correct = mc3.get("correctIndex")
+        if not isinstance(correct, int) or isinstance(correct, bool) or not 0 <= correct < option_count:
+            issues.append(ValidationIssue(qid, "correctIndex missing or out of range"))
+        elif article_words and _copied_run(options[correct], article_words, 7):
+            issues.append(ValidationIssue(qid, "correct option copies 7+ consecutive words of the article; it must be a paraphrase"))
+        evidence = mc3.get("evidenceParagraphIds")
+        if not isinstance(evidence, list) or not evidence or any(e not in para_ids for e in evidence):
+            issues.append(ValidationIssue(qid, "evidenceParagraphIds must list real paragraph ids"))
+        else:
+            scopes = part.constraints["questionScopes"]
+            scope = scopes[index] if index < len(scopes) else None
+            expected = para_ids if scope == "global" else [scope]
+            if evidence != expected:
+                issues.append(ValidationIssue(qid, f"evidenceParagraphIds must match scope {scope}"))
+        if isinstance(evidence, list) and evidence and all(e in para_ids for e in evidence) and part.constraints.get("itemsFollowTextOrder") and index < len(part.constraints["questionScopes"]) and part.constraints["questionScopes"][index] != "global":
+            first = min(para_ids.index(e) for e in evidence)
+            if first < previous_first:
+                order_broken = True
+            previous_first = max(previous_first, first)
+    if order_broken:
+        issues.append(ValidationIssue(None, "items must follow the order of the article (evidence paragraphs must not move backwards)"))
+    if len(set(stems)) != len(stems):
+        issues.append(ValidationIssue(None, "two items ask the same question"))
+
+    for q in questions:
+        if any(tag not in part.allowed_skill_tags for tag in q.get("skillTags") or []):
+            issues.append(ValidationIssue(q.get("questionId"), "skill tag not allowed by blueprint"))
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
 VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationIssue]]] = {
     "presentation_summary_followup": validate_speaking,
     "quote_guided_discussion": validate_speaking,
+    "reading_multiple_choice": validate_reading_multiple_choice,
     "speaker_statement_matching": validate_speaker_statement_matching,
     "sentence_completion_mc3": validate_sentence_completion_mc3,
     "structured_note_completion": validate_structured_note_completion,
@@ -1098,6 +1202,27 @@ _SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    from .german_exam_productive import WRITING_TYPES, SPEAKING_TYPES, validate_productive
+    if part.task_type in WRITING_TYPES | SPEAKING_TYPES:
+        try:
+            validate_productive(part, content)
+            return []
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            return [ValidationIssue(None, str(exc))]
+    from .german_exam_media_tasks import MEDIA_TASKS, validate_media_task
+    if part.task_type in MEDIA_TASKS:
+        try:
+            validate_media_task(part, content)
+            return []
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            return [ValidationIssue(None, str(exc))]
+    from .german_exam_objective import SELECTION_TYPES, validate_selection
+    if part.task_type in SELECTION_TYPES:
+        try:
+            validate_selection(part, content)
+            return []
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            return [ValidationIssue(None, str(exc))]
     if part.task_type in ("quote_guided_discussion", "guided_pair_discussion"):
         return validate_speaking(part, content)
     generic_keys = [("questions", "questionId")]

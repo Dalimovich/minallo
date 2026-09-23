@@ -521,6 +521,9 @@ def generate_listening_part(
     by _MAX_FULL_REGENERATIONS shared across both stages. Raises
     ListeningGenerationError rather than ever returning known-invalid
     content once that budget is exhausted."""
+    from .german_exam_media_tasks import MEDIA_TASKS, generate_media_task
+    if part.task_type in MEDIA_TASKS:
+        return generate_media_task(profile, part, plan, topic)
     builder = _PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
         raise ListeningGenerationError(f"no prompt builder for task_type {part.task_type!r}")

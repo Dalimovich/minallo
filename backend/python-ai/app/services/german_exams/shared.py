@@ -66,6 +66,20 @@ class ScoringSpec:
 
 
 @dataclass(frozen=True)
+class DeliveryPolicy:
+    """How a full-exam simulation must be delivered — engine concepts, driven entirely by
+    each profile's own facts. None of these are invented here: a profile that sets one sets
+    it from its own verified source (see e.g. testdaf_digital.py's DELIVERY_METADATA)."""
+
+    fixed_task_order: bool = False
+    back_navigation_allowed: bool = True
+    # True when the official exam includes additional trial tasks that are NOT scored and
+    # NOT reproduced by this implementation — a full-exam simulation only ever covers the
+    # scored core described by `modules`, never fabricates the trial tasks themselves.
+    additional_unscored_trial_tasks: bool = False
+
+
+@dataclass(frozen=True)
 class ModuleSpec:
     """Module-level facts (label, timing, module scoring) that are not a
     property of any single part. Optional per module: a module without a
@@ -118,4 +132,7 @@ class ExamProfile:
     # module -> topic candidates ({"topicId", "label"}). Topics change content flavour only, never
     # structure. None -> the engine's default topic banks (currently telc-oriented).
     topic_banks: dict[str, tuple[dict[str, str], ...]] | None = None
+    # Full-exam-simulation delivery rules; None means "free navigation, no module timer" —
+    # unchanged behaviour for every profile that has not opted into a timed simulation.
+    delivery_policy: DeliveryPolicy | None = None
 
