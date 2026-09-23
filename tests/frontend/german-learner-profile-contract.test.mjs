@@ -137,7 +137,21 @@ test('onboarding: ob_done is only set after the saved profile is applied; no pre
   const doneIdx = src.indexOf("localStorage.setItem('ob_done_'");
   assert.ok(applyIdx > 0 && doneIdx > applyIdx, 'ob_done must follow applySavedProfile');
   assert.doesNotMatch(src, /localStorage\.setItem\('ss_german_(test|level)_/);
-  assert.match(src, /german_exam_profile_id:\s*resolveGermanExamProfileIdClient\(_obTest,\s*_obLevel\)/);
+  // TestDaF paper-based (or no explicit digital choice) must still fall
+  // through to the plain legacy resolver call, unchanged.
+  assert.ok(
+    src.includes('resolveGermanExamProfileIdClient(_obTest, _obLevel)'),
+    'the plain legacy resolver call (no override) must still be reachable for the non-digital path'
+  );
+});
+
+test('onboarding: an explicit digital-TestDaF choice overrides the legacy resolver with TESTDAF_DIGITAL_PROFILE_ID', () => {
+  const src = read('frontend/js/features/auth/onboarding.ts');
+  assert.match(
+    src,
+    /resolveGermanExamProfileIdClient\(_obTest,\s*_obLevel,\s*TESTDAF_DIGITAL_PROFILE_ID\)/
+  );
+  assert.match(src, /_obTestDafDigital/, 'a TestDaF-only delivery-mode flag must exist');
 });
 
 test('onboarding and profile share ONE level catalog (no local lists)', () => {

@@ -160,7 +160,15 @@ declare global {
       opts?: { authoritative?: boolean }
     ) => unknown;
     _applyUserTypeUI?: () => void;
-    _resolveGermanExamProfileId?: (test: string | undefined, level: string | undefined) => string | null;
+    _resolveGermanExamProfileId?: (
+      test: string | undefined,
+      level: string | undefined,
+      savedProfileId?: string | null
+    ) => string | null;
+    // Explicit-override id for the digital TestDaF profile (see
+    // german-profile.ts). Exposed to classic-script views (Profile page) so
+    // they never need to hardcode the string.
+    TESTDAF_DIGITAL_PROFILE_ID?: string;
     MinalloBoot?: {
       hide: () => void; show: () => void; signedOut: () => void;
       recovery: (kind?: string) => void; mark: (name: string) => void; isReady: () => boolean;

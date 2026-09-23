@@ -139,6 +139,18 @@
         <label class="ob-label" data-i18n="ob_level_question">What is your current / target level?</label>
         <div class="ob-level-grid" id="obLevelGrid"></div>
       </div>
+      <!-- TestDaF only: the official exam now offers both a digital and a
+           paper-based sitting, and only digital has an implemented workspace.
+           Filled in by _obSelectTest() when TestDaF is chosen; hidden and
+           empty for every other test family. -->
+      <div id="obTestDafModeWrap" class="ob-field" style="display: none">
+        <label class="ob-label" data-i18n="ob_testdaf_mode_question">How are you taking the TestDaF?</label>
+        <div class="ob-level-grid" id="obTestDafModeGrid"></div>
+        <div style="font-size: 0.8rem; opacity: 0.7; margin-top: 6px" data-i18n="ob_testdaf_mode_hint">
+          Digital TestDaF unlocks the full interactive German Exam Engine. Paper-based practice materials are coming
+          soon.
+        </div>
+      </div>
       <div id="obErr3b" class="ob-err"></div>
       <div class="ob-actions">
         <button id="obBack2bBtn" class="ob-btn-ghost" type="button" data-i18n="ob_back_btn">← Back</button>

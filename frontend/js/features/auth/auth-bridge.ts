@@ -11,6 +11,7 @@ import {
 } from './user-data.js';
 import {
   GERMAN_TEST_LEVELS,
+  TESTDAF_DIGITAL_PROFILE_ID,
   getGermanLearnerProfile,
   germanLevelOptionsHtml,
   isValidGermanTestLevel,
@@ -116,6 +117,7 @@ export function initAuthBridge(options: AuthBridgeOptions): AuthBridge {
   window.isValidGermanTestLevel = isValidGermanTestLevel;
   window.populateGermanLevelSelect = populateGermanLevelSelect;
   window.GERMAN_TEST_LEVELS = GERMAN_TEST_LEVELS;
+  window.TESTDAF_DIGITAL_PROFILE_ID = TESTDAF_DIGITAL_PROFILE_ID;
 
   window.MinalloBoot?.mark('authBridgeReady');
   // Self-heal: if a session was restored before this bridge existed (any

@@ -30,10 +30,22 @@ export const GERMAN_TEST_LABELS: Record<string, string> = {
 // Plain CEFR steps offered as an explicit, session-only practice override.
 const CEFR_OVERRIDE_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
+// The one TestDaF variant with an implemented workspace. A TDN level (3/4/5)
+// alone can never distinguish digital TestDaF from paper-based TestDaF (which
+// has no implemented profile at all) — see legacyLevelValues: [] below. The
+// UI (onboarding + Profile page) asks the user for delivery mode explicitly
+// and passes this id as the `savedProfileId` override to
+// resolveGermanExamProfileIdClient(). Do not invent a fake CEFR/TDN legacy
+// value to force the legacy (family, level) resolver to match instead.
+export const TESTDAF_DIGITAL_PROFILE_ID = 'testdaf_digital';
+
 // German Exam Engine profile registry, client-side mirror of the backend's
 // resolve_profile_id() in backend/python-ai/app/services/german_exam_profiles.py.
 // Table-driven so adding a profile is one entry here + one in the backend
 // registry, not another branch.
+// NOTE: kept as literal string values (not TESTDAF_DIGITAL_PROFILE_ID above) —
+// a drift-guard test (tests/backend/german-learner-profile.test.mjs) matches
+// this exact source text against the Python registry.
 const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; legacyLevelValues: string[] }> = [
   { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
   { profileId: 'goethe_c1', family: 'Goethe', legacyLevelValues: ['C1'] },

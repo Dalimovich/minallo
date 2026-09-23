@@ -1,6 +1,7 @@
 import { HOCHSCHULEN, type Hochschule } from '../../data/hochschulen.js';
 import {
   GERMAN_TEST_LEVELS,
+  TESTDAF_DIGITAL_PROFILE_ID,
   isValidGermanTestLevel,
   resolveGermanExamProfileIdClient,
 } from './german-profile.js';
@@ -16,6 +17,7 @@ declare global {
     _obBack?: (fromStep?: number) => void;
     _obSelectTest?: (card: HTMLElement) => void;
     _obSelectLevel?: (btn: HTMLElement, level: string) => void;
+    _obSelectTestDafMode?: (btn: HTMLElement, mode: string) => void;
     _obFinish?: () => Promise<void>;
     _obFinishLearner?: () => Promise<void>;
   }
@@ -58,6 +60,10 @@ import { listSuggestions, submitSuggestion } from '../../services/suggestions-se
 
 let _obTest = '';
 let _obLevel = '';
+// TestDaF-only: digital vs. paper-based delivery mode. Never meaningful for
+// any other test family — see _obSelectTest. Explicit user choice only; no
+// default is guessed.
+let _obTestDafDigital = false;
 let _obSelectedHochschule: Hochschule | null = null;
 
 // Per-major cache of crowd-approved Vertiefung suggestions. Filled lazily
@@ -337,6 +343,7 @@ async function _obSaveAndClose(
 export function showOnboarding(email?: string): void {
   _obTest = '';
   _obLevel = '';
+  _obTestDafDigital = false;
   _obShowStep('1');
   _obSetHeader('ob_welcome_title', 'ob_step1', '👋');
   const emailField = document.getElementById('obEmail') as HTMLInputElement | null;
@@ -749,6 +756,7 @@ export function initOnboarding(): void {
     card.classList.add('selected');
     _obTest = card.dataset['test'] || '';
     _obLevel = '';
+    _obTestDafDigital = false;
     const wrap = document.getElementById('obLevelWrap');
     const grid = document.getElementById('obLevelGrid');
     if (!wrap || !grid) return;
@@ -757,14 +765,50 @@ export function initOnboarding(): void {
       .map((l) => '<button class="ob-level-btn" data-level="' + l + '">' + l + '</button>')
       .join('');
     wrap.style.display = 'flex';
+
+    // TestDaF is the one family with a real, user-meaningful delivery-mode
+    // split: a digital sitting (the implemented German Exam workspace) vs. a
+    // paper-based one (no profile implemented yet — see TESTDAF_DIGITAL_PROFILE_ID
+    // in german-profile.ts). Every other family keeps its existing flow
+    // untouched; this block is deliberately scoped to TestDaF only.
+    const modeWrap = document.getElementById('obTestDafModeWrap');
+    const modeGrid = document.getElementById('obTestDafModeGrid');
+    if (modeWrap && modeGrid) {
+      if (_obTest === 'TestDaF') {
+        modeGrid.innerHTML =
+          '<button class="ob-level-btn" data-mode="digital" type="button">' +
+          _obT('ob_testdaf_mode_digital') +
+          '</button>' +
+          '<button class="ob-level-btn" data-mode="paper" type="button">' +
+          _obT('ob_testdaf_mode_paper') +
+          '</button>';
+        modeWrap.style.display = 'flex';
+      } else {
+        modeGrid.innerHTML = '';
+        modeWrap.style.display = 'none';
+      }
+    }
   };
 
   window._obSelectLevel = function (btn: HTMLElement, level: string) {
-    document.querySelectorAll('.ob-level-btn').forEach((b) => {
+    // Scoped to the level grid only: the TestDaF delivery-mode buttons reuse
+    // the same .ob-level-btn class for styling and must not be deselected by
+    // a level click (they live in a different container).
+    const levelGrid = document.getElementById('obLevelGrid');
+    levelGrid?.querySelectorAll('.ob-level-btn').forEach((b) => {
       b.classList.remove('selected');
     });
     btn.classList.add('selected');
     _obLevel = level;
+  };
+
+  window._obSelectTestDafMode = function (btn: HTMLElement, mode: string) {
+    const modeGrid = document.getElementById('obTestDafModeGrid');
+    modeGrid?.querySelectorAll('.ob-level-btn').forEach((b) => {
+      b.classList.remove('selected');
+    });
+    btn.classList.add('selected');
+    _obTestDafDigital = mode === 'digital';
   };
 
   window._obFinish = async function () {
@@ -935,7 +979,14 @@ export function initOnboarding(): void {
       user_type: 'learner',
       german_test: _obTest,
       german_level: _obLevel,
-      german_exam_profile_id: resolveGermanExamProfileIdClient(_obTest, _obLevel),
+      // Explicit digital-TestDaF choice wins outright (see german-profile.ts);
+      // otherwise unchanged — falls through to the legacy (family, level)
+      // resolver, which correctly returns null for paper-based TestDaF /
+      // any other test level pair without an implemented profile.
+      german_exam_profile_id:
+        _obTest === 'TestDaF' && _obTestDafDigital
+          ? resolveGermanExamProfileIdClient(_obTest, _obLevel, TESTDAF_DIGITAL_PROFILE_ID)
+          : resolveGermanExamProfileIdClient(_obTest, _obLevel),
       age: parseInt(info.age) || null,
       updated_at: new Date().toISOString(),
     };
@@ -959,6 +1010,7 @@ export function initOnboarding(): void {
     const finishLrnBtn = document.getElementById('obFinishLearner');
     const testGrid = document.getElementById('obTestGrid');
     const levelGrid = document.getElementById('obLevelGrid');
+    const testDafModeGrid = document.getElementById('obTestDafModeGrid');
 
     // If the modal hasn't been injected yet, bail and let the ss-ready
     // fallback below try again. Use obLogoutBtn as the sentinel.
@@ -1013,6 +1065,14 @@ export function initOnboarding(): void {
         const btn = target ? target.closest<HTMLElement>('.ob-level-btn') : null;
         if (btn && btn.dataset['level'] && window._obSelectLevel)
           window._obSelectLevel(btn, btn.dataset['level']);
+      });
+    }
+    if (testDafModeGrid) {
+      testDafModeGrid.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement | null;
+        const btn = target ? target.closest<HTMLElement>('.ob-level-btn') : null;
+        if (btn && btn.dataset['mode'] && window._obSelectTestDafMode)
+          window._obSelectTestDafMode(btn, btn.dataset['mode']);
       });
     }
   };

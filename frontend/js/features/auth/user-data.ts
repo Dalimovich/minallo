@@ -1,6 +1,10 @@
 import { checkAdminStatus } from '../../services/admin-service.js';
 import { authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
-import { resolveGermanExamProfileIdClient, populateGermanLevelSelect } from './german-profile.js';
+import {
+  resolveGermanExamProfileIdClient,
+  populateGermanLevelSelect,
+  TESTDAF_DIGITAL_PROFILE_ID,
+} from './german-profile.js';
 
 interface ProfileRow {
   full_name?: string;
@@ -650,4 +654,14 @@ export function applyUserTypeUI(): void {
   // Level options depend on the chosen test family, so repopulate them here
   // instead of relying on a static list that could disagree with onboarding.
   if (gl) populateGermanLevelSelect(gl, germanTest, germanLevel);
+
+  // TestDaF-only delivery-mode selector (digital vs. paper-based). Visible
+  // only when the current test family is TestDaF; initialized from the
+  // saved profile id so a returning testdaf_digital learner sees "Digital"
+  // pre-selected, never guessed for anyone else.
+  const tdGroup = document.getElementById('profileTestDafModeGroup');
+  const tdSel = document.getElementById('profileTestDafMode') as HTMLSelectElement | null;
+  const showTestDafMode = resolved && isLearner && germanTest === 'TestDaF';
+  if (tdGroup) tdGroup.style.display = showTestDafMode ? '' : 'none';
+  if (tdSel) tdSel.value = showTestDafMode && window._germanExamProfileId === TESTDAF_DIGITAL_PROFILE_ID ? 'digital' : '';
 }

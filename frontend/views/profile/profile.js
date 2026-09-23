@@ -46,11 +46,25 @@ async function saveProfile() {
     }
     data.german_test = test;
     data.german_level = level;
-    // Preserve an explicitly saved variant when its target is unchanged.
-    // A changed legacy target clears/re-resolves the previous variant.
-    data.german_exam_profile_id = test === window._germanTest && level === window._germanLevel && window._germanExamProfileId
-      ? window._germanExamProfileId
-      : window._resolveGermanExamProfileId ? window._resolveGermanExamProfileId(test, level) : null;
+    // TestDaF only: an explicit digital/paper delivery-mode choice always
+    // wins over the "unchanged target" preservation below — a learner who
+    // switches the dropdown to "paper-based" must see the profile clear even
+    // if test/level themselves didn't change. See german-profile.ts.
+    var tdSel = document.getElementById('profileTestDafMode');
+    var tdVal = test === 'TestDaF' && tdSel ? tdSel.value : '';
+    if (tdVal === 'digital') {
+      data.german_exam_profile_id = window._resolveGermanExamProfileId
+        ? window._resolveGermanExamProfileId(test, level, window.TESTDAF_DIGITAL_PROFILE_ID || 'testdaf_digital')
+        : (window.TESTDAF_DIGITAL_PROFILE_ID || 'testdaf_digital');
+    } else if (tdVal === 'paper') {
+      data.german_exam_profile_id = null;
+    } else {
+      // Preserve an explicitly saved variant when its target is unchanged.
+      // A changed legacy target clears/re-resolves the previous variant.
+      data.german_exam_profile_id = test === window._germanTest && level === window._germanLevel && window._germanExamProfileId
+        ? window._germanExamProfileId
+        : window._resolveGermanExamProfileId ? window._resolveGermanExamProfileId(test, level) : null;
+    }
   }
   var _dbSaved = false;
   try {
@@ -161,4 +175,10 @@ document.addEventListener('change', function (e) {
   if (gl && typeof window.populateGermanLevelSelect === 'function') {
     window.populateGermanLevelSelect(gl, t.value, '');
   }
+  // TestDaF-only delivery-mode field: show it only while TestDaF is the
+  // chosen family, and never carry a stale choice into another family.
+  var tdGroup = document.getElementById('profileTestDafModeGroup');
+  var tdSel = document.getElementById('profileTestDafMode');
+  if (tdGroup) tdGroup.style.display = t.value === 'TestDaF' ? '' : 'none';
+  if (tdSel && t.value !== 'TestDaF') tdSel.value = '';
 });

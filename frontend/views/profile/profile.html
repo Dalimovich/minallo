@@ -82,6 +82,17 @@
         <option value="" data-i18n="profile_select_level">Select your level…</option>
       </select>
     </div>
+    <!-- TestDaF only: digital vs. paper-based delivery mode. Shown/hidden and
+         initialized by applyUserTypeUI() in user-data.ts; only digital has an
+         implemented German Exam workspace (see german-profile.ts). -->
+    <div class="pf-group pf-learner-field" id="profileTestDafModeGroup" style="display: none">
+      <label class="pf-label" data-i18n="ob_testdaf_mode_question">How are you taking the TestDaF?</label>
+      <select class="pf-input" id="profileTestDafMode">
+        <option value="" data-i18n="profile_testdaf_mode_placeholder">Select…</option>
+        <option value="digital" data-i18n="ob_testdaf_mode_digital">Digital TestDaF</option>
+        <option value="paper" data-i18n="ob_testdaf_mode_paper">Paper-based TestDaF</option>
+      </select>
+    </div>
     <div></div>
     <button class="pf-save profile-save-btn" data-i18n="profile_save_btn">&#x1F4BE; Save changes</button>
   </div>
