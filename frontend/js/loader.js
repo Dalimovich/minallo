@@ -443,8 +443,14 @@
         })
             .then(() => loadScript('js/main.js', 'app-script', { type: 'module' }))
             // Do not continue (and therefore never fire ss-ready) until app.js and the
-            // auth/profile bridge it installs have finished initialising.
-            .then(() => Promise.resolve(window.__minalloAppInitPromise).catch((err) => {
+            // auth/profile bridge it installs have finished initialising. Bounded the
+            // same way loadScript above is: a hung auth call inside app.js's top-level
+            // init (e.g. a stalled token refresh) must not block the boot chain — and
+            // therefore the retry UI — forever.
+            .then(() => Promise.race([
+            Promise.resolve(window.__minalloAppInitPromise),
+            new Promise((resolve) => setTimeout(resolve, SCRIPT_TIMEOUT_MS)),
+        ]).catch((err) => {
             console.error('[loader] app.js failed to initialise:', err);
         }))
             .then(() => {
