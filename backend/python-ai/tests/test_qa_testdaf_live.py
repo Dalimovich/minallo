@@ -9,14 +9,22 @@ import pytest
 
 from app.services.german_exams.testdaf_digital import TESTDAF_DIGITAL
 
-# See test_qa_budget.py: nudge sys.path so `scripts` resolves to
-# backend/python-ai/scripts/, not the unrelated tests/scripts/ package.
+# See test_qa_budget.py for why this is guarded rather than unconditional:
+# unconditionally deleting+reimporting `scripts.*` here AND there makes
+# whichever file collects second rebind sys.modules["scripts.qa_budget"] to a
+# new module object, while the other file's already-imported names keep
+# pointing at the old one — a real collection-order-dependent bug.
 _BACKEND_ROOT = str(Path(__file__).resolve().parents[1])
-if _BACKEND_ROOT in sys.path:
-    sys.path.remove(_BACKEND_ROOT)
-sys.path.insert(0, _BACKEND_ROOT)
-for _name in [n for n in sys.modules if n == "scripts" or n.startswith("scripts.")]:
-    del sys.modules[_name]
+_scripts_pkg = sys.modules.get("scripts")
+_scripts_already_correct = _scripts_pkg is not None and any(
+    Path(p).resolve() == Path(_BACKEND_ROOT, "scripts") for p in getattr(_scripts_pkg, "__path__", [])
+)
+if not _scripts_already_correct:
+    if _BACKEND_ROOT in sys.path:
+        sys.path.remove(_BACKEND_ROOT)
+    sys.path.insert(0, _BACKEND_ROOT)
+    for _name in [n for n in sys.modules if n == "scripts" or n.startswith("scripts.")]:
+        del sys.modules[_name]
 
 from scripts import qa_budget, qa_testdaf_live  # noqa: E402
 
@@ -32,7 +40,7 @@ def _no_real_network(monkeypatch):
 def _args(tmp_path, **overrides):
     defaults = dict(
         module="reading", part="lesen_1", env_file=tmp_path / ".env",
-        out=tmp_path / "out", max_cost_usd=0.25, max_samples=1,
+        out=tmp_path / "out", max_cost_usd=0.25, max_samples=1, dry_run=False,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -145,6 +153,62 @@ def test_run_stops_before_a_further_sample_once_the_cost_budget_is_already_spent
     budget.record_call(0.01, sample=1)
     with pytest.raises(qa_budget.BudgetExceeded):
         budget.guard_new_sample()
+
+
+def test_dry_run_never_imports_or_dispatches_to_a_real_generator(tmp_path, monkeypatch):
+    """--dry-run must exercise run()'s real loop/budget/termination logic through the
+    real CLI parser, without ever calling `_generator()` (which imports a real,
+    network-capable generator module)."""
+    called = []
+    monkeypatch.setattr(qa_testdaf_live, "_generator", lambda module: called.append(module) or (_ for _ in ()).throw(
+        AssertionError("dry-run must not resolve a real generator")))
+    monkeypatch.setattr(qa_testdaf_live, "labeled_usage", lambda label: _record_and_noop([], label))
+    load_dotenv_calls = []
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: load_dotenv_calls.append(a))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--module", required=True)
+    parser.add_argument("--part", required=True)
+    parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--dry-run", action="store_true")
+    qa_budget.add_budget_args(parser)
+    args = parser.parse_args([
+        "--module", "speaking", "--part", "sprechen_1", "--env-file", str(tmp_path / ".env"),
+        "--out", str(tmp_path / "out"), "--dry-run", "--max-cost-usd", "0.25", "--max-samples", "1",
+    ])
+
+    code = qa_testdaf_live.run(args)
+
+    assert code == 0
+    assert called == []  # _generator() was never resolved/called
+    assert load_dotenv_calls == []  # .env is never loaded in dry-run mode
+
+    record = json.loads((args.out / "speaking-sprechen_1-sample-1.json").read_text(encoding="utf-8"))
+    assert record["status"] == "pass"
+    assert record["content"] == {"dryRun": True, "note": "fixture content, no provider call was made"}
+    assert record["dryRun"] is True
+    assert record["partAvailable"] is False
+
+    summary = json.loads((args.out / "speaking-sprechen_1-summary.json").read_text(encoding="utf-8"))
+    assert summary["dryRun"] is True and summary["releaseGatePassed"] is False and summary["samplesRun"] == 1
+
+
+def test_dry_run_still_stops_before_a_further_sample_once_the_budget_is_spent(tmp_path, monkeypatch):
+    monkeypatch.setattr(qa_testdaf_live, "labeled_usage", lambda label: _record_and_noop([], label))
+    from app.services import gen_timing
+
+    # Force a non-zero per-sample cost so a max-samples=1 run still demonstrates the
+    # budget being spent after the single allowed sample (matches the real CLI cap).
+    monkeypatch.setattr(gen_timing, "finish", lambda timer, outcome: {"estimatedCostUsd": 0.25, "outcome": outcome})
+
+    args = _args(tmp_path, module="writing", part="schreiben_1", dry_run=True, max_cost_usd=0.25, max_samples=1)
+    code = qa_testdaf_live.run(args)
+
+    assert code == 0
+    summary = json.loads((args.out / "writing-schreiben_1-summary.json").read_text(encoding="utf-8"))
+    assert summary["samplesRun"] == 1
+    assert summary["terminated"]["reason"] == "cost budget reached after this sample"
 
 
 def _record_and_noop(sink, label):

@@ -11,15 +11,33 @@ import pytest
 # tests/scripts/ package (eval_retrieval.py) instead of backend/python-ai/scripts/.
 # Real invocation (`python -m scripts.qa_budget` from backend/python-ai) is
 # unaffected by this; only pytest's own path ordering needs the nudge.
+#
+# Guarded: this file and test_qa_testdaf_live.py both do this nudge. If both
+# unconditionally deleted+reimported `scripts.*` at collection time, whichever
+# file collects second would rebind sys.modules["scripts.qa_budget"] to a NEW
+# module object — but the FIRST file's already-imported names (`BudgetExceeded`,
+# `QaBudget`, ...) keep pointing at the OLD object. A test in the first file
+# doing `pytest.raises(BudgetExceeded)` around a fresh `from scripts.qa_budget
+# import QaBudget` call then fails, because the freshly-imported QaBudget
+# raises the NEW class while `pytest.raises` was given the OLD one — a real,
+# collection-order-dependent bug (reproducible via `pytest test_qa_testdaf_live.py
+# test_qa_budget.py`; passes each file alone). Only wipe sys.modules when
+# `scripts` isn't already correctly resolved, so at most one reimport happens
+# per test session regardless of file collection order.
 _BACKEND_ROOT = str(Path(__file__).resolve().parents[1])
-if _BACKEND_ROOT in sys.path:
-    sys.path.remove(_BACKEND_ROOT)
-sys.path.insert(0, _BACKEND_ROOT)
-# pytest's own collection may already have cached `scripts` -> tests/scripts/
-# in sys.modules before this file's top-level code runs; drop that cache too,
-# or the reordered sys.path above has nothing left to do.
-for _name in [n for n in sys.modules if n == "scripts" or n.startswith("scripts.")]:
-    del sys.modules[_name]
+_scripts_pkg = sys.modules.get("scripts")
+_scripts_already_correct = _scripts_pkg is not None and any(
+    Path(p).resolve() == Path(_BACKEND_ROOT, "scripts") for p in getattr(_scripts_pkg, "__path__", [])
+)
+if not _scripts_already_correct:
+    if _BACKEND_ROOT in sys.path:
+        sys.path.remove(_BACKEND_ROOT)
+    sys.path.insert(0, _BACKEND_ROOT)
+    # pytest's own collection may already have cached `scripts` -> tests/scripts/
+    # in sys.modules before this file's top-level code runs; drop that cache too,
+    # or the reordered sys.path above has nothing left to do.
+    for _name in [n for n in sys.modules if n == "scripts" or n.startswith("scripts.")]:
+        del sys.modules[_name]
 
 from scripts.qa_budget import SAFE_MAX_COST_USD, SAFE_MAX_SAMPLES, BudgetExceeded, QaBudget, add_budget_args, labeled_usage  # noqa: E402
 

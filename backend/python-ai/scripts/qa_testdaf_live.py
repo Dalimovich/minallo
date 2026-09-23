@@ -17,6 +17,12 @@ are never attributed to `__main__` or to the generator module's own name.
 
 python -m scripts.qa_testdaf_live --module reading --part lesen_1 \
     --env-file .env --max-cost-usd 0.25 --max-samples 1 --out diag_runs/testdaf
+
+--dry-run runs the identical harness against a fixture generator (zero provider
+calls, .env not loaded) to validate the harness's own circuit-breaker logic:
+
+python -m scripts.qa_testdaf_live --module reading --part lesen_1 --dry-run \
+    --env-file .env --max-cost-usd 0.25 --max-samples 1 --out diag_runs/testdaf-dry
 """
 
 from __future__ import annotations
@@ -44,6 +50,18 @@ _MODULE_LABELS: dict[str, str] = {
 DEFAULT_TOPIC: dict[str, str] = {"topicId": "qa_sample", "label": "Digitalisierung des Hochschulalltags"}
 
 
+def _dry_run_generator(profile, part, plan, topic):  # noqa: ARG001 — matches the real (profile, part, plan, topic) signature
+    """Fixture generator for `--dry-run`: makes zero provider/network calls and
+    returns deterministic fake content/meta, so `run()`'s own loop, budget
+    accounting and termination logic get exercised end to end (including
+    through `main()`'s real argument parsing) without ever importing or
+    dispatching to a real generator module."""
+    return (
+        {"dryRun": True, "note": "fixture content, no provider call was made"},
+        {"passed": True, "dryRun": True},
+    )
+
+
 def _generator(module: str):
     """Every module's generator has the identical (profile, part, plan,
     topic) -> (content, meta) signature, so one dispatch table covers all
@@ -62,9 +80,12 @@ def _generator(module: str):
 
 
 def run(args: argparse.Namespace) -> int:
-    from dotenv import load_dotenv
+    dry_run = bool(getattr(args, "dry_run", False))
 
-    load_dotenv(args.env_file)
+    if not dry_run:
+        from dotenv import load_dotenv
+
+        load_dotenv(args.env_file)
 
     from app.services import gen_timing
     from app.services.german_exams import get_part, get_profile
@@ -73,7 +94,11 @@ def run(args: argparse.Namespace) -> int:
     part = get_part("testdaf_digital", args.module, args.part)
     label = _MODULE_LABELS[args.module]
     budget = QaBudget(max_cost_usd=args.max_cost_usd, max_samples=args.max_samples, label=label)
-    generate = _generator(args.module)
+    # --dry-run never imports or calls a real generator module: it exercises
+    # exactly the same loop/budget/termination logic in run() below against a
+    # fixture generator, so the circuit-breaker logic itself gets covered by
+    # a real `main()`/argparse invocation, not only by monkeypatched tests.
+    generate = _dry_run_generator if dry_run else _generator(args.module)
 
     args.out.mkdir(parents=True, exist_ok=True)
     failures = 0
@@ -107,7 +132,7 @@ def run(args: argparse.Namespace) -> int:
                 "sample": index, "status": status, "error": error,
                 "content": content, "validation": meta, "diagnostics": diagnostics,
                 "wallSeconds": round(perf_counter() - started, 3),
-                "usageLabel": label, "generationId": uuid.uuid4().hex,
+                "usageLabel": label, "generationId": uuid.uuid4().hex, "dryRun": dry_run,
             }
             path = args.out / f"{args.module}-{part.part_id}-sample-{index}.json"
             path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -127,7 +152,7 @@ def run(args: argparse.Namespace) -> int:
         "module": args.module, "partId": part.part_id, "usageLabel": label,
         "samplesRun": budget.samples_run, "maxSamples": budget.max_samples,
         "spentUsd": round(budget.spent_usd, 6), "maxCostUsd": budget.max_cost_usd,
-        "failures": failures, "terminated": terminated,
+        "failures": failures, "terminated": terminated, "dryRun": dry_run,
         # Human inspection and latency/cost acceptance remain required; this script never
         # sets a release gate itself.
         "releaseGatePassed": False,
@@ -142,6 +167,12 @@ def main() -> int:
     parser.add_argument("--part", required=True, help="e.g. lesen_1, hoeren_3, schreiben_1, sprechen_5")
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Exercise the full harness (arg parsing, budget accounting, sample loop, "
+             "termination) against a fixture generator that makes zero provider/network "
+             "calls. .env is not loaded. Use this to validate the harness itself.",
+    )
     add_budget_args(parser)
     return run(parser.parse_args())
 
