@@ -4,7 +4,7 @@ export interface ProductivePart {taskType: string; gradingDimensions?: string[];
   recordingPolicy?: {autoStop: boolean; manualStopAllowed: boolean; retryAllowed: boolean};
 }}
 export interface Graphic {title: string; unit: string; columns: Array<{id:string;label:string}>;rows:Array<{id:string;label:string;values:Record<string,number>}>}
-export interface ProductiveContent {schemaVersion:'productive-task-v1';id:string;prompt:string;sources:Array<{id:string;kind:'text'|'script'|'graphic';text?:string;graphic?:Graphic}>}
+export interface ProductiveContent {schemaVersion:'productive-task-v1';id:string;prompt:string;sources:Array<{id:string;kind:'text'|'script'|'graphic';text?:string;graphic?:Graphic;media?:{audioUrl?:string}}>}
 export interface Feedback {kind:'practice_feedback';wordCount?:number;dimensions:Array<{id:string;feedback:string;evidence:Array<{quote:string;startSeconds?:number}>}>}
 export type ProductiveGrader=(submission:{text?:string;recordingId?:string;durationSeconds?:number},signal:AbortSignal)=>Promise<Feedback>;
 export function wordCount(text:string):number {return text.trim()?text.trim().split(/\s+/).length:0;}
@@ -25,6 +25,10 @@ export function renderProductiveSources(root:HTMLElement,part:ProductivePart,c:P
   validateProductive(part,c);const prompt=document.createElement('p');prompt.textContent=c.prompt;root.append(prompt);
   const sources=document.createElement('section');root.append(sources);
   for(const s of c.sources){
+    if(s.kind==='script'){const audio=document.createElement('audio');audio.controls=true;const url=s.media?.audioUrl;
+      if(url&&/^(https:\/\/|\/(?!\/)|blob:)/.test(url))audio.src=url;
+      else{const unavailable=document.createElement('p');unavailable.textContent='Source audio unavailable';sources.append(unavailable);}
+      sources.append(audio);continue;}
     if(s.kind!=='graphic'){const text=document.createElement('p');text.textContent=s.text||'';sources.append(text);continue;}
     const g=s.graphic!;const table=document.createElement('table');const caption=table.createCaption();caption.textContent=g.title+' ('+g.unit+')';
     const heading=table.createTHead().insertRow();heading.append(document.createElement('th'));

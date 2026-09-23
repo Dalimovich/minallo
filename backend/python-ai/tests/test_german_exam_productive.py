@@ -56,3 +56,17 @@ def test_reject_invalid_feedback(part,failure):
     if failure=="scaled":result["scaledScore"]=15
     if failure=="tdn":result["tdn"]="TDN 4"
     with pytest.raises(ValueError):validate_feedback(part,request,result)
+
+
+@pytest.mark.parametrize("part", TESTDAF_DIGITAL.modules["speaking"], ids=lambda p:p.task_type)
+def test_speaking_contract_generation_feedback_and_duration(part):
+    c=fixture(part);validate_productive(part,c)
+    generate_productive(TESTDAF_DIGITAL,part,[],{},provider=lambda **kw:SimpleNamespace(data=c))
+    submission={"recordingId":"fixture-recording","durationSeconds":part.constraints["speakingSeconds"]}
+    result=grade_productive(part,c,submission,grader=lambda req:feedback(part,req))
+    assert result["kind"]=="practice_feedback"
+    for duration in (0,-1,True,float("nan"),part.constraints["speakingSeconds"]+1):
+        with pytest.raises(ValueError):grading_request(part,c,{**submission,"durationSeconds":duration})
+    if c["sources"]:
+        c["sources"].append(dict(c["sources"][0]))
+        with pytest.raises(ValueError):validate_productive(part,c)

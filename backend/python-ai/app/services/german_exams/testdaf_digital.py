@@ -69,10 +69,14 @@ _GRADING_DIMENSIONS = {
 }
 
 
+# Recording retry/manual-stop switches are practice policy, not official exam rules.
+# Preparation values refer to the cited demo; multi-phase comparison preparation
+# remains unspecified until its phase sequence is represented.
 def _part(module: str, part_id: str, title: str, task_type: str, **constraints) -> PartBlueprint:
     return PartBlueprint(
         part_id=part_id, module=module, title=title, task_type=task_type,
-        constraints=constraints, allowed_skill_tags=_TAGS[module],
+        constraints=({**constraints, "recordingPolicy": {"autoStop": True, "manualStopAllowed": True, "retryAllowed": True}}
+                     if module == "speaking" else constraints), allowed_skill_tags=_TAGS[module],
         allowed_adaptations=_ADAPTATIONS[module],
         grading_dimensions=_GRADING_DIMENSIONS.get(module),
         scoring=None, available=False,
@@ -146,13 +150,13 @@ _WRITING = (
           requiredSourceKinds=("text", "graphic"), practiceTimeLimitSeconds=1800, sourcePages=(26, 27)),
 )
 _SPEAKING = (
-    _part("speaking", "sprechen_1", "Rat geben", "spoken_advice", speakingSeconds=45),
-    _part("speaking", "sprechen_2", "Optionen abwägen", "spoken_option_comparison", speakingSeconds=90),
-    _part("speaking", "sprechen_3", "Text zusammenfassen", "spoken_text_summary", speakingSeconds=120),
-    _part("speaking", "sprechen_4", "Informationen abgleichen, Stellung nehmen", "spoken_information_comparison", speakingSeconds=90),
-    _part("speaking", "sprechen_5", "Thema präsentieren", "recorded_topic_presentation", speakingSeconds=150),
-    _part("speaking", "sprechen_6", "Argumente wiedergeben, Stellung nehmen", "spoken_argument_response", speakingSeconds=120),
-    _part("speaking", "sprechen_7", "Maßnahmen kritisieren", "spoken_measure_critique", speakingSeconds=90),
+    _part("speaking", "sprechen_1", "Rat geben", "spoken_advice", speakingSeconds=45, preparationSeconds=30, requiredSourceKinds=(), sourcePages=(29,)),
+    _part("speaking", "sprechen_2", "Optionen abwägen", "spoken_option_comparison", speakingSeconds=90, preparationSeconds=45, requiredSourceKinds=(), sourcePages=(29,)),
+    _part("speaking", "sprechen_3", "Text zusammenfassen", "spoken_text_summary", speakingSeconds=120, preparationSeconds=240, hideSourceAfterPreparation=True, requiredSourceKinds=("text",), sourcePages=(30,)),
+    _part("speaking", "sprechen_4", "Informationen abgleichen, Stellung nehmen", "spoken_information_comparison", speakingSeconds=90, requiredSourceKinds=("graphic", "script"), sourcePages=(31,)),
+    _part("speaking", "sprechen_5", "Thema präsentieren", "recorded_topic_presentation", speakingSeconds=150, preparationSeconds=120, requiredSourceKinds=("text",), sourcePages=(32,)),
+    _part("speaking", "sprechen_6", "Argumente wiedergeben, Stellung nehmen", "spoken_argument_response", speakingSeconds=120, preparationSeconds=90, requiredSourceKinds=("script",), sourcePages=(33,)),
+    _part("speaking", "sprechen_7", "Maßnahmen kritisieren", "spoken_measure_critique", speakingSeconds=90, preparationSeconds=90, requiredSourceKinds=("text",), sourcePages=(34,)),
 )
 
 TESTDAF_DIGITAL = ExamProfile(

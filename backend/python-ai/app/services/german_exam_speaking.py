@@ -17,6 +17,9 @@ DISCUSSION_GUIDING_POINTS = [
 
 
 def generate_speaking_part(profile: ExamProfile, part: PartBlueprint, plan, topic: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    from .german_exam_productive import SPEAKING_TYPES, generate_productive
+    if part.task_type in SPEAKING_TYPES:
+        return generate_productive(profile, part, plan, topic)
     if part.part_id == "sprechen_1":
         shape = {"questions": [{"questionId": key, "title": "...", "taskInstructions": "..."} for key in ("a", "b")]}
         instruction = ("Exactly TWO distinct presentation topic choices. Each supports a roughly three-minute "
