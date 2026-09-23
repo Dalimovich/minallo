@@ -151,16 +151,51 @@ def test_no_part_anywhere_sets_available_true_explicitly_except_via_the_dataclas
 
 def test_an_unimplemented_task_type_cannot_be_served_even_if_a_part_were_hypothetically_available():
     """Uses the REAL registry (no monkeypatching) to prove `is_task_type_implemented` alone is
-    enough to block a hypothetically-available part — the double-gate this audit's
-    IMPLEMENTATION_AUDIT.md flagged as currently-safe-but-latent for TestDaF speaking."""
+    enough to block a hypothetically-available part. `paragraph_ordering` (TestDaF `lesen_2`) is
+    a genuinely unimplemented task type (no generator/validator exists for it at all), unlike the
+    7 TestDaF speaking task types whose registry flag was corrected on 2026-09-23 — see the test
+    below for that pair's own regression coverage."""
     import dataclasses
 
     profile = get_profile("testdaf_digital")
-    part = get_part("testdaf_digital", "speaking", "sprechen_1")
+    part = get_part("testdaf_digital", "reading", "lesen_2")
+    assert part.task_type == "paragraph_ordering"
     assert is_task_type_implemented(part.task_type) is False  # today's real registry state
     hypothetically_available = dataclasses.replace(part, available=True)
     with pytest.raises(NotImplementedError):
         _require_available(profile, hypothetically_available)
+
+
+def test_testdaf_speaking_task_types_are_now_registered_implemented_but_parts_stay_gated_by_available():
+    """2026-09-23 fix: the registry previously marked all 7 TestDaF speaking task types as
+    unimplemented even though `generate_productive`/`german_exam_speaking.py` and the frontend's
+    `mountSpeaking` renderer genuinely implement them (see IMPLEMENTATION_AUDIT.md's headline
+    finding). The registry flags were flipped to `True` to reflect that engine-level fact. This
+    must NOT make TestDaF speaking generate live content: every TestDaF speaking part still has
+    `available=False`, and `_require_available` must keep raising on the `available` check alone,
+    independent of the task-type flag."""
+    import dataclasses
+
+    profile = get_profile("testdaf_digital")
+    speaking_task_types = (
+        "spoken_advice", "spoken_option_comparison", "spoken_text_summary",
+        "spoken_information_comparison", "recorded_topic_presentation",
+        "spoken_argument_response", "spoken_measure_critique",
+    )
+    for part_id, task_type in zip(
+        ("sprechen_1", "sprechen_2", "sprechen_3", "sprechen_4", "sprechen_5", "sprechen_6", "sprechen_7"),
+        speaking_task_types,
+    ):
+        part = get_part("testdaf_digital", "speaking", part_id)
+        assert part.task_type == task_type
+        assert is_task_type_implemented(task_type) is True  # engine capability, corrected here
+        assert part.available is False  # release gate untouched by this fix
+        with pytest.raises(NotImplementedError):
+            _require_available(profile, part)
+        # Even a hypothetical partial fix that forgot to also flip `available` would still be
+        # safe: the `available` gate alone continues to block generation.
+        with pytest.raises(NotImplementedError):
+            generate_task("fake-user-id", "testdaf_digital", "speaking", part_id, mode="practice")
 
 
 def test_registry_contains_every_profiles_task_types_with_no_kerror():
