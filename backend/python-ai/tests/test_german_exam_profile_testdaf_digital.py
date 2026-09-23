@@ -2,9 +2,9 @@
 
 import pytest
 
-from app.services.german_exams import build_manifest, get_profile, resolve_profile_id
+from app.services.german_exams import GERMAN_EXAM_PROFILES, build_manifest, get_profile, resolve_profile_id
 from app.services.german_exams.testdaf_digital import (
-    MODULE_METADATA, OFFICIAL_SOURCES, SCORING_METADATA, TDN_BANDS, TESTDAF_DIGITAL,
+    DELIVERY_METADATA, MODULE_METADATA, OFFICIAL_SOURCES, SCORING_METADATA, TDN_BANDS, TESTDAF_DIGITAL,
 )
 
 
@@ -49,6 +49,32 @@ def test_manifest_shows_all_parts_as_unavailable():
     parts = [p for module in manifest["modules"] for p in module["parts"]]
     assert len(parts) == 23
     assert all(p["implemented"] is False for p in parts)
+
+
+def test_delivery_policy_is_wired_from_delivery_metadata_and_exposed_on_the_manifest():
+    """DELIVERY_METADATA is the single editable source of these facts (per the file's own
+    docstring); TESTDAF_DIGITAL.delivery_policy must reflect it exactly, and the manifest
+    must expose it generically (no TestDaF-specific manifest code)."""
+    policy = TESTDAF_DIGITAL.delivery_policy
+    assert policy is not None
+    assert policy.fixed_task_order is DELIVERY_METADATA["fixedTaskOrder"]
+    assert policy.back_navigation_allowed is DELIVERY_METADATA["backNavigationAllowed"]
+    assert policy.additional_unscored_trial_tasks is DELIVERY_METADATA["additionalUnscoredTrialTasks"]
+    manifest = build_manifest(TESTDAF_DIGITAL)
+    assert manifest["deliveryPolicy"] == {
+        "fixedTaskOrder": True, "backNavigationAllowed": False, "additionalUnscoredTrialTasks": True,
+    }
+
+
+def test_a_profile_without_a_delivery_policy_gets_a_null_manifest_field_not_a_default_guess():
+    """Generic manifest behaviour, asserted on whichever other profiles exist today (not a
+    TestDaF-specific check): a profile that has not opted into a timed simulation must not
+    have one silently invented for it."""
+    others = [p for pid, p in GERMAN_EXAM_PROFILES.items() if pid != "testdaf_digital"]
+    assert others, "expected at least one non-TestDaF profile to compare against"
+    for profile in others:
+        assert profile.delivery_policy is None
+        assert build_manifest(profile)["deliveryPolicy"] is None
 
 
 @pytest.mark.parametrize("part", [p for parts in TESTDAF_DIGITAL.modules.values() for p in parts], ids=lambda p: p.part_id)

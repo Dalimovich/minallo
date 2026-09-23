@@ -8,10 +8,11 @@ from .registry import (
     resolve_profile_id,
 )
 from .manifest import build_manifest
-from .shared import ExamProfile, GermanExamProfileError, ModuleSpec, PartBlueprint, ScoringSpec
+from .shared import DeliveryPolicy, ExamProfile, GermanExamProfileError, ModuleSpec, PartBlueprint, ScoringSpec
 
 __all__ = [
     "GERMAN_EXAM_PROFILES",
+    "DeliveryPolicy",
     "ExamProfile",
     "GermanExamProfileError",
     "ModuleSpec",

@@ -11,7 +11,7 @@ Skill tags/adaptations are application policy, not official examination rules.
 
 from __future__ import annotations
 
-from .shared import ExamProfile, ModuleSpec, PartBlueprint
+from .shared import DeliveryPolicy, ExamProfile, ModuleSpec, PartBlueprint
 
 OFFICIAL_SOURCES = {
     "reading_mc_example": "https://www.testdaf.de/fileadmin/testdaf/downloads/Demo_Version_digitaler_TestDaF/Beispielaufgaben_Demo-Version_digitaler_TestDaF.pdf",
@@ -175,4 +175,9 @@ TESTDAF_DIGITAL = ExamProfile(
         )
         for module, label in (("reading", "Lesen"), ("listening", "Hören"), ("writing", "Schreiben"), ("speaking", "Sprechen"))
     },
+    delivery_policy=DeliveryPolicy(
+        fixed_task_order=DELIVERY_METADATA["fixedTaskOrder"],
+        back_navigation_allowed=DELIVERY_METADATA["backNavigationAllowed"],
+        additional_unscored_trial_tasks=DELIVERY_METADATA["additionalUnscoredTrialTasks"],
+    ),
 )

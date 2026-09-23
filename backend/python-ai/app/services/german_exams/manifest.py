@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .shared import ExamProfile, ModuleSpec, PartBlueprint, ScoringSpec
+from .shared import DeliveryPolicy, ExamProfile, ModuleSpec, PartBlueprint, ScoringSpec
 from .task_types import is_task_type_implemented
 
 MANIFEST_SCHEMA_VERSION = "german-exam-manifest-v1"
@@ -39,6 +39,16 @@ def _part(part: PartBlueprint) -> dict[str, Any]:
     }
 
 
+def _delivery_policy(policy: DeliveryPolicy | None) -> dict[str, Any] | None:
+    if policy is None:
+        return None
+    return {
+        "fixedTaskOrder": policy.fixed_task_order,
+        "backNavigationAllowed": policy.back_navigation_allowed,
+        "additionalUnscoredTrialTasks": policy.additional_unscored_trial_tasks,
+    }
+
+
 def module_order(profile: ExamProfile) -> list[str]:
     ordered = [m for m in (profile.module_specs or {}) if profile.modules.get(m)]
     ordered += [m for m, parts in profile.modules.items() if parts and m not in ordered]
@@ -67,5 +77,6 @@ def build_manifest(profile: ExamProfile) -> dict[str, Any]:
         "family": profile.family,
         "variant": profile.variant,
         "cefrLevel": profile.cefr_level,
+        "deliveryPolicy": _delivery_policy(profile.delivery_policy),
         "modules": modules,
     }

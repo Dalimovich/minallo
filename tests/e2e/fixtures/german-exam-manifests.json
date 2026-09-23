@@ -1,6 +1,7 @@
 {
   "goethe_c1": {
     "cefrLevel": "C1",
+    "deliveryPolicy": null,
     "displayName": "Goethe-Zertifikat C1",
     "family": "Goethe",
     "modules": [
@@ -328,6 +329,7 @@
   },
   "telc_c1_hochschule": {
     "cefrLevel": "C1",
+    "deliveryPolicy": null,
     "displayName": "telc Deutsch C1 Hochschule",
     "family": "telc",
     "modules": [
@@ -605,6 +607,11 @@
   },
   "testdaf_digital": {
     "cefrLevel": null,
+    "deliveryPolicy": {
+      "additionalUnscoredTrialTasks": true,
+      "backNavigationAllowed": false,
+      "fixedTaskOrder": true
+    },
     "displayName": "Digitaler TestDaF",
     "family": "TestDaF",
     "modules": [
