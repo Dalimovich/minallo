@@ -43,11 +43,14 @@ test('edge and browser registries mirror the Python registry (id, family, legacy
   const py = readdirSync(dir)
     .filter((f) => f.endsWith('.py') && !['__init__.py', 'shared.py', 'registry.py'].includes(f))
     .map((f) => readFileSync(resolve(dir, f), 'utf8'))
-    .filter((src) => /^    profile_id="/m.test(src))
+    .filter((src) => /profile_id="/.test(src))
     .map((src) => ({
-      id: /^    profile_id="(\w+)",/m.exec(src)?.[1],
-      family: /^    family="([^"]+)",/m.exec(src)?.[1],
-      levels: [.../^    legacy_level_values=\(([^)]*)\)/m.exec(src)[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]),
+      // family/legacy_level_values may share a line with profile_id (single-line
+      // constructor call) rather than starting their own line, so these match
+      // anywhere in the ExamProfile(...) call, not just at column 0.
+      id: /profile_id="(\w+)",/.exec(src)?.[1],
+      family: /family="([^"]+)",/.exec(src)?.[1],
+      levels: [...(/legacy_level_values=\(([^)]*)\)/.exec(src)?.[1] ?? '').matchAll(/"([^"]+)"/g)].map((m) => m[1]),
     }));
   const ts = read('backend/lib/german-learner-profile.ts');
   const client = read('frontend/js/features/auth/german-profile.ts');

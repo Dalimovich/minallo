@@ -29,7 +29,8 @@ interface ProfileRow {
 // (family + exact legacy level values).
 const EXAM_PROFILE_REGISTRY: ReadonlyArray<{ profileId: string; family: string; levels: readonly string[] }> = [
   { profileId: 'telc_c1_hochschule', family: 'telc', levels: ['C1 Hochschule'] },
-  { profileId: 'goethe_c1', family: 'Goethe', levels: ['C1'] }
+  { profileId: 'goethe_c1', family: 'Goethe', levels: ['C1'] },
+  { profileId: 'testdaf_digital', family: 'TestDaF', levels: [] }
 ];
 
 export function isRegisteredExamProfileId(profileId: unknown): profileId is string {
