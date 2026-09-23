@@ -309,12 +309,26 @@ function _handleGoogleCredential(response) {
   if (window.Minallo) window.Minallo.setAuth('checking', { source: 'google-one-tap' });
   var body = { provider: 'google', id_token: response.credential, gotrue_meta_security: {} };
   if (_oneTapNonce) body.nonce = _oneTapNonce;
+  // Bounded: during a Supabase gateway incident this request can hang instead
+  // of erroring fast, which would leave the user stuck with no feedback and
+  // no fallback (the .catch below never fires for a request that never
+  // settles). Abort and fall back to the OAuth redirect after 10s.
+  var _idTokenTimedOut = false;
+  var _idTokenCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var _idTokenTimer = _idTokenCtrl
+    ? setTimeout(function () {
+        _idTokenTimedOut = true;
+        _idTokenCtrl.abort();
+      }, 10000)
+    : null;
   fetch(_SUPA + '/auth/v1/token?grant_type=id_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: _SAKEY },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: _idTokenCtrl ? _idTokenCtrl.signal : undefined
   })
     .then(function (r) {
+      clearTimeout(_idTokenTimer);
       return r.json().then(function (d) {
         d._httpStatus = r.status;
         return d;
@@ -353,8 +367,12 @@ function _handleGoogleCredential(response) {
       }
     })
     .catch(function (err) {
+      clearTimeout(_idTokenTimer);
       if (window.Minallo) window.Minallo.setAuth('failed', { source: 'google-one-tap' });
-      console.warn('[Auth] id_token fetch error, falling back to OAuth:', err);
+      console.warn(
+        '[Auth] id_token fetch error' + (_idTokenTimedOut ? ' (timed out)' : '') + ', falling back to OAuth:',
+        err
+      );
       _oauthFallback();
     });
 }
