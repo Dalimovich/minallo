@@ -21,6 +21,19 @@ from .usage_meter import record_usage
 STAGES = {"presentation", "own_followup", "partner_presentation", "summary", "questions", "partner_answer", "discussion"}
 MIME_EXTENSIONS = {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4", "audio/wav": "wav"}
 
+# Profiles this module's speaking practice/grading dispatch actually understands.
+# Unlike Writing (german_exam_writing_grading.py), this module is NOT a generic
+# dimension-mapping adapter: STAGES, the required-turn sequence in grade_speaking(),
+# the sprechen_1/sprechen_2 -> taskType mapping and SPEAKING_TASK_MAXIMA/
+# SPEAKING_LANGUAGE_MAXIMA are all telc_c1_hochschule's own two-part
+# (presentation+summary_followup / discussion) structure, hardcoded. TestDaF's
+# digital speaking module has a different, 7-part structure (sprechen_1..7, each
+# its own task type/timing, no partner-turn exchange) that this dispatch does not
+# implement — adding "testdaf_digital" here would silently grade TestDaF answers
+# against telc's rubric, which is exactly what must never happen. Extending this
+# module to a real TestDaF speaking grading path is separate, unscoped work.
+GRADABLE_SPEAKING_PROFILE_IDS: frozenset[str] = frozenset({"telc_c1_hochschule"})
+
 
 def _signature(user_id: str, session_id: str, turn: dict) -> str:
     data = json.dumps([user_id, session_id, turn["role"], turn["stage"], turn["text"]], ensure_ascii=False).encode()

@@ -28,7 +28,7 @@ from ..services.german_exam_generator import generate_task
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
-from ..services.german_exam_writing_grading import grade_writing_submission
+from ..services.german_exam_writing_grading import gradable_writing_task_types, grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
 from ..services.german_exam_validator import hard_issues, validate_content
 
@@ -198,9 +198,13 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
     except GermanExamProfileError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    # The grader registry is keyed by task type. Only TELC's choice_long_form_writing has a
-    # grader today; a Goethe task must never be scored with TELC's rubric.
-    if part.task_type != "choice_long_form_writing":
+    # Profile/task-driven gate: the resolved part's task type must be one the
+    # shared grading adapter (german_exam_writing_grading.py) is confirmed to
+    # support — see gradable_writing_task_types() for exactly which profiles'
+    # writing task types that is today (telc_c1_hochschule + testdaf_digital;
+    # Goethe's forum_discussion_post/formal_context_message stay unsupported
+    # here, unchanged from current behaviour).
+    if part.task_type not in gradable_writing_task_types():
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,
                             detail=f"grading for task type {part.task_type!r} is not available yet")
 
@@ -256,7 +260,7 @@ class SpeakingTurn(BaseModel):
 
 class SpeakingPracticeRequest(BaseModel):
     userId: str
-    profileId: Literal["telc_c1_hochschule"]
+    profileId: str
     sessionId: str = Field(min_length=16, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     action: Literal["transcribe", "partner", "grade"]
     stage: str = Field(default="", max_length=40)
@@ -269,6 +273,17 @@ class SpeakingPracticeRequest(BaseModel):
 
 @router.post("/german-exam/speaking")
 def speaking_practice_endpoint(payload: SpeakingPracticeRequest) -> dict[str, Any]:
+    try:
+        profile = get_profile(payload.profileId)
+    except GermanExamProfileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    # Profile-driven gate replacing the old profileId: Literal["telc_c1_hochschule"]
+    # type hardcode: any registered profile can be named, but only a profile whose
+    # structure speaking_practice.py's dispatch actually understands is accepted —
+    # see GRADABLE_SPEAKING_PROFILE_IDS for exactly why TestDaF isn't in that set yet.
+    if profile.profile_id not in speaking_practice.GRADABLE_SPEAKING_PROFILE_IDS:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                            detail=f"speaking practice for profile {profile.profile_id!r} is not available yet")
     try:
         if payload.action == "transcribe":
             return speaking_practice.transcribe(payload.userId, payload.sessionId, payload.stage, payload.audioBase64, payload.mimeType)

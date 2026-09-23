@@ -26,8 +26,36 @@ from __future__ import annotations
 
 from typing import Any
 
-from .german_exams import PartBlueprint, ExamProfile
+from .german_exams import GERMAN_EXAM_PROFILES, PartBlueprint, ExamProfile
 from .writing_coach import ALLOWED_TASK_TYPES, analyse_writing
+
+# Profiles whose writing task types this adapter is confirmed to grade correctly:
+# each declares `grading_dimensions` on its Schreiben parts, which is exactly what
+# grade_writing_submission() below keys its dimension mapping off. Adding a new
+# profile here means "this profile's writing parts are ready to be graded", not
+# "this profile is generated/released" (see PartBlueprint.available, untouched by
+# this module). Goethe C1's Schreiben parts already declare grading_dimensions
+# too (see goethe_c1.py) but are intentionally left out of this set — routing
+# real Goethe writing submissions through grading is a separate, not-yet-scoped
+# change and must not happen as a side effect of enabling TestDaF here.
+GRADABLE_WRITING_PROFILE_IDS: frozenset[str] = frozenset({"telc_c1_hochschule", "testdaf_digital"})
+
+
+def gradable_writing_task_types() -> frozenset[str]:
+    """Writing `task_type` values the generic adapter below actually supports,
+    derived from the real profile registry (never a second, hand-maintained
+    literal list) — restricted to GRADABLE_WRITING_PROFILE_IDS. A task type is
+    counted only when its PartBlueprint declares grading_dimensions, since that
+    is what this adapter's rubric mapping depends on."""
+    task_types: set[str] = set()
+    for profile_id in GRADABLE_WRITING_PROFILE_IDS:
+        profile = GERMAN_EXAM_PROFILES.get(profile_id)
+        if profile is None:
+            continue
+        for part in profile.modules.get("writing") or ():
+            if part.grading_dimensions:
+                task_types.add(part.task_type)
+    return frozenset(task_types)
 
 # Maps each official telc Schreiben rubric dimension to (a) the
 # writing_coach.analyse_writing() score axis it's derived from (None means
