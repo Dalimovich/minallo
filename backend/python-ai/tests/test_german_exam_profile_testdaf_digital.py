@@ -20,7 +20,9 @@ def test_scored_core_structure_and_counts():
     modules = TESTDAF_DIGITAL.modules
     assert list(modules) == ["reading", "listening", "writing", "speaking"]
     assert [len(parts) for parts in modules.values()] == [7, 7, 2, 7]
-    assert [p.constraints["itemCount"] for p in modules["reading"]] == [5, 4, 7, 4, 7, 4, 3]
+    assert [p.constraints["itemCount"] for p in modules["reading"]] == [5, 5, 7, 4, 7, 4, 3]
+    lesen_7 = modules["reading"][6]
+    assert lesen_7.constraints["requiredSourceKinds"] == ("text", "graphic")
     assert [p.constraints["itemCount"] for p in modules["listening"]] == [5, 4, 2, 6, 4, 5, 4]
     for module in ("reading", "listening"):
         assert sum(p.constraints["itemCount"] for p in modules[module]) == MODULE_METADATA[module]["itemCount"]

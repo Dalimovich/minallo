@@ -41,7 +41,7 @@ SCORING_METADATA = {
     "source": OFFICIAL_SOURCES["scoring"],
 }
 MODULE_METADATA = {
-    "reading": {"taskCount": 7, "itemCount": 34, "durationSecondsApprox": 55 * 60},
+    "reading": {"taskCount": 7, "itemCount": 35, "durationSecondsApprox": 55 * 60},
     "listening": {"taskCount": 7, "itemCount": 30, "durationSecondsApprox": 40 * 60},
     "writing": {"taskCount": 2, "durationSecondsApprox": 60 * 60},
     "speaking": {"taskCount": 7, "durationSecondsApprox": 35 * 60},
@@ -122,7 +122,10 @@ READING_MC_CONSTRAINTS = {
 _READING = (
     _part("reading", "lesen_1", "Lückentext ergänzen", "lexical_cloze", itemCount=5, optionCount=4, sourcePages=(5,),
           presentation={"instructions": "W?hlen Sie f?r jede L?cke ein passendes Wort."}),
-    _part("reading", "lesen_2", "Textabschnitte ordnen", "paragraph_ordering", itemCount=4),
+    # Official demo (Lösungen, Lesen – Aufgabentyp 2): five numbered paragraphs [1]-[5] are
+    # shown and all five appear in the printed solution key, so ordering yields 5 scored
+    # placements, not 4. Corrected from the earlier paused itemCount=4 guess; see REPORT.md.
+    _part("reading", "lesen_2", "Textabschnitte ordnen", "paragraph_ordering", itemCount=5, sourcePages=(6,)),
     _part("reading", "lesen_3", "Multiple-Choice", "reading_multiple_choice", **READING_MC_CONSTRAINTS),
     _part("reading", "lesen_4", "Sprachhandlungen zuordnen", "speech_act_matching", itemCount=4, optionCount=8, uniqueMappings=True, sourcePages=(10,),
           presentation={"instructions": "Ordnen Sie jeder markierten Textstelle eine Sprachhandlung zu."}),
@@ -131,7 +134,12 @@ _READING = (
           presentation={"instructions": "Ordnen Sie jede Aussage einer Kategorie zu. Kategorien k?nnen mehrfach vorkommen."}),
     _part("reading", "lesen_6", "Aussagen einem Begriffspaar zuordnen", "statement_concept_pair_matching", itemCount=4, optionCount=8, uniqueMappings=True, groupCount=2, sourcePages=(12, 13),
           presentation={"instructions": "W?hlen Sie passende Aussagen f?r die Felder der beiden Begriffe. Nicht alle Aussagen passen."}),
-    _part("reading", "lesen_7", "Fehler in Zusammenfassung erkennen", "reading_summary_error_detection", itemCount=3),
+    # Official demo instructions (p. 13-14): "Lesen Sie den Text. Beachten Sie auch die
+    # Informationen aus der Grafik." — the task requires both text and a graphic as source
+    # material. itemCount=3 was already correct ("Es gibt genau drei inhaltlich falsche
+    # Sätze."); requiredSourceKinds was missing entirely. See REPORT.md.
+    _part("reading", "lesen_7", "Fehler in Zusammenfassung erkennen", "reading_summary_error_detection",
+          itemCount=3, requiredSourceKinds=("text", "graphic"), sourcePages=(13, 14)),
 )
 _LISTENING = (
     _part("listening", "hoeren_1", "Kurzantwort: Übersicht ergänzen", "listening_overview_completion", itemCount=5, mediaType="audio", answerWordMax=2,
@@ -153,9 +161,24 @@ _SPEAKING = (
     _part("speaking", "sprechen_1", "Rat geben", "spoken_advice", speakingSeconds=45, preparationSeconds=30, requiredSourceKinds=(), sourcePages=(29,)),
     _part("speaking", "sprechen_2", "Optionen abwägen", "spoken_option_comparison", speakingSeconds=90, preparationSeconds=45, requiredSourceKinds=(), sourcePages=(29,)),
     _part("speaking", "sprechen_3", "Text zusammenfassen", "spoken_text_summary", speakingSeconds=120, preparationSeconds=240, hideSourceAfterPreparation=True, requiredSourceKinds=("text",), sourcePages=(30,)),
-    _part("speaking", "sprechen_4", "Informationen abgleichen, Stellung nehmen", "spoken_information_comparison", speakingSeconds=90, requiredSourceKinds=("graphic", "script"), sourcePages=(31,)),
+    # Official demo (p. 31) shows four timed phases in sequence: ~00:30 graphic view,
+    # ~00:20 audio playback ("Hören Sie, was ein Seminarteilnehmer dazu sagt."), 01:30
+    # preparation, 01:30 speaking. preparationSeconds was missing entirely (no prep phase
+    # was shown at all); corrected to 90s. The two source-viewing/listening phases before
+    # preparation are NOT modeled by the generic speaking renderer (mountSpeaking currently
+    # only has preparation -> recording); sourcePlaybackSecondsApprox is documentation of
+    # the gap only, not consumed by any renderer yet. See REPORT.md T-audit finding.
+    _part("speaking", "sprechen_4", "Informationen abgleichen, Stellung nehmen", "spoken_information_comparison",
+          speakingSeconds=90, preparationSeconds=90, sourcePlaybackSecondsApprox=50,
+          requiredSourceKinds=("graphic", "script"), sourcePages=(31,)),
     _part("speaking", "sprechen_5", "Thema präsentieren", "recorded_topic_presentation", speakingSeconds=150, preparationSeconds=120, requiredSourceKinds=("text",), sourcePages=(32,)),
-    _part("speaking", "sprechen_6", "Argumente wiedergeben, Stellung nehmen", "spoken_argument_response", speakingSeconds=120, preparationSeconds=90, requiredSourceKinds=("script",), sourcePages=(33,)),
+    # Official demo (p. 33) shows three timed phases: ~00:58 audio playback (a fellow
+    # student's statement), 01:30 preparation, 02:00 speaking. preparationSeconds/
+    # speakingSeconds already matched; the ~58s listen phase before preparation is NOT
+    # modeled by the generic renderer (documentation only, not consumed). See REPORT.md.
+    _part("speaking", "sprechen_6", "Argumente wiedergeben, Stellung nehmen", "spoken_argument_response",
+          speakingSeconds=120, preparationSeconds=90, sourcePlaybackSecondsApprox=58,
+          requiredSourceKinds=("script",), sourcePages=(33,)),
     _part("speaking", "sprechen_7", "Maßnahmen kritisieren", "spoken_measure_critique", speakingSeconds=90, preparationSeconds=90, requiredSourceKinds=("text",), sourcePages=(34,)),
 )
 

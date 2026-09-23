@@ -641,7 +641,10 @@
           },
           {
             "constraints": {
-              "itemCount": 4
+              "itemCount": 5,
+              "sourcePages": [
+                6
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_2",
@@ -763,7 +766,15 @@
           },
           {
             "constraints": {
-              "itemCount": 3
+              "itemCount": 3,
+              "requiredSourceKinds": [
+                "text",
+                "graphic"
+              ],
+              "sourcePages": [
+                13,
+                14
+              ]
             },
             "gradingDimensions": null,
             "id": "lesen_7",
@@ -1070,6 +1081,7 @@
           },
           {
             "constraints": {
+              "preparationSeconds": 90,
               "recordingPolicy": {
                 "autoStop": true,
                 "manualStopAllowed": true,
@@ -1082,6 +1094,7 @@
               "sourcePages": [
                 31
               ],
+              "sourcePlaybackSecondsApprox": 50,
               "speakingSeconds": 90
             },
             "gradingDimensions": [
@@ -1144,6 +1157,7 @@
               "sourcePages": [
                 33
               ],
+              "sourcePlaybackSecondsApprox": 58,
               "speakingSeconds": 120
             },
             "gradingDimensions": [
