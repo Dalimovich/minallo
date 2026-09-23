@@ -360,6 +360,66 @@ def _verify_prompt_contextual_cloze(part: PartBlueprint, content: dict[str, Any]
     return system, user
 
 
+def _verify_prompt_listening_tristate(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    system = _base_verifier_preamble(part) + (
+        "\n\nThis is listening_tristate (Goethe-style Hören Teil 2). For each statement, verify the "
+        "labeled tristate.answer is the correct one of richtig (audio SUPPORTS the statement), falsch "
+        "(audio CONTRADICTS the statement), or nicht_im_text (audio neither supports nor contradicts it "
+        "— the topic is simply absent) — use TRISTATE_VERDICT_MISMATCH if not. A common generation error "
+        "is labeling a merely-absent statement as falsch instead of nicht_im_text, or an actually-"
+        "contradicted statement as nicht_im_text — check this distinction carefully. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the audio doesn't hang together as one coherent interview/discussion, "
+        "or isn't C1-appropriate."
+    )
+    user = _content_payload(content)
+    return system, user
+
+
+# ── Schreiben (writing) verify prompt: Goethe's single-scenario tasks ───────
+# Deliberately does NOT reuse _base_verifier_preamble() — same reasoning as
+# _verify_prompt_schreiben() above: there is no correct answer, transcript or
+# distractor here, only a task PROMPT to review for answerability/quality.
+
+
+def _verify_prompt_goethe_schreiben(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    content_point_count = part.constraints.get("contentPointCount", 4)
+    system = (
+        "You are an INDEPENDENT quality reviewer for a GENERATED German writing-exam TASK "
+        f"({part.task_type}, Goethe-style Schreiben). You are given exactly ONE generated scenario the "
+        "learner must respond to — there is NO correct answer, model solution, transcript, or distractor "
+        "to judge; you are reviewing the TASK PROMPT itself, never a learner's response (that is graded "
+        "separately, by a different system, against the learner's own submitted text). You must NOT "
+        "improve, rewrite, or complete the task. Do not request or output hidden reasoning/"
+        "chain-of-thought — give only a concise issue code, one-sentence message, and evidence references. "
+        "Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Allowed issue codes — you MUST only use codes from this exact list, never invent new ones: "
+        f"{sorted(SEMANTIC_ISSUE_CODES)}.\n\n"
+        f"Verify: (A) the scenario is answerable by a C1 candidate using general knowledge only, with "
+        f"clear, internally consistent instructions — use QUESTION_NOT_ANSWERABLE if it requires niche "
+        "specialist knowledge or is ambiguous/self-contradictory; (B) the register/subject matter fit the "
+        "part's official register — use WRONG_REGISTER if it doesn't; (C) nothing in the prompt is or "
+        "resembles a model answer or content a candidate could copy verbatim — use "
+        f"ANSWER_EXPOSED_IN_PROMPT if so; (D) the {content_point_count} contentPoints are genuinely "
+        "distinct points to cover, not near-duplicates of each other — use DUPLICATE_INFORMATION if two "
+        "content points overlap. Part-wide: PART_WIDE_INCOHERENCE if the scenario overall is not suitable "
+        "for the target response length.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "passed": true,\n'
+        '  "partWideIssues": [],\n'
+        '  "items": [{"questionId": "a", "audit": {"duplicateItemIds": []}, "passed": true, "issues": []}]\n'
+        "}\n"
+        "Include EVERY item's questionId from the supplied content in the items array, even ones with no "
+        'issues (passed: true, issues: []). severity is "error" (blocks acceptance) or "warning" '
+        "(informational, does not block acceptance). Set an item's passed to true exactly when it has no "
+        "error issues. Set overall passed to true exactly when all items pass and no part-wide error "
+        "exists. A warning alone must not set either passed flag to false."
+    )
+    payload = {"task": content.get("questions") or []}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_sprachbausteine(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     system = _base_verifier_preamble(part) + (
         "\n\nThis is cloze_mc4_language_elements (telc-style Sprachbausteine). You are given the full text "
@@ -475,7 +535,11 @@ def _verify_prompt_speaking(part: PartBlueprint, content: dict[str, Any]) -> tup
 _CLOZE_MC4_TASK_TYPES = frozenset({"cloze_mc4_language_elements", "contextual_cloze_mc4"})
 
 # Task types whose items are `mc3` (three options, one key) and are audited with per-option verdicts.
-_MC3_TASK_TYPES = frozenset({"sentence_completion_mc3", "reading_detail_mc3"})
+_MC3_TASK_TYPES = frozenset({"sentence_completion_mc3", "reading_detail_mc3", "segmented_dialogue_mc3", "listening_detail_mc3"})
+
+# Task types whose items are speaker/source-matching statements, sharing speaker_statement_matching's
+# `matching.correctSpeakerId` / `matching.isDistractor` audit shape (see _verify_prompt_hv1).
+_SPEAKER_MATCHING_TASK_TYPES = frozenset({"speaker_statement_matching", "multi_source_statement_matching"})
 
 _VERIFY_PROMPT_BUILDERS = {
     "reading_detail_mc3": _verify_prompt_reading_detail_mc3,
@@ -491,6 +555,15 @@ _VERIFY_PROMPT_BUILDERS = {
     "cloze_mc4_language_elements": _verify_prompt_sprachbausteine,
     "contextual_cloze_mc4": _verify_prompt_contextual_cloze,
     "choice_long_form_writing": _verify_prompt_schreiben,
+    # --- Goethe-Zertifikat C1 ---
+    "multi_source_statement_matching": _verify_prompt_hv1,
+    "listening_tristate": _verify_prompt_listening_tristate,
+    "segmented_dialogue_mc3": _verify_prompt_hv2,
+    "listening_detail_mc3": _verify_prompt_hv2,
+    "forum_discussion_post": _verify_prompt_goethe_schreiben,
+    "formal_context_message": _verify_prompt_goethe_schreiben,
+    "presentation_with_followup": _verify_prompt_speaking,
+    "guided_pair_discussion": _verify_prompt_speaking,
 }
 
 
@@ -589,8 +662,10 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
     })
     if part.task_type == "choice_long_form_writing":
         audit = _object_schema({"duplicateItemIds": strings, "contrastingStatements": {"type": "boolean"}, "engagesBothStatements": {"type": "boolean"}})
-    elif part.task_type == "speaker_statement_matching":
+    elif part.task_type in _SPEAKER_MATCHING_TASK_TYPES:
         audit = _object_schema({"supportedSpeakerIds": strings, "plausible": {"type": "boolean"}})
+    elif part.task_type == "listening_tristate":
+        audit = _object_schema({"trueVerdict": {"type": "string", "enum": ["richtig", "falsch", "nicht_im_text"]}})
     elif part.task_type in _MC3_TASK_TYPES:
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
@@ -638,7 +713,7 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
             for criterion in ("contrastingStatements", "engagesBothStatements"):
                 if audit.get(criterion) is not True:
                     item.issues.append(SemanticIssue("QUESTION_NOT_ANSWERABLE", "error", f"Writing input failed {criterion}"))
-        if part.task_type == "speaker_statement_matching":
+        if part.task_type in _SPEAKER_MATCHING_TASK_TYPES:
             values = audit.get("supportedSpeakerIds")
             if not isinstance(values, list) or any(not isinstance(v, str) or v not in speakers for v in values):
                 code = "VERIFIER_RESPONSE_INVALID"
@@ -653,6 +728,12 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                 code = "UNSUPPORTED_CORRECT_ANSWER"
             elif len(set(values)) > 1:
                 code = "AMBIGUOUS_MAPPING"
+        elif part.task_type == "listening_tristate":
+            true_verdict = audit.get("trueVerdict")
+            if true_verdict not in ("richtig", "falsch", "nicht_im_text"):
+                code = "VERIFIER_RESPONSE_INVALID"
+            elif true_verdict != (question.get("tristate") or {}).get("answer"):
+                code = "TRISTATE_VERDICT_MISMATCH"
         elif part.task_type in _MC3_TASK_TYPES:
             values = audit.get("optionVerdicts")
             if (not isinstance(values, list) or len(values) != 3
@@ -742,7 +823,7 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
     """One batched call for the whole part. Deliberately does NOT receive the
     adaptation plan or topic-selection rationale — the verifier judges the
     frozen content on its own merits, not biased by why it was generated."""
-    if part.task_type == "quote_guided_discussion":
+    if part.task_type in ("quote_guided_discussion", "guided_pair_discussion"):
         content = {"questions": [{"questionId": "discussion", **content}]}
     builder = _VERIFY_PROMPT_BUILDERS.get(part.task_type)
     if builder is None:
@@ -756,14 +837,20 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
     if part.module == "listening":
         system += " Validate evidenceSegmentIds against spokenText."
     system += "\nFor EVERY item fill its audit before its verdict. "
-    if part.task_type == "speaker_statement_matching":
+    if part.task_type in _SPEAKER_MATCHING_TASK_TYPES:
         system += (
-            "HV1 supportedSpeakerIds lists EVERY speaker whose full statement supports the written "
-            "proposition (empty for a valid distractor). If two speakers express the same supported view, "
-            "list BOTH IDs even when only one is keyed correct. HV1 plausible is true for reasonable "
-            "topic-related positions, false for absurd straw-man claims such as prohibiting every "
-            "alternative to private cars in a sustainability debate. Being false or contradicted by "
-            "speakers does NOT by itself make a distractor implausible. "
+            "supportedSpeakerIds lists EVERY speaker/source whose full statement supports the written "
+            "proposition (empty for a valid distractor). If two speakers/sources express the same "
+            "supported view, list BOTH IDs even when only one is keyed correct. plausible is true for "
+            "reasonable topic-related positions, false for absurd straw-man claims such as prohibiting "
+            "every alternative to private cars in a sustainability debate. Being false or contradicted by "
+            "a speaker/source does NOT by itself make a distractor implausible. "
+        )
+    elif part.task_type == "listening_tristate":
+        system += (
+            "trueVerdict is your own independent classification of the statement as richtig (audio "
+            "supports it), falsch (audio contradicts it), or nicht_im_text (audio neither supports nor "
+            "contradicts it — merely absent). "
         )
     elif part.task_type in _MC3_TASK_TYPES:
         system += (
@@ -827,6 +914,12 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
             "genuinely distinct (near-identical framing, the same underlying question restated, or one "
             "trivially subsumed by the other) — empty otherwise. There is no correct answer to verify for "
             "this task type; do not use UNSUPPORTED_CORRECT_ANSWER or AMBIGUOUS_MAPPING here. "
+        )
+    elif part.task_type in ("forum_discussion_post", "formal_context_message"):
+        system += (
+            "There is only ONE task and no correct answer to verify — duplicateItemIds stays empty for "
+            "this task type (nothing else to compare against); do not use UNSUPPORTED_CORRECT_ANSWER or "
+            "AMBIGUOUS_MAPPING here either. "
         )
     system += "Use the appropriate issue codes for audit failures. Return concise judgments only, not explanations of your reasoning process."
     user = json.dumps({"blueprint": {"taskType": part.task_type, "constraints": part.constraints}}, ensure_ascii=False) + "\n" + user

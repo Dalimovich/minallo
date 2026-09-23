@@ -191,6 +191,7 @@
               "optionCount": 3,
               "playsAllowed": 2,
               "readingSeconds": 90,
+              "speakerCountMin": 1,
               "wordCountApprox": 540
             },
             "gradingDimensions": null,

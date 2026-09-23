@@ -50,14 +50,14 @@ TASK_TYPES: dict[str, bool] = {
     "contextual_cloze_mc4": True,
     "reading_detail_mc3": True,
     "multi_author_statement_matching_with_none": True,
-    "multi_source_statement_matching": False,
-    "listening_tristate": False,
-    "segmented_dialogue_mc3": False,
-    "listening_detail_mc3": False,
-    "forum_discussion_post": False,
-    "formal_context_message": False,
-    "presentation_with_followup": False,
-    "guided_pair_discussion": False,
+    "multi_source_statement_matching": True,
+    "listening_tristate": True,
+    "segmented_dialogue_mc3": True,
+    "listening_detail_mc3": True,
+    "forum_discussion_post": True,
+    "formal_context_message": True,
+    "presentation_with_followup": True,
+    "guided_pair_discussion": True,
 }
 
 

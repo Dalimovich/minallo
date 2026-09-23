@@ -187,6 +187,164 @@ def validate_structured_note_completion(part: PartBlueprint, content: dict[str, 
     return issues
 
 
+def validate_multi_source_statement_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """Several spoken sources (e.g. Goethe Hören Teil 1: three reviews) + N written statements, each
+    matching exactly one source or (if the blueprint allows it) none. Unlike speaker_statement_matching
+    this is NOT a bijection — a source may legitimately be the answer to more than one statement, and
+    unmatchedStatements defaults to 0 (every statement matches a source) rather than a fixed 2. Reuses
+    the same `matching.correctSpeakerId` / `matching.isDistractor` shape so the shared semantic-verify
+    audit (built for speaker_statement_matching) applies unchanged."""
+    issues: list[ValidationIssue] = []
+    segments = content.get("segments") or []
+    questions = content.get("questions") or []
+
+    source_count = part.constraints.get("sourceCount", 3)
+    statement_count = part.constraints.get("statementCount", 6)
+    unmatched_expected = part.constraints.get("unmatchedStatements", 0)
+
+    if len(segments) != source_count:
+        issues.append(ValidationIssue(None, f"expected {source_count} source segments, got {len(segments)}"))
+    source_ids = [s.get("speakerId") for s in segments]
+    if len(set(source_ids)) != len(source_ids):
+        issues.append(ValidationIssue(None, "duplicate speakerId across source segments"))
+    for s in segments:
+        if not (s.get("spokenText") or "").strip():
+            issues.append(ValidationIssue(s.get("id"), "segment spokenText is empty"))
+
+    if len(questions) != statement_count:
+        issues.append(ValidationIssue(None, f"expected {statement_count} statements, got {len(questions)}"))
+
+    mapped_sources: list[str] = []
+    distractor_count = 0
+    statements: list[str] = []
+    for q in questions:
+        statement = q.get("statement")
+        if not isinstance(statement, str) or not statement.strip():
+            issues.append(ValidationIssue(q.get("questionId"), "statement is empty"))
+        else:
+            statements.append(statement.strip().lower())
+        matching = q.get("matching") or {}
+        if matching.get("isDistractor"):
+            distractor_count += 1
+            if matching.get("correctSpeakerId"):
+                issues.append(ValidationIssue(q.get("questionId"), "distractor item must not carry correctSpeakerId"))
+            continue
+        correct = matching.get("correctSpeakerId")
+        if not correct or correct not in set(source_ids):
+            issues.append(ValidationIssue(q.get("questionId"), "correctSpeakerId is missing or unknown"))
+            continue
+        mapped_sources.append(correct)
+
+    if distractor_count != unmatched_expected:
+        issues.append(ValidationIssue(None, f"expected {unmatched_expected} unmatched statements, got {distractor_count}"))
+    if len(set(statements)) != len(statements):
+        issues.append(ValidationIssue(None, "duplicate statements"))
+    if questions and unmatched_expected == 0 and set(mapped_sources) != set(source_ids) and len(segments) == source_count:
+        issues.append(ValidationIssue(None, "every source must be the answer to at least one statement"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    issues.extend(_check_evidence_segment_ids(questions, segments, "matching", allow_empty=True))
+    return issues
+
+
+_LISTENING_TRISTATE_ANSWERS = {"richtig", "falsch", "nicht_im_text"}
+
+
+def validate_listening_tristate(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """One extended audio (e.g. Goethe Hören Teil 2: an interview) + N tristate items — each item's
+    stated proposition is either supported (richtig), contradicted (falsch), or simply absent
+    (nicht_im_text) in the audio. No global-heading item (unlike detail_tristate_with_global_heading,
+    which is reading-only and carries one); itemCount/answerOptions come from the blueprint."""
+    issues: list[ValidationIssue] = []
+    segments = content.get("segments") or []
+    questions = content.get("questions") or []
+    item_count = part.constraints.get("itemCount", 9)
+
+    if len(segments) < 1:
+        issues.append(ValidationIssue(None, "expected at least 1 audio segment"))
+    if len(questions) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} items, got {len(questions)}"))
+
+    statements: list[str] = []
+    for q in questions:
+        statement = q.get("statement")
+        if not isinstance(statement, str) or not statement.strip():
+            issues.append(ValidationIssue(q.get("questionId"), "statement is empty"))
+        else:
+            statements.append(statement.strip().lower())
+        tristate = q.get("tristate") or {}
+        answer = tristate.get("answer")
+        if answer not in _LISTENING_TRISTATE_ANSWERS:
+            issues.append(ValidationIssue(q.get("questionId"), f"tristate.answer must be one of {sorted(_LISTENING_TRISTATE_ANSWERS)}"))
+            continue
+        evidence = tristate.get("evidenceSegmentIds")
+        valid_segment_ids = {s.get("id") for s in segments if s.get("id")}
+        if not isinstance(evidence, list) or any(not isinstance(e, str) for e in evidence):
+            issues.append(ValidationIssue(q.get("questionId"), "tristate.evidenceSegmentIds must be a list of strings"))
+        elif not evidence and answer != "nicht_im_text":
+            issues.append(ValidationIssue(q.get("questionId"), "evidenceSegmentIds is required unless answer is nicht_im_text"))
+        elif evidence and any(e not in valid_segment_ids for e in evidence):
+            issues.append(ValidationIssue(q.get("questionId"), "evidenceSegmentIds references unknown segment id(s)"))
+
+    if len(set(statements)) != len(statements):
+        issues.append(ValidationIssue(None, "duplicate statements"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    return issues
+
+
+def validate_segmented_dialogue_mc3(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """A dialogue split into named sections (e.g. Goethe Hören Teil 3: four sections, three speakers)
+    with exactly `itemsPerSection` three-option comprehension items PER section. Shares the mc3 item
+    shape with sentence_completion_mc3 but additionally enforces the per-section item balance, keyed by
+    each question's own `sectionId`."""
+    issues: list[ValidationIssue] = []
+    segments = content.get("segments") or []
+    questions = content.get("questions") or []
+
+    section_count = part.constraints.get("sectionCount", 4)
+    items_per_section = part.constraints.get("itemsPerSection", 2)
+    option_count = part.constraints.get("optionCount", 3)
+    speaker_count = part.constraints.get("speakerCount", 3)
+    item_count = section_count * items_per_section
+
+    if len(segments) < 1:
+        issues.append(ValidationIssue(None, "expected at least 1 dialogue segment"))
+    speaker_ids = {s.get("speakerId") for s in segments if s.get("speakerId")}
+    if len(speaker_ids) != speaker_count:
+        issues.append(ValidationIssue(None, f"expected {speaker_count} distinct speakers, got {len(speaker_ids)}"))
+
+    if len(questions) != item_count:
+        issues.append(ValidationIssue(None, f"expected {item_count} items ({section_count} sections x {items_per_section}), got {len(questions)}"))
+
+    per_section: dict[str, int] = {}
+    for q in questions:
+        section_id = q.get("sectionId")
+        if not isinstance(section_id, str) or not section_id.strip():
+            issues.append(ValidationIssue(q.get("questionId"), "sectionId is missing"))
+        else:
+            per_section[section_id] = per_section.get(section_id, 0) + 1
+        mc3 = q.get("mc3") or {}
+        options = mc3.get("options") or []
+        if len(options) != option_count:
+            issues.append(ValidationIssue(q.get("questionId"), f"expected {option_count} options, got {len(options)}"))
+        if len({o.strip().lower() for o in options if isinstance(o, str)}) != len(options):
+            issues.append(ValidationIssue(q.get("questionId"), "duplicate options within one item"))
+        correct_index = mc3.get("correctIndex")
+        if not isinstance(correct_index, int) or not (0 <= correct_index < max(1, option_count)):
+            issues.append(ValidationIssue(q.get("questionId"), "correctIndex missing or out of range"))
+
+    if len(per_section) != section_count:
+        issues.append(ValidationIssue(None, f"expected {section_count} distinct sectionIds, got {len(per_section)}"))
+    uneven = [sid for sid, n in per_section.items() if n != items_per_section]
+    if uneven:
+        issues.append(ValidationIssue(None, f"expected exactly {items_per_section} items per section; unbalanced: {uneven}"))
+
+    issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+    issues.extend(_check_evidence_segment_ids(questions, segments, "mc3"))
+    return issues
+
+
 def validate_text_reconstruction_sentence_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     text = content.get("text") or {}
@@ -809,11 +967,79 @@ def validate_choice_long_form_writing(part: PartBlueprint, content: dict[str, An
     return issues
 
 
+# Goethe C1 Schreiben task types framed as one scenario a candidate must respond to (no topic choice) —
+# writingCoachTaskType stays constrained to the same telc-derived vocabulary so grading (which routes
+# through the shared writing_coach evaluator) always gets valid input.
+_GOETHE_SCHREIBEN_TASK_TYPES = frozenset({"stellungnahme", "argumentation", "freier_text"})
+
+
+def _validate_single_scenario_writing_task(
+    part: PartBlueprint, content: dict[str, Any], *, extra_fields: frozenset[str] = frozenset()
+) -> list[ValidationIssue]:
+    """Shared shape for Goethe's one-scenario Schreiben task types: exactly ONE generated task (as
+    `questions`, the generic per-part item array every task type uses) with a fixed number of content
+    points the response must cover — no topic choice, no answer key. `extra_fields` lets a specific
+    task type (e.g. formal_context_message's `addressForm`) declare additional allowed top-level item
+    fields without duplicating this whole function."""
+    issues: list[ValidationIssue] = []
+    questions = content.get("questions") or []
+    content_point_count = part.constraints.get("contentPointCount", 4)
+
+    if len(questions) != 1:
+        issues.append(ValidationIssue(None, f"expected exactly 1 generated task, got {len(questions)}"))
+    if set(content) - {"questions"}:
+        issues.append(ValidationIssue(None, "writing content must contain only the task, never an answer key or model solution"))
+
+    allowed_fields = {"questionId", "title", "communicativeSituation", "contentPoints", "taskInstructions",
+                      "writingCoachTaskType"} | extra_fields
+    for q in questions:
+        if set(q) - allowed_fields:
+            issues.append(ValidationIssue(q.get("questionId"), "unexpected task fields: no answer key or model solution is allowed"))
+        title = (q.get("title") or "").strip()
+        situation = (q.get("communicativeSituation") or "").strip()
+        instructions = (q.get("taskInstructions") or "").strip()
+        task_type = q.get("writingCoachTaskType")
+        points = q.get("contentPoints")
+        if (not isinstance(points, list) or len(points) != content_point_count
+                or any(not isinstance(p, str) or not p.strip() for p in points)):
+            issues.append(ValidationIssue(q.get("questionId"), f"expected {content_point_count} nonempty contentPoints"))
+        elif len({" ".join(p.casefold().split()).strip(".!? ") for p in points}) != content_point_count:
+            issues.append(ValidationIssue(q.get("questionId"), "duplicate content points"))
+
+        if not title:
+            issues.append(ValidationIssue(q.get("questionId"), "title is missing or empty"))
+        if not situation:
+            issues.append(ValidationIssue(q.get("questionId"), "communicativeSituation is missing or empty"))
+        if len(instructions) < _MIN_TASK_INSTRUCTION_CHARS:
+            issues.append(ValidationIssue(q.get("questionId"), f"taskInstructions is missing or too short (min {_MIN_TASK_INSTRUCTION_CHARS} chars)"))
+        if task_type not in _GOETHE_SCHREIBEN_TASK_TYPES:
+            issues.append(ValidationIssue(q.get("questionId"), f"writingCoachTaskType must be one of {sorted(_GOETHE_SCHREIBEN_TASK_TYPES)}"))
+
+    return issues
+
+
+def validate_forum_discussion_post(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """Goethe C1 Schreiben Teil 1: a forum discussion scenario with exactly `contentPointCount` points
+    the candidate's post must address (register is neutral/informal-plausible, no addressForm)."""
+    return _validate_single_scenario_writing_task(part, content)
+
+
+def validate_formal_context_message(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """Goethe C1 Schreiben Teil 2: a (semi-)formal message scenario, same shape as
+    forum_discussion_post plus a required addressForm field (blueprint pins it to "Sie")."""
+    issues = _validate_single_scenario_writing_task(part, content, extra_fields=frozenset({"addressForm"}))
+    expected_address_form = part.constraints.get("addressForm")
+    for q in content.get("questions") or []:
+        if expected_address_form and q.get("addressForm") != expected_address_form:
+            issues.append(ValidationIssue(q.get("questionId"), f"addressForm must be {expected_address_form!r}"))
+    return issues
+
+
 def validate_speaking(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
     issues = []
     def nonempty(value):
         return isinstance(value, str) and bool(value.strip()) and len(value) <= 2000
-    if part.task_type == "presentation_summary_followup":
+    if part.task_type in ("presentation_summary_followup", "presentation_with_followup"):
         topics = content.get("questions")
         if not isinstance(topics, list) or len(topics) != 2:
             return [ValidationIssue(None, "exactly two presentation topics required")]
@@ -851,18 +1077,28 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "cloze_mc4_language_elements": validate_cloze_mc4_language_elements,
     "contextual_cloze_mc4": validate_contextual_cloze_mc4,
     "choice_long_form_writing": validate_choice_long_form_writing,
+    # --- Goethe-Zertifikat C1 ---
+    "multi_source_statement_matching": validate_multi_source_statement_matching,
+    "listening_tristate": validate_listening_tristate,
+    "segmented_dialogue_mc3": validate_segmented_dialogue_mc3,
+    "listening_detail_mc3": validate_sentence_completion_mc3,  # same segments+mc3 shape (speakerCountMin:1 for a solo Vortrag)
+    "forum_discussion_post": validate_forum_discussion_post,
+    "formal_context_message": validate_formal_context_message,
+    "presentation_with_followup": validate_speaking,
+    "guided_pair_discussion": validate_speaking,
 }
 
 # Reading task types don't carry a top-level "segments" array (they have
 # "text"/"candidates"/"sections" instead) — the generic pre-check below only
 # applies to listening, whose validators all assume "segments" exists.
 _SEGMENTS_REQUIRED_TASK_TYPES = frozenset(
-    {"speaker_statement_matching", "sentence_completion_mc3", "structured_note_completion"}
+    {"speaker_statement_matching", "sentence_completion_mc3", "structured_note_completion",
+     "multi_source_statement_matching", "listening_tristate", "segmented_dialogue_mc3", "listening_detail_mc3"}
 )
 
 
 def validate_content(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
-    if part.task_type == "quote_guided_discussion":
+    if part.task_type in ("quote_guided_discussion", "guided_pair_discussion"):
         return validate_speaking(part, content)
     generic_keys = [("questions", "questionId")]
     if part.task_type in _SEGMENTS_REQUIRED_TASK_TYPES:

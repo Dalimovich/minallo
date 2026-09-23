@@ -160,8 +160,10 @@ _GOETHE_C1_HOEREN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
         part_id="hoeren_4", module="listening", title="Vortrag",
         task_type="listening_detail_mc3",
+        # A Vortrag (lecture) is a solo monologue, not a multi-speaker dialogue — overrides the
+        # shared sentence_completion_mc3 validator's default speakerCountMin (2).
         constraints={"itemCount": 7, "optionCount": 3, "playsAllowed": 2, "readingSeconds": 90,
-                     "wordCountApprox": 540},
+                     "wordCountApprox": 540, "speakerCountMin": 1},
         allowed_skill_tags=_HOEREN_TAGS, allowed_adaptations=("distractor_proximity", "negation_density"),
         scoring=ScoringSpec(max_points=7, points_per_correct=1), available=False,
     ),
