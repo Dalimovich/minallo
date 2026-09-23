@@ -192,10 +192,163 @@ def _prompt_hv3(profile: ExamProfile, part: PartBlueprint, plan: list[Adaptation
     return system, user
 
 
+# ── Goethe C1 Hören 1: multi_source_statement_matching ──────────────────────
+
+
+def _prompt_goethe_hoeren1(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    source_count = part.constraints.get("sourceCount", 3)
+    statement_count = part.constraints.get("statementCount", 6)
+    unmatched = part.constraints.get("unmatchedStatements", 0)
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): exactly {source_count} short spoken reviews/opinions on the "
+        f"topic '{topic['label']}' (e.g. podcast segments each reviewing or discussing the same thing "
+        f"from a different angle), each from a different speaker. Then exactly {statement_count} written "
+        f"statements, each PARAPHRASING (never quoting verbatim) something one of the {source_count} "
+        f"sources genuinely says"
+        + (f"; exactly {unmatched} of them must not correctly match any source (mark them isDistractor)."
+           if unmatched else ". Every statement must match exactly one source — none are distractors, and "
+           "every source must be the correct match for at least one statement.")
+        + " A source may legitimately be the correct match for more than one statement — this is NOT a "
+        "one-to-one mapping. Written statements must not reuse the source's own wording.\n\n"
+        "IMPORTANT — choose skillTags per item based on what actually makes it hard (paraphrase_mapping, "
+        "speaker_opinion, attitude_tone, implicit_inference, selective_information); use at least 3 "
+        f"different tags across the {statement_count} items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "segments": [{"id": "s1", "speakerId": "source_1", "spokenText": "...", "displayText": "..."}, ...],\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "statement": "<written statement>", "skillTags": ["paraphrase_mapping"],\n'
+        '     "difficulty": "c1", "matching": {"correctSpeakerId": "source_2", "isDistractor": false}}\n'
+        "  ]\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
+# ── Goethe C1 Hören 2: listening_tristate ────────────────────────────────────
+
+
+def _prompt_goethe_hoeren2(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 9)
+    answer_options = part.constraints.get("answerOptions", ["stimmt", "stimmt nicht", "dazu wird nichts gesagt"])
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one extended interview or discussion (at least 2 speakers) on "
+        f"'{topic['label']}'. Then exactly {item_count} written statements about its content, each "
+        "classified as one of three ground-truth answers: richtig (the audio clearly supports the "
+        "statement), falsch (the audio clearly contradicts it), or nicht_im_text (the audio neither "
+        "supports nor contradicts it — the topic is simply not addressed this specifically). Distribute "
+        f"the {item_count} statements across all three answers roughly evenly (not mostly richtig); "
+        "include some genuinely tricky falsch items (a plausible-sounding claim the audio actually "
+        "contradicts or reverses) and genuinely tricky nicht_im_text items (related to the topic but "
+        f"never actually addressed, not just an unrelated statement). The candidate sees these answers "
+        f"as {answer_options!r} but you must use the canonical labels richtig/falsch/nicht_im_text in your "
+        "JSON.\n\n"
+        "IMPORTANT — choose skillTags per item (detail_fact, speaker_opinion, not_stated_distinction, "
+        "implicit_inference, paraphrase_mapping); use at least 3 different tags across the items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Every item must also include tristate.evidenceSegmentIds: the id(s) of the segment(s) that "
+        "support your verdict (may be empty ONLY when answer is nicht_im_text).\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "statement": "...", "skillTags": ["detail_fact"], "difficulty": "c1",\n'
+        '     "tristate": {"answer": "richtig", "evidenceSegmentIds": ["s2"]}},\n'
+        '    {"questionId": "q2", "statement": "...", "skillTags": ["not_stated_distinction"], "difficulty": "c1",\n'
+        '     "tristate": {"answer": "nicht_im_text", "evidenceSegmentIds": []}}\n'
+        "  ]\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
+# ── Goethe C1 Hören 3: segmented_dialogue_mc3 ────────────────────────────────
+
+
+def _prompt_goethe_hoeren3(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    section_count = part.constraints.get("sectionCount", 4)
+    items_per_section = part.constraints.get("itemsPerSection", 2)
+    option_count = part.constraints.get("optionCount", 3)
+    speaker_count = part.constraints.get("speakerCount", 3)
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one conversation with {speaker_count} distinct speakers on "
+        f"'{topic['label']}', organized into exactly {section_count} clearly distinguishable sections "
+        "(e.g. different sub-questions, phases of the discussion, or turns of the conversation). Give "
+        "each section its own sectionId (e.g. 'sec1'..'sec4') and tag every segment that belongs to it "
+        "with that sectionId. For EACH section write exactly "
+        f"{items_per_section} three-option comprehension items (mc3, {option_count} options), so there "
+        f"are exactly {section_count * items_per_section} items total, each carrying the sectionId of "
+        "the section it tests. Wrong options must be plausible: a nearby fact, a partially true detail, "
+        "reversed causality, or something a DIFFERENT speaker said.\n\n"
+        "IMPORTANT — choose skillTags per item based on what actually makes it hard; use at least 3 "
+        "different tags across the items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Every item must also include evidenceSegmentIds pointing at real segment ids from its own "
+        "section.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "segments": [{"id": "s1", "speakerId": "speaker_1", "sectionId": "sec1", "spokenText": "...", "displayText": "..."}, ...],\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "sectionId": "sec1", "skillTags": ["detail_fact"], "difficulty": "c1",\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1, "evidenceSegmentIds": ["s2"]}}\n'
+        "  ]\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
+# ── Goethe C1 Hören 4: listening_detail_mc3 (reuses sentence_completion_mc3's ──
+# ── shape/pipeline — the shared engine, a solo Vortrag instead of a dialogue) ──
+
+
+def _prompt_goethe_hoeren4(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 7)
+    option_count = part.constraints.get("optionCount", 3)
+
+    system = _base_system_preamble(profile, part) + (
+        f"\n\nTask structure (IMMUTABLE): one solo academic lecture/talk (Vortrag) by a single speaker on "
+        f"'{topic['label']}', with clear structure, examples and arguments. Then exactly {item_count} "
+        f"items, each a three-option comprehension item (mc3, {option_count} options) about a specific "
+        "detail of the lecture, roughly following its chronological order. Wrong options must be "
+        "plausible: a nearby fact, a partially true detail, a distorted paraphrase, or reversed causality "
+        "— never absurd or decidable without hearing the lecture.\n\n"
+        "IMPORTANT — choose skillTags per item based on what actually makes it hard; use at least 3 "
+        "different tags across the items.\n\n"
+        f"{_adaptation_guidance(plan)}\n\n"
+        "Every item must also include evidenceSegmentIds pointing at real segment ids.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "segments": [{"id": "s1", "speakerId": "speaker_1", "spokenText": "...", "displayText": "..."}, ...],\n'
+        '  "questions": [\n'
+        '    {"questionId": "q1", "skillTags": ["detail_fact"], "difficulty": "c1",\n'
+        '     "mc3": {"stem": "...", "options": ["...", "...", "..."], "correctIndex": 1, "evidenceSegmentIds": ["s3"]}}\n'
+        "  ]\n"
+        "}\n"
+        f"skillTags must only use values from this list: {sorted(part.allowed_skill_tags)}."
+    )
+    user = f"Generate the content now. Topic: {topic['label']}."
+    return system, user
+
+
 _PROMPT_BUILDERS = {
     "speaker_statement_matching": _prompt_hv1,
     "sentence_completion_mc3": _prompt_hv2,
     "structured_note_completion": _prompt_hv3,
+    # --- Goethe-Zertifikat C1 ---
+    "multi_source_statement_matching": _prompt_goethe_hoeren1,
+    "listening_tristate": _prompt_goethe_hoeren2,
+    "segmented_dialogue_mc3": _prompt_goethe_hoeren3,
+    "listening_detail_mc3": _prompt_goethe_hoeren4,
 }
 
 
