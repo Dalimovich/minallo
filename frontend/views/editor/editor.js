@@ -1,23 +1,46 @@
 (function () {
   var container = document.getElementById('psec-editor');
   if (!container) return;
-  fetch('views/editor/editor.html')
-    .then(function (r) {
+  // Retry the markup fetch a couple of times: this dispatcher only runs once
+  // (the loader won't re-inject the script on re-navigation), so a single
+  // transient network failure here would leave the page blank until a full
+  // reload. Retrying self-heals the common flaky-connection case.
+  function _ssFetchText(url, tries) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
-    })
+    }).catch(function (err) {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
+          return _ssFetchText(url, tries - 1);
+        });
+      }
+      throw err;
+    });
+  }
+  _ssFetchText('views/editor/editor.html', 2)
     .then(function (html) {
       var tmp = document.createElement('div');
       tmp.innerHTML = html;
       var sec = tmp.querySelector('#psec-editor');
       if (sec) {
         container.className = sec.className;
+        // Preserve the live display state. editor.html's #psec-editor ships with
+        // style="display:none", and this fetch resolves AFTER the first click has
+        // already revealed the (empty) section — clobbering cssText would re-hide
+        // it, forcing a pointless second click. Keep whatever display nav set.
+        var prevDisplay = container.style.display || 'none';
         container.style.cssText = sec.getAttribute('style') || '';
+        container.style.display = prevDisplay;
         while (sec.firstChild) container.appendChild(sec.firstChild);
         var writer = container.querySelector('.editor-card');
         if (writer) writer.style.display = 'none';
       }
       window.dispatchEvent(new Event('ss-editor-ready'));
       _init();
+    })
+    .catch(function (err) {
+      console.error('editor.html load failed:', err);
     });
   function _init() {
     // ── EDITOR HUB ───────────────────────────────────────────────────────────────
@@ -57,7 +80,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'writer' },
           '',
-          '#portal=editor:writer'
+          '#portal=editor&mode=writer'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'writer');
@@ -74,7 +97,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'pdf' },
           '',
-          '#portal=editor:pdf'
+          '#portal=editor&mode=pdf'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'pdf');
@@ -91,7 +114,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'merger' },
           '',
-          '#portal=editor:merger'
+          '#portal=editor&mode=merger'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'merger');
@@ -275,6 +298,9 @@
             if (typeof PDFLib === 'undefined') {
               var s = document.createElement('script');
               s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+              s.integrity =
+                'sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI';
+              s.crossOrigin = 'anonymous';
               s.onload = doMerge;
               s.onerror = function () {
                 showToast('Error', 'Could not load merge library.');
@@ -2557,6 +2583,9 @@
             if (typeof window.jspdf === 'undefined' && typeof window.jsPDF === 'undefined') {
               var s = document.createElement('script');
               s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+              s.integrity =
+                'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk';
+              s.crossOrigin = 'anonymous';
               s.onload = buildPdf;
               s.onerror = function () {
                 showToast('Export failed', 'Could not load PDF library.');

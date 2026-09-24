@@ -1,0 +1,588 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Wie man die Kühlwirkung städtischer Grünflächen sinnvoll bewertet",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "Wenn in Städten über Hitzeschutz gesprochen wird, gelten Grünflächen fast automatisch als Lösung. Doch schon der Vergleich zweier Parks zeigt, wie vorsichtig man mit solchen Annahmen sein muss. Ein Platz mit vielen Bäumen kann tagsüber angenehm wirken, obwohl er kleiner ist als eine offene Wiese am Stadtrand. Für die Bewertung der Kühlwirkung reicht es daher nicht, nur Flächen zu addieren. Entscheidend sind auch Schatten, Bodenfeuchte, Windverhältnisse und die Frage, ob sich Menschen dort überhaupt aufhalten. Wer lediglich Karten mit Oberflächentemperaturen betrachtet, verwechselt zudem leicht die Temperatur von Materialien mit dem tatsächlichen Wärmeempfinden."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "Wie stark eine Grünfläche kühlt, hängt außerdem davon ab, wie gemessen wird. Satellitenbilder erfassen große Bereiche gleichzeitig und zeigen oft deutlich, dass Baumkronen mittags kühler sind als Asphalt. Stationäre Sensoren in zwei Metern Höhe liefern dagegen Hinweise auf die Lufttemperatur an einem festen Ort, also eher auf Bedingungen, die Menschen direkt betreffen. Mobile Messungen entlang von Straßen machen wiederum Unterschiede sichtbar, die durch Wind oder Verschattung einzelner Gebäude entstehen. Deshalb widersprechen sich Datensätze nicht unbedingt; sie beantworten oft nur verschiedene Fragen. Wer eine Maßnahme beurteilen will, muss vor der Messung klären, ob es um Oberflächen, Luft, Tageszeiten oder Wegebeziehungen geht."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Auch Größe und Form einer Anlage wirken sich unterschiedlich aus. Ein großer Park kann nachts wie ein Speicher kühler Luft funktionieren, die bei passenden Öffnungen in benachbarte Straßen strömt. Seine Wirkung endet also nicht zwingend an der Parkgrenze. Kleine Innenhöfe oder Baumgruppen an Kreuzungen besitzen meist keine solche Reichweite, bieten aber tagsüber unmittelbaren Schatten genau dort, wo Menschen warten oder gehen. Daraus folgt nicht, dass mehr Rasen automatisch besser wäre: Kurz geschnittene, trockene Grasflächen können sich stark aufheizen, wenn kaum Bäume vorhanden sind. Zusätzliche Bewässerung verbessert zwar oft die Kühlung, erhöht jedoch den Wasserbedarf und ist deshalb kein allgemeines Rezept."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Für die Planung reicht die physikalische Messung allein jedoch nicht aus. Wichtig ist ebenso, wer von der Abkühlung profitiert. Ein begrüntes Areal hinter Bürogebäuden kann im Mittel gute Werte liefern, nützt aber wenig, wenn es am späten Nachmittag fast leer ist. Eine Reihe von Bäumen an Bushaltestellen oder auf Schulwegen senkt die Temperaturen womöglich weniger stark, erreicht dafür aber Gruppen, die Hitze besonders ausgesetzt sind. Durchschnittswerte für ganze Stadtteile verschleiern solche Unterschiede leicht, weil sie Verfügbarkeit, Entfernung und typische Nutzungszeiten zusammenfassen, statt ungleiche Belastungen sichtbar zu machen."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Gerade weil Verwaltung und Politik handliche Kennzahlen bevorzugen, ist die Versuchung groß, die Kühlwirkung in einem einzigen Index zusammenzufassen. Dagegen ist grundsätzlich nichts einzuwenden, solange offen bleibt, was genau verrechnet wurde. Problematisch wird es, wenn Temperaturminderung, Aufenthaltsqualität, Biodiversität und Pflegeaufwand ohne nachvollziehbare Gewichtung zu einer Rangliste verschmelzen. Dann scheint eine Entscheidung objektiv, obwohl zentrale Wertungen unsichtbar gemacht wurden. Ein versickerungsfähiger Platz mit wenigen Bäumen kann in so einem Schema schlechter abschneiden als eine dekorative Rasenfläche, obwohl er an einem stark belasteten Umsteigeort wirksamer ist. Nützlicher sind deshalb transparente Kriterien und Vergleiche mehrerer denkbarer Szenarien."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Die Kühlwirkung städtischer Grünflächen lässt sich also nicht mit einer universellen Zahl erfassen. Sie entsteht aus dem Zusammenspiel von Zeitpunkt, Bauform, Vegetation, Wasserhaushalt und Nutzung. Sinnvolle Bewertungen verbinden meteorologische Daten mit Alltagswegen und fragen, wann und für wen Entlastung entsteht. Dazu gehört auch, verschiedene Jahreszeiten mitzudenken, denn derselbe Ort kann im Frühsommer anders funktionieren als nach langen Trockenphasen. Für Städte bedeutet das keinen Verzicht auf einfache Entscheidungen, sondern bessere Grundlagen für gezielte Maßnahmen. Statt symbolische Begrünung zu belohnen, können sie dort investieren, wo Abkühlung tatsächlich ankommt."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "detail_comprehension",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum reicht es nach dem ersten Absatz nicht aus, Grünflächen vor allem nach ihrer Fläche zu beurteilen?",
+              "options": [
+                "Weil ihre Wirkung auch von Schatten, Feuchtigkeit, Luftbewegung und Nutzung abhängt.",
+                "Weil kleine Anlagen im Zentrum grundsätzlich stärker kühlen als große Wiesen am Rand.",
+                "Weil Karten zur Materialtemperatur für die Einschätzung von Hitze unbrauchbar sind.",
+                "Weil Hitzekarten vor allem Orte mit vielen Besucherinnen und Besuchern erfassen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Weshalb spricht sich der Autor im zweiten Absatz für die Verbindung mehrerer Messverfahren aus?",
+              "options": [
+                "Weil Satellitenbilder die Lufttemperatur in Aufenthaltsnähe am genauesten wiedergeben.",
+                "Weil mobile Messungen vor allem Materialtemperaturen großer Flächen sichtbar machen.",
+                "Weil die Verfahren unterschiedliche Seiten der Abkühlung zu verschiedenen Zeiten zeigen.",
+                "Weil feste Sensoren erst zusammen mit Winddaten aussagekräftig werden."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "inference",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Aussage beschreibt die Gegenüberstellung im dritten Absatz am treffendsten?",
+              "options": [
+                "Große Parks wirken vor allem mittags im Inneren, während kleine Höfe nachts Luft in Straßen leiten.",
+                "Große Parks können ihr Umfeld nachts beeinflussen, während kleine Orte eher tagsüber direkt entlasten.",
+                "Große Parks und kleine Baumgruppen entfalten ihre Kühlung nur innerhalb ihrer jeweiligen Grenzen.",
+                "Große Parks benötigen kaum Bäume, wenn kleine Höfe zusätzlich bewässert werden."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was kritisiert der Autor an Durchschnittswerten für ganze Stadtteile?",
+              "options": [
+                "Dass sie die Belastung von Berufstätigen höher gewichten als die von Kindern.",
+                "Dass sie allein auf Lufttemperaturen beruhen und soziale Daten ausblenden.",
+                "Dass sie wegen des hohen Messaufwands für kommunale Planungen kaum nutzbar sind.",
+                "Dass sie verdecken können, wie ungleich kühlende Angebote erreichbar und nutzbar sind."
+              ],
+              "correctIndex": 3,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "text_structure",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient im fünften Absatz das Beispiel des versickerungsfähigen Platzes mit wenigen Bäumen?",
+              "options": [
+                "Es soll zeigen, dass eine Rangliste den Nutzen an hitzebelasteten Orten übersehen kann.",
+                "Es soll zeigen, dass dekorative Rasenflächen im Unterhalt meist teurer sind.",
+                "Es soll zeigen, dass Artenvielfalt bei Hitzevorsorge besser unberücksichtigt bleibt.",
+                "Es soll zeigen, dass wasserdurchlässige Plätze Bäume in Zentren ersetzen können."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "inference",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Folgerung ergibt sich aus dem Schlussabsatz für städtische Entscheidungen?",
+              "options": [
+                "Städte sollten sichtbare Begrünung auch ohne Nutzungsanalyse bevorzugen.",
+                "Städte sollten Trockenperioden aus Vergleichen herausnehmen, um Verzerrungen zu vermeiden.",
+                "Städte sollten Klimadaten mit Alltagsrouten und saisonalen Unterschieden verknüpfen.",
+                "Städte sollten für alle Anlagen eine einheitliche Zielzahl festlegen."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "text_structure",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welches Ziel verfolgt der gesamte Artikel?",
+              "options": [
+                "Zu belegen, dass Verkehrsknoten künftig grundsätzlich wichtiger sind als Parks.",
+                "Zu erklären, warum die Kühlleistung urbaner Grünflächen nur mit kontextbezogenen und offenen Kriterien sinnvoll beurteilt werden kann.",
+                "Zu erläutern, welches neue Messgerät ältere Verfahren vollständig ersetzen sollte.",
+                "Zu zeigen, dass Wasserzufuhr der entscheidende Faktor für jede Grünanlage ist."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": false,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "implausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 4 introduces visitor-based heat-map coverage that is not grounded in paragraph 1 and is too easily dismissible without using the text.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1"
+                  ],
+                  "questionIds": [
+                    "q1"
+                  ],
+                  "optionIndexes": [
+                    3
+                  ]
+                }
+              },
+              {
+                "code": "PARAPHRASE_TOO_LITERAL",
+                "severity": "warning",
+                "message": "The keyed option closely reproduces the paragraph's list of factors, making the item solvable by surface matching.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1"
+                  ],
+                  "questionIds": [
+                    "q1"
+                  ],
+                  "optionIndexes": [
+                    2
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "implausible_wrong",
+                "implausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Options 3 and 4 add claims about planning effort or weighting specific groups that paragraph 4 does not suggest, so they are not plausible text-based distractors.",
+                "evidence": {
+                  "segmentIds": [
+                    "p4"
+                  ],
+                  "questionIds": [
+                    "q4"
+                  ],
+                  "optionIndexes": [
+                    2,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": [
+              {
+                "code": "PARAPHRASE_TOO_LITERAL",
+                "severity": "warning",
+                "message": "The correct option mirrors the closing paragraph's wording about meteorological data, everyday routes, and seasonal differences very closely.",
+                "evidence": {
+                  "segmentIds": [
+                    "p6"
+                  ],
+                  "questionIds": [
+                    "q6"
+                  ],
+                  "optionIndexes": [
+                    1
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "implausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 3 about a new device replacing all older methods is unrelated to the article's actual line of argument and is not a plausible global-purpose distractor.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1",
+                    "p2",
+                    "p3",
+                    "p4",
+                    "p5",
+                    "p6"
+                  ],
+                  "questionIds": [
+                    "q7"
+                  ],
+                  "optionIndexes": [
+                    2
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Warum reicht es nach dem ersten Absatz nicht aus, Grünflächen vor allem nach ihrer Fläche zu beurteilen?",
+          "options": [
+            "Weil Karten zur Materialtemperatur für die Einschätzung von Hitze unbrauchbar sind.",
+            "Weil kleine Anlagen im Zentrum grundsätzlich stärker kühlen als große Wiesen am Rand.",
+            "Weil ihre Wirkung auch von Schatten, Feuchtigkeit, Luftbewegung und Nutzung abhängt.",
+            "Weil selbst ähnlich große Grünflächen je nach Gestaltung und Bedingungen sehr unterschiedlich wirken können."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q4",
+        "skillTags": [
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was kritisiert der Autor an Durchschnittswerten für ganze Stadtteile?",
+          "options": [
+            "Dass sie verdecken können, wie ungleich kühlende Angebote erreichbar und nutzbar sind.",
+            "Dass sie Unterschiede zwischen typischen Nutzungszeiten und Entfernungen nicht sichtbar machen.",
+            "Dass sie wegen des hohen Messaufwands für kommunale Planungen kaum nutzbar sind.",
+            "Dass sie die Wirkung einzelner Maßnahmen grundsätzlich stärker erscheinen lassen als sie ist."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p4"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q7",
+        "skillTags": [
+          "text_structure",
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welches Ziel verfolgt der gesamte Artikel?",
+          "options": [
+            "Zu erklären, warum die Kühlleistung urbaner Grünflächen nur mit kontextbezogenen und offenen Kriterien sinnvoll beurteilt werden kann.",
+            "Zu belegen, dass Verkehrsknoten künftig grundsätzlich wichtiger sind als Parks.",
+            "Zu verdeutlichen, dass einfache Gesamtkennzahlen die Wirkung von Grünflächen oft zu stark vereinfachen.",
+            "Zu zeigen, dass Wasserzufuhr der entscheidende Faktor für jede Grünanlage ist."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    }
+  ],
+  "status": "fail",
+  "error": "GenerationBudgetExceeded: generation time budget exhausted",
+  "diagnostics": {
+    "requestId": "b91433731410",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "fail",
+    "totalMs": 95018,
+    "budgetS": 95.0,
+    "llmCalls": 6,
+    "providerMsSum": 98376,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 64103,
+    "promptTokens": 12154,
+    "cachedTokens": 0,
+    "completionTokens": 9709,
+    "reasoningTokens": 6224,
+    "estimatedCostUsd": 0.0,
+    "unpricedModels": [
+      "gpt-5.4"
+    ],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 6,
+        "models": [
+          "gpt-5.4:default",
+          "gpt-5.4:medium"
+        ],
+        "providerMs": 98376,
+        "slotWaitMs": 0,
+        "promptTokens": 12154,
+        "cachedTokens": 0,
+        "completionTokens": 9709,
+        "reasoningTokens": 6224,
+        "estimatedCostUsd": 0.0
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 64103,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 950,
+        "cachedTokens": 0,
+        "completionTokens": 6466,
+        "reasoningTokens": 4085,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 21890,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 4027,
+        "cachedTokens": 0,
+        "completionTokens": 2802,
+        "reasoningTokens": 2139,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1627,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2382,
+        "cachedTokens": 0,
+        "completionTokens": 148,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1745,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2390,
+        "cachedTokens": 0,
+        "completionTokens": 135,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1897,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2405,
+        "cachedTokens": 0,
+        "completionTokens": 158,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 7114,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      }
+    ],
+    "models": [
+      "gpt-5.4:default",
+      "gpt-5.4:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 95.018
+}

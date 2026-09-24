@@ -1,6 +1,132 @@
 // Minallo auth/bootstrap shell.
 // Runs before supabase.js and loader.js so they can read the boot route.
 
+// Install console-log filter IMMEDIATELY so the noisy boot-time logs from
+// supabase.js (Supabase REST client ready, [Auth] path traces) are
+// silenced in production. Real users don't need to see implementation
+// details — and our console was noisier than YouTube/Cloudflare's
+// because we shipped dev logs to prod. Set localStorage.MINALLO_DEBUG=1
+// to re-enable everything when you're actually debugging.
+(function () {
+  try {
+    if (localStorage.getItem('MINALLO_DEBUG') === '1') return;
+  } catch (e) { return; }
+  var origLog = console.log.bind(console);
+  var origWarn = console.warn.bind(console);
+  var devPrefixes = [
+    'Supabase REST client',
+    'Supabase reachable',
+    'app.js + modules loaded',
+    'js/ai.js loaded',
+    '✓ js/ai.js loaded',
+    '✓ New landing page',
+    '[Auth]',
+    '[router]',
+    '[loadUserData]',
+    '[loader]',
+    '[storage]',
+    '[restore]',
+    '[watchdog]',
+  ];
+  function isDev(args) {
+    var first = args && args[0];
+    if (typeof first !== 'string') return false;
+    for (var i = 0; i < devPrefixes.length; i++) {
+      if (first.indexOf(devPrefixes[i]) === 0) return true;
+    }
+    return false;
+  }
+  console.log = function () {
+    if (isDev(arguments)) return;
+    origLog.apply(console, arguments);
+  };
+  console.warn = function () {
+    if (isDev(arguments)) return;
+    origWarn.apply(console, arguments);
+  };
+})();
+
+function _ssForceSplashOff(reason) {
+  try { document.body.setAttribute('data-ss-ready', '1'); } catch (e) {}
+  // Watchdog last resort: never leave the user behind the boot cover.
+  try { document.documentElement.classList.add('mn-boot-done'); } catch (e) {}
+  try {
+    var splash = document.getElementById('ss-splash');
+    if (splash) splash.style.display = 'none';
+  } catch (e) {}
+  if (reason) console.error('[watchdog] ' + reason);
+}
+
+// Recovery paths for state-restore hangs. `recover=1` is automatic and
+// session-safe: it clears stale UI routing only. `reset=1` remains the
+// explicit full-reset escape hatch that also clears authentication.
+(function () {
+  try {
+    var qp = new URLSearchParams(window.location.search);
+    if (qp.get('recover') === '1') {
+      try { localStorage.removeItem('ss_state'); } catch (e) {}
+      try { localStorage.setItem('ss_last_section', 'aipage'); } catch (e) {}
+      try { sessionStorage.setItem('ss_portal_tab', 'aipage'); } catch (e) {}
+      try { sessionStorage.setItem('ss_reset_done', '1'); } catch (e) {}
+      history.replaceState(null, '', window.location.pathname + '#portal=aipage');
+    }
+    if (qp.get('reset') === '1') {
+      try { localStorage.removeItem('ss_state'); } catch (e) {}
+      try { localStorage.removeItem('ss_last_section'); } catch (e) {}
+      try { sessionStorage.removeItem('ss_portal_tab'); } catch (e) {}
+      // Auth tokens too: persistent-refresh restore on boot is itself a
+      // known hang source (Supabase refresh fetch w/ no timeout — see
+      // _sbRefreshAccessToken). Without clearing these, ?reset=1 sends
+      // the user right back into the same hang path.
+      try { localStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { localStorage.removeItem('sb_sess_refresh'); } catch (e) {}
+      try { sessionStorage.removeItem('sb_sess_token'); } catch (e) {}
+      try { sessionStorage.removeItem('ss_logged_in'); } catch (e) {}
+      try { sessionStorage.setItem('ss_reset_done', '1'); } catch (e) {}
+      history.replaceState(null, '', window.location.pathname);
+    }
+  } catch (e) {}
+})();
+
+// Splash watchdog: if ss-ready hasn't fired 15s after boot, the app is
+// hung — most often on a state-restore (e.g. #course=... pointing at a
+// Automatic recovery reloads through `recover=1`, which preserves the
+// authenticated session while clearing only stale UI routing state.
+// One-shot per tab via sessionStorage so we never loop: if a reset has
+// already happened this tab and we're STILL hung, escalate to a hard
+// landing-page bounce instead of redirecting in circles.
+(function () {
+  var ready = false;
+  window.addEventListener('ss-ready', function () {
+    ready = true;
+    // A successful boot proves the one-shot reset is no longer needed.
+    // Leaving this flag sticky makes the next refresh take the "already
+    // reset" branch, which was the repeat-refresh splash trap.
+    try { sessionStorage.removeItem('ss_reset_done'); } catch (e) {}
+  }, { once: true });
+  setTimeout(function () {
+    if (ready) return;
+    var alreadyReset = false;
+    try { alreadyReset = sessionStorage.getItem('ss_reset_done') === '1'; } catch (e) {}
+    if (alreadyReset) {
+      // Reset already tried this tab and we're still hung. Do not trap the
+      // user behind the splash; reveal the page and let auth/router fall back.
+      _ssForceSplashOff('ss-ready never fired after reset — forcing splash off.');
+      return;
+    }
+    if (window.location.search.indexOf('recover=1') !== -1) return;
+    window.location.replace(window.location.pathname + '?recover=1');
+  }, 15000);
+
+  // Last local guard. loader.js also has a 35s hard fallback, but this file
+  // loads earlier and is classic JS, so it still protects users if module
+  // loading itself gets stuck or cached HTML still contains the splash.
+  setTimeout(function () {
+    if (ready) return;
+    _ssForceSplashOff('emergency splash fallback — 25s elapsed without ss-ready.');
+  }, 25000);
+})();
+
 (function () {
   var loggedIn = false;
 
@@ -37,48 +163,106 @@
 
   if (!loggedIn) {
     try {
-      // Tokens persist in localStorage now (so the user stays signed in
-      // across tab close). Fall back to sessionStorage for in-flight
-      // sessions from before this code deployed.
-      if (localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token')) {
+      // Stay-signed-in across browser restart: sessionStorage is volatile per
+      // tab, so after a real restart only the refresh token (in localStorage)
+      // remains. supabase.js's restoreSession() handles the refresh round-trip,
+      // but it only runs when we boot into the app shell — and the app shell
+      // only boots when loggedIn is true here. So treat presence of EITHER an
+      // access token OR a refresh token as "logged in" for boot routing.
+      if (
+        localStorage.getItem('sb_sess_token') ||
+        sessionStorage.getItem('sb_sess_token') ||
+        localStorage.getItem('sb_sess_refresh')
+      ) {
         loggedIn = true;
       }
     } catch (e) {}
   }
 
   window._ssIsLoggedIn = loggedIn;
+  // The chatbot workspace is Minallo's single authenticated entry point.
+  // Keep the underlying portal sections available for chatbot popups/widgets,
+  // but never restore the retired dashboard/Courses UI as the top-level page.
+  if (loggedIn) {
+    try {
+      document.body.classList.add('minallo-chatbot-booting');
+      document.body.classList.add('minallo-chatbot-only');
+      if (!document.getElementById('minalloChatbotBootStyle')) {
+        var _bootStyle = document.createElement('style');
+        _bootStyle.id = 'minalloChatbotBootStyle';
+        // The visible boot state is the single logo cover (#minalloBootCover,
+        // owned by js/boot-cover.js); there is no second boot overlay.
+        _bootStyle.textContent = 'body.minallo-chatbot-booting #portal>*{visibility:hidden!important}';
+        _bootStyle.textContent +=
+          'html body.minallo-chatbot-only #portal .sidebar,html body.minallo-chatbot-only #portal .main>.topbar,html body.minallo-chatbot-only #portal>.page-bg{display:none!important}' +
+          'html body.minallo-chatbot-only #portal{position:fixed!important;inset:0!important;display:block!important;overflow:hidden!important}' +
+          'html body.minallo-chatbot-only #portal .shell,html body.minallo-chatbot-only #portal .main{display:block!important;width:100%!important;height:100%!important;margin:0!important}' +
+          'html body.minallo-chatbot-only #portal .main-scroll{width:100%!important;height:100%!important;padding:0!important;overflow:hidden!important}' +
+          'html body.minallo-chatbot-only #portal .portal-section:not(#psec-aipage){display:none!important}' +
+          'html body.minallo-chatbot-only #psec-aipage{position:fixed!important;inset:0!important;display:block!important;width:100%!important;height:100dvh!important;min-height:0!important;padding:0!important}';
+        document.head.appendChild(_bootStyle);
+      }
+      sessionStorage.setItem('ss_portal_tab', 'aipage');
+      localStorage.setItem('ss_last_section', 'aipage');
+      localStorage.removeItem('ss_state');
+      var _isOAuthCallback = window.location.hash && window.location.hash.indexOf('access_token') !== -1;
+      if (!_isOAuthCallback && window.location.hash !== '#portal=aipage') {
+        history.replaceState({ view: 'portal', section: 'aipage' }, '', '#portal=aipage');
+      }
+    } catch (e) {}
+  }
   if (window.Minallo) {
     window.Minallo.setState({ bootLoggedIn: loggedIn });
     window.Minallo.emit('auth:boot-route', { loggedIn: loggedIn });
   }
 
+  // Honour the saved theme preference. Default to night when nothing is set
+  // (matches the prior site-wide force).
   try {
-    if (localStorage.getItem('ss_dark') === '0') document.body.classList.remove('night');
+    var saved = localStorage.getItem('ss_dark');
+    var nightOn = saved === null ? true : saved !== '0';
+    document.body.classList.toggle('night', nightOn);
+    if (saved === null) localStorage.setItem('ss_dark', '1');
   } catch (e) {}
 
-  if (loggedIn) {
-    var sp = document.getElementById('ss-splash');
-    if (sp) sp.style.display = 'flex';
+  // When the user isn't authenticated, the URL must read minallo.de/ only.
+  // Wipes any stale #portal=… hash or ?error=… query so the landing + auth
+  // modal never display app-route URLs. The app's own router pushes the
+  // section hash back after sign-in.
+  if (!loggedIn) {
+    var hash = window.location.hash;
+    var search = window.location.search;
+    var hasOAuthHashToken = hash && hash.indexOf('access_token') !== -1;
+    if ((hash || search) && !hasOAuthHashToken) {
+      try {
+        history.replaceState(null, '', window.location.pathname);
+      } catch (e) {}
+    }
   }
 })();
 
+// Back/forward cache (bfcache) defeats every in-memory auth check: Chrome
+// restores the cached, authenticated DOM without re-running scripts, so
+// _currentUser is still set and history-state restore re-mounts the app.
+// Always reload on bfcache restore — small flicker on Back navigation,
+// but the dashboard can never reappear post-logout from a cached entry.
+window.addEventListener('pageshow', function (e) {
+  if (e.persisted) window.location.reload();
+});
+
 window._onLoginSuccess = function () {
+  // Cover the landing/auth state with the logo the moment sign-in succeeds,
+  // so the dashboard is never exposed half-way through login.
+  try { if (window.MinalloBoot) window.MinalloBoot.show(); } catch (e) {}
   try {
     sessionStorage.setItem('ss_logged_in', 'true');
     sessionStorage.setItem('ss_last_active', Date.now());
+    sessionStorage.setItem('ss_portal_tab', 'aipage');
+    localStorage.setItem('ss_last_section', 'aipage');
+    localStorage.removeItem('ss_state');
   } catch (e) {}
   if (window.Minallo) window.Minallo.emit('auth:login-success', {});
-  window.location.reload();
-};
-
-window._ssHideSplash = function () {
-  var sp = document.getElementById('ss-splash');
-  if (!sp || sp.style.display === 'none') return;
-  sp.classList.add('ss-splash-out');
-  setTimeout(function () {
-    sp.style.display = 'none';
-    sp.classList.remove('ss-splash-out');
-  }, 550);
+  window.location.replace(window.location.pathname + '#portal=aipage');
 };
 
 var _CFG = window.MinalloConfig || {};
@@ -125,21 +309,41 @@ function _handleGoogleCredential(response) {
   if (window.Minallo) window.Minallo.setAuth('checking', { source: 'google-one-tap' });
   var body = { provider: 'google', id_token: response.credential, gotrue_meta_security: {} };
   if (_oneTapNonce) body.nonce = _oneTapNonce;
+  // Bounded: during a Supabase gateway incident this request can hang instead
+  // of erroring fast, which would leave the user stuck with no feedback and
+  // no fallback (the .catch below never fires for a request that never
+  // settles). Abort and fall back to the OAuth redirect after 10s.
+  var _idTokenTimedOut = false;
+  var _idTokenCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var _idTokenTimer = _idTokenCtrl
+    ? setTimeout(function () {
+        _idTokenTimedOut = true;
+        _idTokenCtrl.abort();
+      }, 10000)
+    : null;
   fetch(_SUPA + '/auth/v1/token?grant_type=id_token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: _SAKEY },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: _idTokenCtrl ? _idTokenCtrl.signal : undefined
   })
     .then(function (r) {
-      return r.json();
+      clearTimeout(_idTokenTimer);
+      return r.json().then(function (d) {
+        d._httpStatus = r.status;
+        return d;
+      });
     })
     .then(function (d) {
       if (d && d.access_token) {
-        // Persistent across tab close (matches _sbStoreSession in supabase.js).
-        localStorage.setItem('sb_sess_token', d.access_token);
+        // Mirror _sbStoreSession in supabase.js exactly: short-lived bearer
+        // access token in sessionStorage (volatile per tab), refresh token
+        // in localStorage so we can refresh after a browser restart. Writing
+        // the access token to localStorage was a security inconsistency vs.
+        // the password-login path.
+        sessionStorage.setItem('sb_sess_token', d.access_token);
         if (d.refresh_token) localStorage.setItem('sb_sess_refresh', d.refresh_token);
-        sessionStorage.removeItem('sb_sess_token');
-        sessionStorage.removeItem('sb_sess_refresh');
+        localStorage.removeItem('sb_sess_token');
         localStorage.removeItem('sb_token');
         localStorage.removeItem('sb_refresh');
         if (window.Minallo)
@@ -151,13 +355,24 @@ function _handleGoogleCredential(response) {
         if (!alreadyIn) window._onLoginSuccess();
       } else {
         if (window.Minallo) window.Minallo.setAuth('failed', { source: 'google-one-tap' });
-        console.warn('[Auth] id_token exchange failed:', d && (d.error || d.msg));
+        // Diagnostics only: HTTP status + Supabase's own error code/message.
+        // Never log id_token/nonce/access/refresh tokens.
+        console.warn(
+          '[Auth] id_token exchange failed:',
+          'status=' + (d && d._httpStatus),
+          'error_code=' + (d && (d.error_code || d.error)),
+          'msg=' + (d && (d.msg || d.error_description))
+        );
         _oauthFallback();
       }
     })
     .catch(function (err) {
+      clearTimeout(_idTokenTimer);
       if (window.Minallo) window.Minallo.setAuth('failed', { source: 'google-one-tap' });
-      console.warn('[Auth] id_token fetch error, falling back to OAuth:', err);
+      console.warn(
+        '[Auth] id_token fetch error' + (_idTokenTimedOut ? ' (timed out)' : '') + ', falling back to OAuth:',
+        err
+      );
       _oauthFallback();
     });
 }
@@ -181,91 +396,112 @@ function _initOneTap() {
       cancel_on_tap_outside: false,
       auto_select: false,
       itp_support: true,
-      // Required since Chrome's FedCM rollout (Oct 2024). Without this flag
-      // Chrome silently suppresses the One Tap prompt — the callback fires
-      // with isNotDisplayed() === true and a browser-policy suppression
-      // reason. That's why no popup appeared on the landing.
-      use_fedcm_for_prompt: true,
+      // use_fedcm_for_prompt is deprecated/ignored by Google — FedCM for the
+      // One Tap prompt is now the only supported behavior and needs no flag.
+      // use_fedcm_for_button is what the *rendered button* (renderButton())
+      // needs, so it's set here since initialize() config is shared by both.
+      use_fedcm_for_button: true,
       nonce: hashedNonce,
       prompt_parent_id: 'ss-one-tap-parent'
     });
 
+    _gsiReady = true;
+    _tryRenderGsiButton();
+
     if (!window._ssIsLoggedIn) {
+      // One Tap is a convenience, not a gate: the browser is free to
+      // suppress it (FedCM policy, dismissal history, account state) and
+      // that is a normal outcome, not an application error. Log it for
+      // diagnostics only — never disable or redirect manual sign-in because
+      // of what happens here.
       google.accounts.id.prompt(function (notification) {
-        if (notification.isNotDisplayed()) {
-          console.warn('[OneTap] not displayed:', notification.getNotDisplayedReason());
-          window._oneTapBlocked = true;
-        } else if (notification.isSkippedMoment()) {
-          console.log('[OneTap] skipped:', notification.getSkippedReason());
-          window._oneTapBlocked = true;
-        } else if (notification.isDismissedMoment()) {
-          var reason = notification.getDismissedReason();
-          console.log('[OneTap] dismissed:', reason);
-          if (reason !== 'credential_returned') window._oneTapBlocked = true;
-        }
+        try {
+          if (notification.isNotDisplayed()) {
+            console.log('[OneTap] not displayed:', notification.getNotDisplayedReason());
+          } else if (notification.isSkippedMoment()) {
+            console.log('[OneTap] skipped:', notification.getSkippedReason());
+          } else if (notification.isDismissedMoment()) {
+            console.log('[OneTap] dismissed:', notification.getDismissedReason());
+          }
+        } catch (e) {}
       });
     }
   });
 }
 
+// Renders the official GIS "Continue with Google" button into #googleSignInGsi
+// once both GIS is initialized and the host element exists. auth.html is
+// injected dynamically and may mount before or after GIS finishes loading,
+// so this is mount-safe and idempotent from either direction: _initOneTap
+// calls it once GIS is ready, and the MutationObserver below calls it if the
+// host mounts afterward.
+var _gsiReady = false;
+var _gsiButtonRendered = false;
+function renderGoogleSignInButton() {
+  if (_gsiButtonRendered) return true;
+  if (!_gsiReady || typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+    return false;
+  }
+  var host = document.getElementById('googleSignInGsi');
+  if (!host) return false;
+  try {
+    google.accounts.id.renderButton(host, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'continue_with',
+      shape: 'rectangular',
+      logo_alignment: 'left',
+      width: 320
+    });
+  } catch (e) {
+    console.warn('[Auth] renderButton failed:', e);
+    return false;
+  }
+  _gsiButtonRendered = true;
+  host.hidden = false;
+  var fallback = document.getElementById('googleSignIn');
+  if (fallback) fallback.hidden = true;
+  return true;
+}
+window.renderGoogleSignInButton = renderGoogleSignInButton;
+function _tryRenderGsiButton() {
+  return renderGoogleSignInButton();
+}
+
+(function () {
+  if (typeof MutationObserver === 'undefined') return;
+  var mo = new MutationObserver(function () {
+    if (_tryRenderGsiButton()) mo.disconnect();
+  });
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+})();
+window.addEventListener('auth-modal-mounted', _tryRenderGsiButton);
+
+// Landing "Sign in" / CTA buttons: open the normal Minallo auth modal.
+// This used to try Google One Tap first and only fall back to the modal
+// when the prompt was skipped/dismissed/not-displayed — mixing an
+// automatic, browser-controlled prompt with an explicit user click, and
+// reloading the page whenever the browser suppressed One Tap. One Tap now
+// runs on its own (see _initOneTap) and never gates this button.
 window._googleAuth = function () {
   if (window.Minallo)
     window.Minallo.emit('auth:google-start', {
       inAppShell: !!document.getElementById('authModal')
     });
 
-  if (document.getElementById('authModal')) {
-    _oauthFallback();
+  if (typeof window.landShowAuth === 'function') {
+    window.landShowAuth();
     return;
   }
 
-  if (window._oneTapBlocked) {
-    try {
-      sessionStorage.setItem('ss_force_app', 'true');
-      sessionStorage.setItem('ss_show_auth', 'true');
-    } catch (e) {}
-    window.location.reload();
-    return;
-  }
-
-  var showAuthModal = function () {
-    try {
-      sessionStorage.setItem('ss_force_app', 'true');
-      sessionStorage.setItem('ss_show_auth', 'true');
-    } catch (e) {}
-    window.location.reload();
-  };
-
-  var tryOneTap = function () {
-    google.accounts.id.prompt(function (notification) {
-      if (
-        notification.isNotDisplayed() ||
-        notification.isSkippedMoment() ||
-        (notification.isDismissedMoment() &&
-          notification.getDismissedReason() !== 'credential_returned')
-      ) {
-        window._oneTapBlocked = true;
-        showAuthModal();
-      }
-    });
-  };
-
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    tryOneTap();
-    return;
-  }
-
-  var attempts = 0;
-  var wait = setInterval(function () {
-    attempts++;
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-      clearInterval(wait);
-      tryOneTap();
-    } else if (attempts >= 30) {
-      clearInterval(wait);
-      showAuthModal();
-    }
-  }, 100);
+  // Full app shell (auth modal + landShowAuth) isn't loaded yet — lazily
+  // load it, same as clicking sign-in normally does pre-hydration.
+  try {
+    sessionStorage.setItem('ss_force_app', 'true');
+    sessionStorage.setItem('ss_show_auth', 'true');
+  } catch (e) {}
+  window.location.reload();
 };
 
 var _gsiTimer = setInterval(function () {

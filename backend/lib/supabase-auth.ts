@@ -1,42 +1,30 @@
 // Verifies a Supabase user JWT against the Supabase Auth API.
 // Returns the user object on success, or null on failure.
+//
+// Uses Web `fetch` instead of Node's `https.request` so this module runs
+// unchanged on both Netlify (Node) and Cloudflare Pages (Workers, where
+// unenv's https shim throws "https.request is not implemented yet").
 
-import https from 'https';
 import { requireEnv } from './env';
 import type { HttpHeaders, SupabaseUser } from './types';
 
-export function verifySupabaseToken(token: string): Promise<SupabaseUser | null> {
-  return new Promise<SupabaseUser | null>(function (resolve) {
+export async function verifySupabaseToken(token: string): Promise<SupabaseUser | null> {
+  try {
     const supaUrl = requireEnv('SUPABASE_URL');
     const anonKey = requireEnv('SUPABASE_ANON_KEY');
-    const req = https.request(
-      {
-        hostname: new URL(supaUrl).hostname,
-        path: '/auth/v1/user',
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          apikey: anonKey
-        }
-      },
-      function (res) {
-        let data = '';
-        res.on('data', function (c) {
-          data += c;
-        });
-        res.on('end', function () {
-          try {
-            const user = JSON.parse(data) as SupabaseUser;
-            resolve(res.statusCode === 200 && user && user.id ? user : null);
-          } catch {
-            resolve(null);
-          }
-        });
+    const res = await fetch(supaUrl.replace(/\/$/, '') + '/auth/v1/user', {
+      method: 'GET',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        apikey: anonKey
       }
-    );
-    req.on('error', function () { resolve(null); });
-    req.end();
-  });
+    });
+    if (res.status !== 200) return null;
+    const user = (await res.json()) as SupabaseUser;
+    return user && user.id ? user : null;
+  } catch {
+    return null;
+  }
 }
 
 // Extract Bearer token from Authorization header. Returns null if missing.

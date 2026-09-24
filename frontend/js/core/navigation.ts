@@ -6,8 +6,6 @@
 import { hideFilesView, selectTopLevelView, showFilesView } from './panels.js';
 import type { LegacyCourse } from '../../globals.js';
 
-let _activePortalSection: HTMLElement | null = null;
-
 export function setNavActive(id: string): void {
   document.querySelectorAll('.psb').forEach((el) => {
     el.classList.remove('on');
@@ -16,21 +14,27 @@ export function setNavActive(id: string): void {
   if (el) el.classList.add('on');
 }
 
-const SECTION_TITLES: Record<string, string> = {
-  dashboard: 'Dashboard',
-  notes: 'Lecture Notes',
-  editor: 'Editor',
-  profile: 'Profile',
-  settings: 'Settings',
-  subscription: 'Subscription',
-  studip: 'Courses',
-  chat: 'Chat',
-  notifications: 'Notifications',
-  games: 'Games',
-  lounge: 'Study Lounge',
-  aipage: 'Chatbot',
-  german: 'Practice',
+const SECTION_TITLE_KEYS: Record<string, string> = {
+  dashboard: 'nav_dashboard',
+  notes: 'nav_notes',
+  editor: 'nav_editor',
+  profile: 'nav_profile',
+  settings: 'nav_settings',
+  subscription: 'nav_subscription',
+  studip: 'nav_courses',
+  chat: 'nav_chat',
+  notifications: 'nav_notifications',
+  games: 'nav_games',
+  lounge: 'nav_lounge',
+  aipage: 'nav_chatbot',
+  german: 'nav_practice',
 };
+
+function _sectionTitle(sec: string): string {
+  const key = SECTION_TITLE_KEYS[sec];
+  if (key && typeof window._t === 'function') return window._t(key);
+  return key || sec;
+}
 
 export function showPortalSection(sec: string): void {
   const gamesItem = document.getElementById('psbGames');
@@ -47,6 +51,7 @@ export function showPortalSection(sec: string): void {
 
   function revealTarget(): void {
     document.querySelectorAll<HTMLElement>('.portal-section').forEach((el) => {
+      if (el === target) return;
       el.style.display = 'none';
       el.classList.remove('psec-entering', 'psec-leaving');
     });
@@ -54,29 +59,25 @@ export function showPortalSection(sec: string): void {
     target.style.display =
       target.classList.contains('editor-portal-section') || sec === 'chat' ? 'flex' : 'block';
     target.classList.remove('psec-entering');
-    void target.offsetWidth;
     target.classList.add('psec-entering');
     if (ms) ms.classList.toggle('editor-active', sec === 'editor' || sec === 'chat');
-    if (tt) tt.textContent = SECTION_TITLES[sec] || sec;
+    if (tt) {
+      tt.textContent = _sectionTitle(sec);
+      const key = SECTION_TITLE_KEYS[sec];
+      if (key) tt.setAttribute('data-i18n', key);
+    }
     if (fab) fab.classList.toggle('visible', sec === 'dashboard');
-    _activePortalSection = target;
 
     const aiPanel = document.getElementById('aiPanel');
-    const aiBubble = document.getElementById('aiBubble');
     if (sec !== 'studip') {
       if (typeof window.forceCloseAI === 'function') window.forceCloseAI();
       else if (aiPanel) aiPanel.classList.remove('visible');
-      if (aiBubble) aiBubble.style.display = 'none';
-      if (typeof window._aiBubbleClose === 'function') window._aiBubbleClose();
-    } else {
-      if (aiBubble) aiBubble.style.display = '';
     }
 
     // Document rail: visible on the courses dashboard (psec-studip) only here;
     // PDF visibility is handled by panels.ts → showFilesView / hideFilesView.
     // Use a global to avoid creating a hard import dependency from navigation
     // into the new feature module.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dr = (window as any).__minalloDocRail as
       | { setRouteVisibility: (route: 'pdf' | 'courses' | 'other') => void }
       | undefined;
@@ -85,54 +86,25 @@ export function showPortalSection(sec: string): void {
     }
   }
 
-  const leaving = _activePortalSection;
-  if (leaving && leaving !== target && leaving.style.display !== 'none') {
-    leaving.classList.add('psec-leaving');
-    setTimeout(revealTarget, 170);
-  } else {
-    revealTarget();
-  }
+  // performance.css disables the section cross-fade app-wide, so the old 170ms
+  // wait before swapping sections was pure dead time that made every navigation
+  // feel sluggish. Reveal immediately; the entering animation (kept only for the
+  // chat/aipage routes in performance.css) still plays.
+  revealTarget();
 }
 
 export function showPortal(): void {
   if (typeof window._statsStopFile === 'function') window._statsStopFile();
   const portal = document.getElementById('portal');
   if (!portal) return;
-  const app = document.getElementById('app');
-  const studip = document.getElementById('studipDash');
-  const alreadyVisible =
-    portal.classList.contains('show') &&
-    portal.style.display !== 'none' &&
-    !!app &&
-    app.style.display === 'none';
-  const studipVisible = !!studip && studip.style.display !== 'none';
-
-  if (!alreadyVisible || studipVisible) {
-    hideFilesView();
-    portal.style.transition = 'none';
-    portal.style.opacity = '0';
-    portal.style.transform = 'scale(0.97)';
-    portal.style.pointerEvents = 'none';
-    portal.style.zIndex = '220';
-    portal.classList.add('show');
-    void portal.offsetWidth;
-    portal.style.transition =
-      'opacity 380ms cubic-bezier(0.22,1,0.36,1),transform 380ms cubic-bezier(0.22,1,0.36,1)';
-    portal.style.opacity = '1';
-    portal.style.transform = 'scale(1)';
-    portal.style.pointerEvents = 'auto';
-    setTimeout(() => {
-      portal.style.zIndex = '';
-      portal.style.opacity = '';
-      portal.style.transition = '';
-      portal.style.transform = '';
-      portal.style.display = 'block';
-    }, 400);
-  } else {
-    hideFilesView();
-    portal.classList.add('show');
-    portal.style.display = 'block';
-  }
+  hideFilesView();
+  portal.classList.add('show');
+  portal.style.display = 'block';
+  portal.style.opacity = '';
+  portal.style.transition = '';
+  portal.style.transform = '';
+  portal.style.pointerEvents = '';
+  portal.style.zIndex = '';
   try {
     const st = JSON.parse(localStorage.getItem('ss_state') || '{}');
     st.inApp = false;
@@ -246,9 +218,6 @@ export function showStudipResume(): boolean {
   // sidebar — otherwise whichever section the user just left stays highlighted.
   setNavActive('pcStudip');
 
-  const aiBubble = document.getElementById('aiBubble');
-  if (aiBubble) aiBubble.style.display = '';
-
   window.openFile(hit.file, hit.course);
   return true;
 }
@@ -279,22 +248,8 @@ export function hideStudip(stRunning?: boolean): void {
 export function navTo(navId: string, section: string): void {
   const appEl = document.getElementById('app');
   const fromFiles = !!(appEl && appEl.style.display !== 'none');
-  const studipEl = document.getElementById('studipDash');
-  const fromStudip = !!(studipEl && studipEl.style.display !== 'none');
 
   if (fromFiles) stashResumeFile();
-  // Hide every portal-section *before* the portal fades in. Otherwise the
-  // previously-active section (typically the courses dashboard, since we're
-  // coming from the PDF view) is still display:block during the 380ms
-  // fade-in and flashes as a ghost page before showPortalSection swaps in
-  // the target section.
-  if (fromFiles || fromStudip) {
-    document.querySelectorAll<HTMLElement>('.portal-section').forEach((el) => {
-      el.style.display = 'none';
-    });
-    _activePortalSection = null;
-    showPortal();
-  }
   setNavActive(navId);
   if (typeof window.showPortalSection === 'function') window.showPortalSection(section);
   else showPortalSection(section);
