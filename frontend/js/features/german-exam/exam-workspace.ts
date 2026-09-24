@@ -131,6 +131,13 @@ export function chatPanelLinkHidden(state: ExamWorkspaceState, skill: string): b
   return staticExamCardState(state, skill).hidden;
 }
 
+/** The chatbot panel's static Sprechen link follows the manifest as well: only an exam with a speaking section has it. */
+export function chatSpeakingLinkHidden(state: ExamWorkspaceState): boolean {
+  if (state.status === 'ready' && state.manifest) return !state.manifest.modules.some((m) => m.id === 'speaking');
+  if (state.status === 'loading' || state.status === 'error') return true;
+  return false; // no exam-specific profile: unchanged legacy behaviour
+}
+
 /**
  * Body of a generation request. Built ONLY from the current, ready manifest so a stale mounted workspace
  * can never send the previous exam's profile id or a part the current exam does not have.
@@ -409,6 +416,11 @@ function applyChatPanelLinks(state: ExamWorkspaceState): void {
     const hide = chatPanelLinkHidden(state, link.getAttribute('data-workspace-skill') || '');
     link.hidden = hide;
     // chatbot.css gives .ncb-german-panel-link an explicit display, which overrides [hidden]: hide it explicitly.
+    link.style.display = hide ? 'none' : '';
+  });
+  document.querySelectorAll<HTMLElement>('[data-testid="german-panel-speaking"]').forEach((link) => {
+    const hide = chatSpeakingLinkHidden(state);
+    link.hidden = hide;
     link.style.display = hide ? 'none' : '';
   });
 }
