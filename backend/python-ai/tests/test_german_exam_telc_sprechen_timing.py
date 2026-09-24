@@ -25,4 +25,5 @@ def test_sprechen_1_time_limit_is_the_per_participant_share() -> None:
 
 def test_speaking_point_weights_match_the_handbook() -> None:
     assert SPEAKING_TASK_MAXIMA["presentation"] == 6 and SPEAKING_TASK_MAXIMA["summary_followup"] == 4
+    assert SPEAKING_TASK_MAXIMA["discussion"] == 6  # Handbuch p.50: Teil 2 = 6 Punkte
     assert sum(SPEAKING_LANGUAGE_MAXIMA.values()) == 32
