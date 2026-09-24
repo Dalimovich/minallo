@@ -13,7 +13,7 @@ from .shared import ExamProfile, ModuleSpec, PartBlueprint, ScoringSpec
 
 _TELC_C1_HOCHSCHULE_HOEREN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
-        part_id="hv1",
+        part_id="hv1", available=True,
         module="listening",
         title="Globalverstehen",
         task_type="speaker_statement_matching",
@@ -36,7 +36,7 @@ _TELC_C1_HOCHSCHULE_HOEREN: tuple[PartBlueprint, ...] = (
         approx_duration_seconds=480,  # ~ 8 min, per official material — audio length, not prep time
     ),
     PartBlueprint(
-        part_id="hv2",
+        part_id="hv2", available=True,
         module="listening",
         title="Detailverstehen",
         task_type="sentence_completion_mc3",
@@ -62,7 +62,7 @@ _TELC_C1_HOCHSCHULE_HOEREN: tuple[PartBlueprint, ...] = (
         approx_duration_seconds=540,  # ~ 9 min
     ),
     PartBlueprint(
-        part_id="hv3",
+        part_id="hv3", available=True,
         module="listening",
         title="Informationstransfer",
         task_type="structured_note_completion",
@@ -93,7 +93,7 @@ LESEN_SPRACHBAUSTEINE_SHARED_MINUTES = 90
 
 _TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
-        part_id="lesen_1",
+        part_id="lesen_1", available=True,
         module="reading",
         title="Textrekonstruktion",
         task_type="text_reconstruction_sentence_matching",
@@ -114,7 +114,7 @@ _TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
         scoring=ScoringSpec(max_points=12, points_per_correct=2),
     ),
     PartBlueprint(
-        part_id="lesen_2",
+        part_id="lesen_2", available=True,
         module="reading",
         title="Selektives Verstehen",
         task_type="section_statement_matching",
@@ -136,7 +136,7 @@ _TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
         scoring=ScoringSpec(max_points=12, points_per_correct=2),
     ),
     PartBlueprint(
-        part_id="lesen_3",
+        part_id="lesen_3", available=True,
         module="reading",
         title="Detail- und Globalverstehen",
         task_type="detail_tristate_with_global_heading",
@@ -162,7 +162,7 @@ _TELC_C1_HOCHSCHULE_LESEN: tuple[PartBlueprint, ...] = (
 
 _TELC_C1_HOCHSCHULE_SPRACHBAUSTEINE: tuple[PartBlueprint, ...] = (
     PartBlueprint(
-        part_id="sprachbausteine_1",
+        part_id="sprachbausteine_1", available=True,
         module="language_elements",
         title="Sprachbausteine",
         task_type="cloze_mc4_language_elements",
@@ -199,7 +199,7 @@ SCHREIBEN_MINUTES = 70
 
 _TELC_C1_HOCHSCHULE_SCHREIBEN: tuple[PartBlueprint, ...] = (
     PartBlueprint(
-        part_id="schreiben_1",
+        part_id="schreiben_1", available=True,
         module="writing",
         title="Schreiben",
         task_type="choice_long_form_writing",
@@ -253,7 +253,7 @@ _SPEAKING_TAGS = ("task_fulfilment", "fluency", "interaction", "argumentation", 
 _SPEAKING_ADAPTATIONS = ("argument_complexity", "required_spontaneity", "counterargument_pressure", "register_challenge", "followup_complexity")
 _TELC_C1_HOCHSCHULE_SPRECHEN = (
     PartBlueprint(
-        part_id="sprechen_1", module="speaking", title="Präsentation, Zusammenfassung und Anschlussfragen",
+        part_id="sprechen_1", available=True, module="speaking", title="Präsentation, Zusammenfassung und Anschlussfragen",
         task_type="presentation_summary_followup",
         constraints={"topicChoiceCount": 2, "presentationSeconds": 180, "summaryFollowupSeconds": 120,
                      "subtasks": ["1A", "1B"], "taskMaxima": {"presentation": 6, "summary_followup": 4}},
@@ -262,7 +262,7 @@ _TELC_C1_HOCHSCHULE_SPRECHEN = (
         grading_dimensions=("presentation", "summary_followup"), time_limit_seconds=300,
     ),
     PartBlueprint(
-        part_id="sprechen_2", module="speaking", title="Diskussion", task_type="quote_guided_discussion",
+        part_id="sprechen_2", available=True, module="speaking", title="Diskussion", task_type="quote_guided_discussion",
         constraints={"discussionTopicCount": 1, "examinerTopicPoolCount": 3, "discussionSeconds": 360,
                      "taskMaxima": {"discussion": 6}},
         allowed_skill_tags=_SPEAKING_TAGS, allowed_adaptations=_SPEAKING_ADAPTATIONS,

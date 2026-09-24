@@ -108,7 +108,8 @@ class PartBlueprint:
     # False while the part is part of the official exam structure but Minallo cannot generate
     # it yet: it shows in the exam navigation, generation fails cleanly (501), and it is never
     # served by another exam's implementation. Flip to True in the exam's own profile file.
-    available: bool = True
+    # Fail closed: a part is unavailable unless its profile explicitly opts in after qualification.
+    available: bool = False
 
 
 @dataclass(frozen=True)
