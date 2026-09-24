@@ -134,17 +134,17 @@ def test_goethe_parts_all_remain_unavailable_unchanged():
         assert part.available is False, f"goethe {module}/{part.part_id} unexpectedly available"
 
 
-def test_no_part_anywhere_sets_available_true_explicitly_except_via_the_dataclass_default():
-    """Structural proxy for `grep -rn "available=True"` (run separately, see final report):
-    every TELC part's availability is the dataclass default (True), not something re-asserted
-    in the profile file itself — confirmed by re-reading the source text once, here, as a test
-    rather than only a manual grep step."""
+def test_only_the_telc_profile_file_opts_parts_in_explicitly():
+    """PartBlueprint.available defaults to False (fail closed). The only place `available=True`
+    may appear is the TELC profile file, exactly once per released part; Goethe and TestDaF must
+    contain none. The effective set is frozen separately in test_german_exam_availability_gate.py."""
     import inspect
 
-    from app.services.german_exams import telc_c1_hochschule
+    from app.services.german_exams import goethe_c1, telc_c1_hochschule, testdaf_digital
 
-    source = inspect.getsource(telc_c1_hochschule)
-    assert "available=True" not in source
+    assert inspect.getsource(telc_c1_hochschule).count("available=True") == 10
+    assert "available=True" not in inspect.getsource(goethe_c1)
+    assert "available=True" not in inspect.getsource(testdaf_digital)
 
 
 # --- Unsupported-modality / unimplemented-task-type handling stays fail-closed ----------------

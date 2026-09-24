@@ -67,3 +67,11 @@ def test_manifest_never_reports_a_blocked_part_as_implemented(monkeypatch) -> No
     monkeypatch.setattr(manifest_mod, "is_task_type_implemented", lambda _t: True)
     for _profile, _module, part in _blocked():
         assert manifest_mod._part(part)["implemented"] is False
+
+
+def test_part_blueprint_fails_closed_when_availability_is_not_stated() -> None:
+    from app.services.german_exams.shared import PartBlueprint
+
+    part = PartBlueprint(part_id="x", module="reading", title="t", task_type="x", constraints={},
+                         allowed_skill_tags=(), allowed_adaptations=())
+    assert part.available is False
