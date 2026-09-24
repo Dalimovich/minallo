@@ -177,6 +177,22 @@ Defects found by this check and fixed before committing: (1) `chatbot.css` sets 
 its card; (3) the module cards duplicated the part list already shown by the task workspace; (4) unreadable disabled part buttons.
 This harness is scratch tooling (not committed). The repository's Playwright e2e suite (`tests/e2e/33-…`) was **not** run here (needs the full app + auth).
 
+## 9b. Offline qualification suite (no OpenAI)
+
+`dsh_qualification.py` + `tests/test_german_exam_dsh_offline_qualification.py` (50 tests) define the automated gates AI-generated DSH content must
+pass, with the two AI judgements **injected** (`blind_solver` for WS, `content_matcher` for open-answer grading) so today they run against deterministic
+fakes and later against a real model with no code change. Hand-authored golden content (`tests/dsh_golden_content.py`: an LV text of 4,775 chars, an
+HV lecture of 5,968 chars, WS items anchored to exact LV sentences, content keys with reference answers and error-ridden variants, a TP task) must
+pass every gate; each gate is also proven to fail on a targeted mutation. A gate that needs a judgement but got none is `skipped`, so a report is
+`qualified` only when every gate ran and passed — and even then it cannot flip availability (manual review and live UI validation still apply).
+Gates: LV length/forms/graphic, WS source binding (id + fingerprint + exact quoted span), WS item well-formedness (official forms/categories, unambiguous
+answer families), WS key not leaked in the prompt, WS blind solver (sees the prompt only: not the key, not the quoted source sentence), HV/LV structure and
+official length, reference answer reaches full marks, empty answer scores 0, language errors do not change a content score, TP anchored in its inputs and
+not a free essay (narrow heuristic), topic-area rule. A socket tripwire proves the suite never touches the network.
+Bug found while writing it: the blind view first included `sourceSentence`, which for completion items *is* the answer — now hidden.
+Known weakness the gates cannot fix: a completion item whose gap sits in a sentence copied from the LV text is answerable by looking at the text; that is
+a content-design matter for the semantic/manual review phase.
+
 ## 10. Branch note
 
 `chore/zero-cost-correctness` (not merged, 3 commits ahead of main: TestDaF writing-grading shape fix, QA-harness reachability, an

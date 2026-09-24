@@ -23,15 +23,15 @@ from app.services.german_exam_speaking_practice import GRADABLE_SPEAKING_PROFILE
 
 PKG = Path(__file__).resolve().parents[1] / "app" / "services" / "german_exams"
 DSH_FILES = sorted(PKG.glob("dsh*.py"))
-ALLOWED_IMPORTS = {"__future__", "dataclasses", "decimal", "fractions", "hashlib", "math", "typing", "unicodedata"}
-ALLOWED_RELATIVE = {"shared", "dsh", "registry"}
+ALLOWED_IMPORTS = {"__future__", "collections", "dataclasses", "decimal", "fractions", "hashlib", "math", "typing", "unicodedata"}
+ALLOWED_RELATIVE = {"shared", "dsh", "registry", "dsh_content_model"}
 DSH_PARTS = [(m, p.part_id) for m, parts in get_profile("dsh").modules.items() for p in parts]
 USER = "11111111-1111-4111-8111-111111111111"
 AUTH = {"X-Internal-Token": "test-token"}
 
 
 def test_there_are_dsh_files_to_scan() -> None:
-    assert {f.name for f in DSH_FILES} == {"dsh.py", "dsh_result.py", "dsh_content_model.py", "dsh_hv_playback.py"}
+    assert {f.name for f in DSH_FILES} == {"dsh.py", "dsh_result.py", "dsh_content_model.py", "dsh_hv_playback.py", "dsh_qualification.py"}
 
 
 @pytest.mark.parametrize("path", DSH_FILES, ids=lambda p: p.name)
