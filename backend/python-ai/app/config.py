@@ -136,6 +136,10 @@ class Settings(BaseSettings):
     qwen_tts_model_version: str = Field("qwen3-tts-12hz-0.6b-base-v1", alias="QWEN_TTS_MODEL_VERSION")
     qwen_tts_voice: str = Field("minallo-de-1", alias="QWEN_TTS_VOICE")
     tts_audio_bucket: str = Field("generated-audio", alias="TTS_AUDIO_BUCKET")
+    # Private bucket for exam video assets (e.g. TestDaF Hören video tasks). Infrastructure
+    # only: nothing in this codebase produces video; assets are supplied by a separate,
+    # human-approved acquisition step before any video part can be enabled.
+    exam_video_bucket: str = Field("generated-video", alias="EXAM_VIDEO_BUCKET")
     # How many segments this service generates against Qwen at once for one
     # /tts/generate-batch call. This is a SEPARATE, tighter backstop than
     # qwen-tts's own QWEN_TTS_MAX_CONCURRENCY (which caps true model-level
