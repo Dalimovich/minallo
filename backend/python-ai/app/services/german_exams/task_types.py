@@ -58,6 +58,12 @@ TASK_TYPES: dict[str, bool] = {
     "formal_context_message": True,
     "presentation_with_followup": True,
     "guided_pair_discussion": True,
+    # --- DSH (structure only: no generator, validator-in-pipeline, renderer or grader exists yet) ---
+    "dsh_hv_lecture_tasks": False,
+    "dsh_lv_text_tasks": False,
+    "dsh_ws_structure_tasks": False,
+    "dsh_tp_chart_based_argumentation": False,
+    "dsh_oral_presentation_conversation": False,
 }
 
 

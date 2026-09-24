@@ -86,6 +86,21 @@ SKILL_TAGS: dict[str, frozenset[str]] = {
             "lexical_choice",
         }
     ),
+    # DSH "Wissenschaftssprachliche Strukturen" (MPO §10(4)2d: syntactic, morphological, lexical,
+    # idiomatic, text-type-related structures). Deliberately its own vocabulary — NOT the
+    # telc Sprachbausteine "language_elements" one.
+    "scientific_structures": frozenset(
+        {
+            "syntactic_structure",
+            "morphological_structure",
+            "lexical_structure",
+            "idiomatic_structure",
+            "text_type_structure",
+            "paraphrase",
+            "transformation",
+            "complex_structure_comprehension",
+        }
+    ),
 }
 
 

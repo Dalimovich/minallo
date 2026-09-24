@@ -90,6 +90,9 @@ class ModuleSpec:
     preparation_seconds: int | None = None  # official preparation time (speaking), when verified
     scoring: ScoringSpec | None = None  # module-level scoring (e.g. raw->100 lookup), when verified
     note: str | None = None
+    # Official short code the exam itself uses for this module (e.g. DSH "HV"). Optional and
+    # purely presentational: the manifest only emits it when set.
+    code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,4 +138,12 @@ class ExamProfile:
     # Full-exam-simulation delivery rules; None means "free navigation, no module timer" —
     # unchanged behaviour for every profile that has not opted into a timed simulation.
     delivery_policy: DeliveryPolicy | None = None
+    # Exam-defined result model (levels, weights, thresholds) for exams whose official result is
+    # NOT a per-module raw score. Descriptive manifest data; the arithmetic lives in the exam's own
+    # calculator module. None -> not emitted, so every existing profile's manifest is unchanged.
+    result_model: dict | None = None
+    # How the exam workspace presents this exam. Generic, data-driven UI switches (never an exam
+    # name check in the frontend): e.g. {"moduleCards": "manifest", "disclaimer": "..."}.
+    # None -> legacy presentation, unchanged.
+    presentation: dict | None = None
 

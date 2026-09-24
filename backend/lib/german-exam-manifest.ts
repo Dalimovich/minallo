@@ -41,6 +41,8 @@ export interface ExamManifest {
 }
 
 export type ExamPartCheck = 'ok' | 'unknown' | 'unverified';
+/** 'unavailable' = the part is in the exam's structure but cannot be generated yet (manifest `implemented: false`). */
+export type ExamPartAvailability = 'available' | 'unavailable' | 'unverified';
 
 const TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; manifest: ExamManifest }>();
@@ -79,6 +81,23 @@ export async function checkExamPart(
   const manifest = await fetchExamManifest(profileId);
   if (!manifest) return 'unverified';
   return manifestFindPart(manifest, module, partId) ? 'ok' : 'unknown';
+}
+
+/**
+ * Whether a part that EXISTS in the profile can be generated today. Used only by the generate endpoint to
+ * reject an unavailable part before any paid-usage accounting. 'unverified' (manifest unreachable, or the
+ * part is unknown) never blocks: python-ai's own validation still runs before any model cost.
+ */
+export async function checkExamPartAvailability(
+  profileId: string,
+  module: string,
+  partId: string
+): Promise<ExamPartAvailability> {
+  const manifest = await fetchExamManifest(profileId);
+  if (!manifest) return 'unverified';
+  const part = manifestFindPart(manifest, module, partId);
+  if (!part) return 'unverified';
+  return part.implemented === true ? 'available' : 'unavailable';
 }
 
 /** 'ok' when the module exists in the profile; same semantics as checkExamPart. */
