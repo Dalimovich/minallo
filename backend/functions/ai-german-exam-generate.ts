@@ -20,7 +20,7 @@ import { requireActiveSubscription } from '../lib/subscription-gate';
 import { isGermanSpeakingEnabled } from '../lib/feature-flags';
 import { logSecurityEvent } from '../lib/logger';
 import { getGermanLearnerProfile, unsupportedExamProfileMessage } from '../lib/german-learner-profile';
-import { checkExamPart, isIdentifier } from '../lib/german-exam-manifest';
+import { checkExamPart, checkExamPartAvailability, isIdentifier } from '../lib/german-exam-manifest';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 const GENERATE_RATE_LIMIT_MAX = parseInt(optionalEnv('AI_GERMAN_EXAM_GENERATE_RATE_LIMIT_MAX', '30'), 10);
@@ -98,6 +98,11 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!isIdentifier(earlyBody.partId)) return fail(400, 'invalid or unsupported partId');
   const partCheck = await checkExamPart(profileId, earlyBody.module, earlyBody.partId);
   if (partCheck === 'unknown') return fail(400, 'invalid or unsupported module/partId for your exam');
+  // In the exam's structure but not generatable yet (e.g. every DSH part today): reject BEFORE
+  // subscription/cap/rate-limit accounting so an unavailable part can never consume paid usage.
+  if ((await checkExamPartAvailability(profileId, earlyBody.module, earlyBody.partId)) === 'unavailable') {
+    return fail(422, 'This exam part is not available yet.');
+  }
 
   const subBlocked = await requireActiveSubscription(serviceKey, user.id, 'ai_german_exam_generate');
   if (subBlocked) return subBlocked;

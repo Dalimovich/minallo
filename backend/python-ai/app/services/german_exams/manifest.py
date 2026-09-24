@@ -64,7 +64,7 @@ def build_manifest(profile: ExamProfile) -> dict[str, Any]:
     for module in module_order(profile):
         parts = profile.modules[module] or ()
         spec: ModuleSpec | None = (profile.module_specs or {}).get(module)
-        modules.append({
+        entry = {
             "id": module,
             "label": spec.label if spec else _DEFAULT_MODULE_LABELS.get(module, module),
             "durationSeconds": spec.duration_seconds if spec else None,
@@ -72,8 +72,11 @@ def build_manifest(profile: ExamProfile) -> dict[str, Any]:
             "note": spec.note if spec else None,
             "scoring": _scoring(spec.scoring) if spec else None,
             "parts": [_part(p) for p in parts],
-        })
-    return {
+        }
+        if spec and spec.code:
+            entry["code"] = spec.code
+        modules.append(entry)
+    manifest = {
         "schemaVersion": MANIFEST_SCHEMA_VERSION,
         "profileId": profile.profile_id,
         "profileVersion": profile.profile_version,
@@ -84,3 +87,8 @@ def build_manifest(profile: ExamProfile) -> dict[str, Any]:
         "deliveryPolicy": _delivery_policy(profile.delivery_policy),
         "modules": modules,
     }
+    if profile.result_model is not None:
+        manifest["resultModel"] = profile.result_model
+    if profile.presentation is not None:
+        manifest["presentation"] = profile.presentation
+    return manifest

@@ -1,4 +1,372 @@
 {
+  "dsh": {
+    "cefrLevel": null,
+    "deliveryPolicy": null,
+    "displayName": "DSH",
+    "family": "DSH",
+    "modules": [
+      {
+        "code": "HV",
+        "durationSeconds": 3000,
+        "id": "listening",
+        "label": "Hörverstehen",
+        "note": "Bearbeitungszeit 10 + 40 Minuten; der zweimalige Vortrag zählt nicht dazu.",
+        "parts": [
+          {
+            "constraints": {
+              "aids": "monolingual_dictionary_paper_only",
+              "assessment": "content",
+              "communicativeSituation": "lecture_or_seminar_exercise",
+              "languageCorrectnessAssessed": false,
+              "lectureCharsMax": 7000,
+              "lectureCharsMin": 5500,
+              "lectureLengthUnit": "characters_with_spaces_of_equivalent_written_text",
+              "namesDatesTermsMayBeGiven": true,
+              "notesAllowed": true,
+              "presentationCount": 2,
+              "processingTimeExcludesPresentation": true,
+              "processingWindows": [
+                {
+                  "afterPresentation": 1,
+                  "seconds": 600
+                },
+                {
+                  "afterPresentation": 2,
+                  "seconds": 2400
+                }
+              ],
+              "specialistKnowledgeRequired": false,
+              "taskForms": [
+                "questions",
+                "structure_sketch",
+                "summary",
+                "line_of_thought"
+              ],
+              "taskFormsCombinable": true,
+              "topicHintAllowed": true,
+              "visualAidsAllowed": true
+            },
+            "gradingDimensions": null,
+            "id": "hv_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 200,
+              "mode": "rubric",
+              "passPoints": null,
+              "pointsPerCorrect": null
+            },
+            "taskType": "dsh_hv_lecture_tasks",
+            "title": "Hörverstehen: Vortrag verstehen und verarbeiten"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 200,
+          "mode": "rubric",
+          "passPoints": null,
+          "pointsPerCorrect": null
+        }
+      },
+      {
+        "code": "LV",
+        "durationSeconds": 5400,
+        "id": "reading",
+        "label": "Leseverstehen",
+        "note": "90 Minuten einschließlich Lesezeit, gemeinsam mit den wissenschaftssprachlichen Strukturen (WS).",
+        "parts": [
+          {
+            "constraints": {
+              "aids": "monolingual_dictionary_paper_only",
+              "assessment": "content",
+              "languageCorrectnessAssessed": false,
+              "optionalGraphic": true,
+              "sharedSourceGroup": "lv_ws",
+              "sourceRole": "source",
+              "specialistKnowledgeRequired": false,
+              "taskForms": [
+                "questions",
+                "argument_structure",
+                "outline",
+                "explain_passages",
+                "headings",
+                "summary"
+              ],
+              "textCharacter": "largely_authentic_study_related_science_oriented",
+              "textCharsMax": 6000,
+              "textCharsMin": 4500,
+              "textLengthUnit": "characters_with_spaces"
+            },
+            "gradingDimensions": null,
+            "id": "lv_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 200,
+              "mode": "rubric",
+              "passPoints": null,
+              "pointsPerCorrect": null
+            },
+            "taskType": "dsh_lv_text_tasks",
+            "title": "Leseverstehen: Text verstehen und verarbeiten"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 200,
+          "mode": "rubric",
+          "passPoints": null,
+          "pointsPerCorrect": null
+        }
+      },
+      {
+        "code": "WS",
+        "durationSeconds": null,
+        "id": "scientific_structures",
+        "label": "Wissenschaftssprachliche Strukturen",
+        "note": "Gemeinsame Teilprüfung mit dem Leseverstehen (90 Minuten insgesamt); bezieht sich auf denselben Text.",
+        "parts": [
+          {
+            "constraints": {
+              "aids": "monolingual_dictionary_paper_only",
+              "answerModel": "answer_families",
+              "assessment": "language_correctness",
+              "languageCorrectnessAssessed": true,
+              "multipleAcceptedAnswers": true,
+              "sharedSourceGroup": "lv_ws",
+              "sourcePart": {
+                "module": "reading",
+                "partId": "lv_1"
+              },
+              "sourceRole": "derived",
+              "structureCategories": [
+                "syntactic",
+                "morphological",
+                "lexical",
+                "idiomatic",
+                "text_type"
+              ],
+              "taskForms": [
+                "completion",
+                "complex_structure_comprehension",
+                "paraphrase",
+                "transformation"
+              ]
+            },
+            "gradingDimensions": null,
+            "id": "ws_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 100,
+              "mode": "rubric",
+              "passPoints": null,
+              "pointsPerCorrect": null
+            },
+            "taskType": "dsh_ws_structure_tasks",
+            "title": "Wissenschaftssprachliche Strukturen"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 100,
+          "mode": "rubric",
+          "passPoints": null,
+          "pointsPerCorrect": null
+        }
+      },
+      {
+        "code": "TP",
+        "durationSeconds": 4200,
+        "id": "writing",
+        "label": "Textproduktion",
+        "note": "Bearbeitungszeit 70 Minuten, ca. 250 Wörter.",
+        "parts": [
+          {
+            "constraints": {
+              "aids": "monolingual_dictionary_paper_only",
+              "assessment": "content_and_language",
+              "freeEssayAllowed": false,
+              "inputKinds": [
+                "diagram",
+                "keyword_list",
+                "table",
+                "graphic",
+                "quotation",
+                "statement",
+                "short_text"
+              ],
+              "languageActs": [
+                "describe",
+                "summarize",
+                "compare",
+                "justify",
+                "evaluate",
+                "take_position"
+              ],
+              "rubric": {
+                "content": [
+                  "content_completeness",
+                  "content_development",
+                  "content_structure",
+                  "content_coherence"
+                ],
+                "language": [
+                  "language_correctness",
+                  "language_vocabulary",
+                  "language_syntax",
+                  "language_cohesion"
+                ],
+                "languageWeightedHigher": true,
+                "numericWeights": null
+              },
+              "templateFriendlyPromptsAllowed": false,
+              "textType": "argumentative_factual_text",
+              "topicKind": "study_related_science_oriented",
+              "wordCountApprox": 250
+            },
+            "gradingDimensions": [
+              "content_completeness",
+              "content_development",
+              "content_structure",
+              "content_coherence",
+              "language_correctness",
+              "language_vocabulary",
+              "language_syntax",
+              "language_cohesion"
+            ],
+            "id": "tp_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 200,
+              "mode": "rubric",
+              "passPoints": null,
+              "pointsPerCorrect": null
+            },
+            "taskType": "dsh_tp_chart_based_argumentation",
+            "title": "Vorgabenorientierte Textproduktion"
+          }
+        ],
+        "preparationSeconds": null,
+        "scoring": {
+          "maxPoints": 200,
+          "mode": "rubric",
+          "passPoints": null,
+          "pointsPerCorrect": null
+        }
+      },
+      {
+        "durationSeconds": null,
+        "id": "speaking",
+        "label": "Mündliche Prüfung",
+        "note": "20 Minuten Vorbereitung, dann Kurzvortrag (max. 5 Min.) und Gespräch (max. 15 Min.); höchstens 20 Minuten.",
+        "parts": [
+          {
+            "constraints": {
+              "assessment": "oral_rubric",
+              "assessmentCriteria": [
+                "content_appropriateness",
+                "comprehensibility",
+                "independence_of_statements",
+                "conversational_behaviour",
+                "linguistic_correctness",
+                "lexical_differentiation",
+                "pronunciation_and_intonation"
+              ],
+              "conversationSecondsMax": 900,
+              "deliveryModes": [
+                "in_person",
+                "online_remote"
+              ],
+              "examSecondsMax": 1200,
+              "groupExamsAllowed": false,
+              "inputKinds": [
+                "short_text",
+                "graphic"
+              ],
+              "interactive": true,
+              "languageActs": [
+                "describe",
+                "summarize",
+                "compare",
+                "justify",
+                "evaluate",
+                "take_position"
+              ],
+              "preparationAids": "monolingual_dictionary_paper_only",
+              "preparationSeconds": 1200,
+              "presentationSecondsMax": 300,
+              "presentationStyle": "preferably_descriptive"
+            },
+            "gradingDimensions": [
+              "task_fulfilment",
+              "fluency",
+              "interaction",
+              "grammar_accuracy",
+              "vocabulary_range",
+              "pronunciation"
+            ],
+            "id": "sprechen_1",
+            "implemented": false,
+            "scoring": {
+              "maxPoints": 300,
+              "mode": "rubric",
+              "passPoints": null,
+              "pointsPerCorrect": null
+            },
+            "taskType": "dsh_oral_presentation_conversation",
+            "title": "Mündliche Prüfung: Kurzvortrag und Gespräch"
+          }
+        ],
+        "preparationSeconds": 1200,
+        "scoring": {
+          "maxPoints": 300,
+          "mode": "rubric",
+          "passPoints": null,
+          "pointsPerCorrect": null
+        }
+      }
+    ],
+    "presentation": {
+      "disclaimer": "DSH practice based on the HRK framework; individual universities may have registered local regulations.",
+      "moduleCards": "manifest"
+    },
+    "profileId": "dsh",
+    "profileVersion": 1,
+    "resultModel": {
+      "disclaimer": "DSH practice based on the HRK framework; individual universities may have registered local regulations.",
+      "framework": "HRK DSH-Musterprüfungsordnung 2025",
+      "kind": "dsh_result_model",
+      "levelRequiresBothComponents": true,
+      "levels": [
+        "DSH-1",
+        "DSH-2",
+        "DSH-3"
+      ],
+      "maxPoints": {
+        "hv": 200,
+        "lv": 200,
+        "oral": 300,
+        "tp": 200,
+        "written": 700,
+        "ws": 100
+      },
+      "officialCefrMapping": null,
+      "passThresholdPercent": 57,
+      "perPartMinimumPercent": null,
+      "thresholdsPercent": {
+        "DSH-1": 57,
+        "DSH-2": 67,
+        "DSH-3": 82
+      },
+      "writtenAndOralCompensate": false,
+      "writtenWeights": {
+        "hv": 2,
+        "lv": 2,
+        "tp": 2,
+        "ws": 1
+      }
+    },
+    "schemaVersion": "german-exam-manifest-v1",
+    "variant": "HRK-Musterprüfungsordnung"
+  },
   "goethe_c1": {
     "cefrLevel": "C1",
     "deliveryPolicy": null,
