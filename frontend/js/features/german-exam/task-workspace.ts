@@ -4,7 +4,7 @@ import { mountWriting, type ProductivePart, type ProductiveContent } from './pro
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
-export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; parts: TaskPart[]}>}
+export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
 export type TaskRenderer = (root: HTMLElement, part: TaskPart, content: unknown, identity: string) => () => void;
 export const TASK_RENDERERS: Record<string, TaskRenderer> = {};
@@ -41,11 +41,12 @@ export function mountTaskWorkspace(root: HTMLElement, manifest: TaskManifest,
     } catch {if(mine===epoch) content.textContent='Could not load this exercise. Select the part to retry.';}
   };
   for (const module of manifest.modules) {
-    const group=document.createElement('div');const title=document.createElement('h4');title.textContent=module.label;group.append(title);
+    const group=document.createElement('div');const title=document.createElement('h4');title.textContent=(module.code ? module.code + ' \u2014 ' : '') + module.label;group.append(title);
     for (const part of module.parts) {
       const button=document.createElement('button');button.type='button';button.dataset.partId=part.id;
       button.textContent=part.title+(part.constraints?.itemCount!=null?` (${part.constraints.itemCount})`:'');
       button.disabled=!part.implemented || !TASK_RENDERERS[part.taskType];
+      button.dataset.state=button.disabled ? 'unavailable' : 'available'; if (button.disabled) button.title='Coming soon';
       button.onclick=()=>{void open(module.id,part);};group.append(button);
     }
     nav.append(group);

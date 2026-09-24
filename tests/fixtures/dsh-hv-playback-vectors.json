@@ -1,0 +1,428 @@
+{
+  "attemptId": "attempt-1",
+  "vectors": [
+    {
+      "name": "happy path: two plays, two windows, submit",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1",
+            "playsStarted": 1,
+            "playsCompleted": 0,
+            "windowDeadlineMs": null
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 300000,
+          "expect": {
+            "phase": "processing_1",
+            "playsStarted": 1,
+            "playsCompleted": 1,
+            "windowDeadlineMs": 900000
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 899999,
+          "expect": {
+            "phase": "processing_1",
+            "windowDeadlineMs": 900000
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 900000,
+          "expect": {
+            "phase": "awaiting_play_2",
+            "windowDeadlineMs": null
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 900001,
+          "expect": {
+            "phase": "playing_2",
+            "playsStarted": 2
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 1500000,
+          "expect": {
+            "phase": "processing_2",
+            "playsCompleted": 2,
+            "windowDeadlineMs": 3900000
+          }
+        },
+        {
+          "event": "submit",
+          "nowMs": 3000000,
+          "expect": {
+            "phase": "submitted",
+            "windowDeadlineMs": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "no third play, ever",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 1000,
+          "expect": {
+            "phase": "processing_1"
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 700000,
+          "expect": {
+            "phase": "awaiting_play_2"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 700001,
+          "expect": {
+            "phase": "playing_2",
+            "playsStarted": 2
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 800000,
+          "expect": {
+            "phase": "processing_2"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 800001,
+          "expectError": true
+        },
+        {
+          "event": "start_play",
+          "nowMs": 4000000,
+          "expectError": true
+        },
+        {
+          "event": "tick",
+          "nowMs": 4000000,
+          "expect": {
+            "phase": "expired"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 4000001,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "cannot play during a processing window",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 100,
+          "expect": {
+            "phase": "processing_1",
+            "windowDeadlineMs": 600100
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 100,
+          "expectError": true
+        },
+        {
+          "event": "start_play",
+          "nowMs": 600099,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "cannot start a second play while the first is running",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 1,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "a lapsed window resolves before the event is applied",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 0,
+          "expect": {
+            "phase": "processing_1",
+            "windowDeadlineMs": 600000
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 700000,
+          "expect": {
+            "phase": "playing_2",
+            "playsStarted": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "window 2 expires; submit is then refused",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 0,
+          "expect": {
+            "phase": "processing_1"
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 600000,
+          "expect": {
+            "phase": "awaiting_play_2"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 600000,
+          "expect": {
+            "phase": "playing_2"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 700000,
+          "expect": {
+            "phase": "processing_2",
+            "windowDeadlineMs": 3100000
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 3100000,
+          "expect": {
+            "phase": "expired"
+          }
+        },
+        {
+          "event": "submit",
+          "nowMs": 3100001,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "submit is refused before the second presentation",
+      "steps": [
+        {
+          "event": "submit",
+          "nowMs": 0,
+          "expectError": true
+        },
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "submit",
+          "nowMs": 10,
+          "expectError": true
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 20,
+          "expect": {
+            "phase": "processing_1"
+          }
+        },
+        {
+          "event": "submit",
+          "nowMs": 30,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "playback_ended without a running play is refused",
+      "steps": [
+        {
+          "event": "playback_ended",
+          "nowMs": 0,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "reload during play 1 consumes it (recover)",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1",
+            "playsStarted": 1
+          }
+        },
+        {
+          "event": "recover",
+          "nowMs": 5000,
+          "expect": {
+            "phase": "processing_1",
+            "playsStarted": 1,
+            "playsCompleted": 1,
+            "windowDeadlineMs": 605000
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 5001,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "reload during play 2 consumes it and never re-grants it",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 1,
+          "expect": {
+            "phase": "processing_1"
+          }
+        },
+        {
+          "event": "tick",
+          "nowMs": 600001,
+          "expect": {
+            "phase": "awaiting_play_2"
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 600002,
+          "expect": {
+            "phase": "playing_2",
+            "playsStarted": 2
+          }
+        },
+        {
+          "event": "recover",
+          "nowMs": 600100,
+          "expect": {
+            "phase": "processing_2",
+            "playsStarted": 2,
+            "playsCompleted": 2,
+            "windowDeadlineMs": 3000100
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 600101,
+          "expectError": true
+        }
+      ]
+    },
+    {
+      "name": "reload after the window lapsed lands in the right phase",
+      "steps": [
+        {
+          "event": "start_play",
+          "nowMs": 0,
+          "expect": {
+            "phase": "playing_1"
+          }
+        },
+        {
+          "event": "playback_ended",
+          "nowMs": 1,
+          "expect": {
+            "phase": "processing_1"
+          }
+        },
+        {
+          "event": "recover",
+          "nowMs": 9999999,
+          "expect": {
+            "phase": "awaiting_play_2",
+            "playsStarted": 1
+          }
+        },
+        {
+          "event": "start_play",
+          "nowMs": 9999999,
+          "expect": {
+            "phase": "playing_2",
+            "playsStarted": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown event is refused",
+      "steps": [
+        {
+          "event": "rewind",
+          "nowMs": 0,
+          "expectError": true
+        }
+      ]
+    }
+  ]
+}

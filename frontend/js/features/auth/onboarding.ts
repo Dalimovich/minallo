@@ -5,6 +5,7 @@ import {
   resolveGermanExamProfileIdClient,
 } from './german-profile.js';
 import { applySavedProfile } from './user-data.js';
+import { renderExamPreviewInto } from '../german-exam/exam-structure-preview.js';
 
 declare global {
   interface Window {
@@ -742,6 +743,20 @@ export function initOnboarding(): void {
     }
   };
 
+  // The structure preview under the level grid is built from the profile data (exam-structure-preview.ts),
+  // so it always describes the exam that is actually selected and is cleared/replaced on every change.
+  const syncExamPreview = (): void => {
+    const wrap = document.getElementById('obLevelWrap');
+    if (!wrap) return;
+    let host = document.getElementById('obExamPreview');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'obExamPreview';
+      wrap.after(host);
+    }
+    renderExamPreviewInto(host, _obTest, _obLevel);
+  };
+
   window._obSelectTest = function (card: HTMLElement) {
     document.querySelectorAll('.ob-test-card').forEach((c) => {
       c.classList.remove('selected');
@@ -757,6 +772,7 @@ export function initOnboarding(): void {
       .map((l) => '<button class="ob-level-btn" data-level="' + l + '">' + l + '</button>')
       .join('');
     wrap.style.display = 'flex';
+    syncExamPreview();
   };
 
   window._obSelectLevel = function (btn: HTMLElement, level: string) {
@@ -765,6 +781,7 @@ export function initOnboarding(): void {
     });
     btn.classList.add('selected');
     _obLevel = level;
+    syncExamPreview();
   };
 
   window._obFinish = async function () {

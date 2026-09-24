@@ -38,6 +38,7 @@ const GERMAN_EXAM_PROFILES_CLIENT: Array<{ profileId: string; family: string; le
   { profileId: 'telc_c1_hochschule', family: 'telc', legacyLevelValues: ['C1 Hochschule'] },
   { profileId: 'goethe_c1', family: 'Goethe', legacyLevelValues: ['C1'] },
   { profileId: 'testdaf_digital', family: 'TestDaF', legacyLevelValues: [] },
+  { profileId: 'dsh', family: 'DSH', legacyLevelValues: ['DSH-1', 'DSH-2', 'DSH-3'] },
 ];
 
 export function resolveGermanExamProfileIdClient(

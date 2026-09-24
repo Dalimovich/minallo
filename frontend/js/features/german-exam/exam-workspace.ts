@@ -11,6 +11,7 @@
 
 import { mountTaskWorkspace } from './task-workspace.js';
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
+import { ensureExamStructureStyles } from './exam-structure-preview.js';
 
 export interface ExamManifestPart {
   id: string;
@@ -23,10 +24,19 @@ export interface ExamManifestPart {
 export interface ExamManifestModule {
   id: string;
   label: string;
+  /** The exam's own short code for the module (e.g. DSH "HV"); absent for exams without one. */
+  code?: string | null;
   durationSeconds: number | null;
   preparationSeconds: number | null;
   note: string | null;
   parts: ExamManifestPart[];
+}
+
+/** Generic, data-driven presentation switches an exam profile may set (never an exam-name check). */
+export interface ExamManifestPresentation {
+  /** 'manifest': the module cards come ONLY from this manifest; the legacy static exam cards stay hidden. */
+  moduleCards?: 'manifest';
+  disclaimer?: string;
 }
 
 export interface ExamManifest {
@@ -35,11 +45,16 @@ export interface ExamManifest {
   displayName: string;
   cefrLevel: string | null;
   modules: ExamManifestModule[];
+  presentation?: ExamManifestPresentation | null;
+  resultModel?: Record<string, unknown> | null;
 }
 
 export interface ExamNavModule {
   id: string;
   label: string;
+  code: string | null;
+  note: string | null;
+  parts: Array<{ id: string; title: string; implemented: boolean }>;
   partCount: number;
   durationLabel: string | null;
   skill: string | null; // data-skill of the existing practice card that opens this module
@@ -74,6 +89,9 @@ export function buildNavModel(manifest: ExamManifest): ExamNavModule[] {
   return manifest.modules.map((m) => ({
     id: m.id,
     label: m.label,
+    code: m.code || null,
+    note: m.note || null,
+    parts: m.parts.map((p) => ({ id: p.id, title: p.title, implemented: p.implemented })),
     partCount: m.parts.length,
     durationLabel: durationLabel(m.durationSeconds),
     skill: MODULE_SKILL[m.id] ?? null,
@@ -85,6 +103,49 @@ export function buildNavModel(manifest: ExamManifest): ExamNavModule[] {
 /** True when transient exam state built for `prev` must be discarded for `next`. */
 export function profileChanged(prev: string | null, next: string | null): boolean {
   return (prev || null) !== (next || null);
+}
+
+/** True when this exam's profile asks for manifest-only module cards. */
+export function usesManifestCards(manifest: ExamManifest | null | undefined): boolean {
+  return manifest?.presentation?.moduleCards === 'manifest';
+}
+
+/**
+ * Whether a legacy static exam card (data-skill) exists for the current exam state. The manifest decides:
+ * a module the exam lacks is ABSENT, a profile that opts into manifest cards has no static cards at all,
+ * and while a manifest is loading/failed no card is shown (never a previous or guessed exam's structure).
+ */
+export function staticExamCardState(state: ExamWorkspaceState, skill: string): { hidden: boolean; soon: boolean } {
+  if (!EXAM_SKILLS.includes(skill)) return { hidden: false, soon: false };
+  if (state.status === 'ready' && state.manifest) {
+    if (usesManifestCards(state.manifest)) return { hidden: true, soon: false };
+    const nav = buildNavModel(state.manifest).find((m) => m.skill === skill);
+    return { hidden: !nav, soon: !!nav && !nav.available };
+  }
+  if (state.status === 'loading' || state.status === 'error') return { hidden: true, soon: false };
+  return { hidden: false, soon: false }; // no exam-specific profile: unchanged legacy behaviour
+}
+
+/** The chatbot German panel links to the same exam skills; same manifest rule as the practice cards. */
+export function chatPanelLinkHidden(state: ExamWorkspaceState, skill: string): boolean {
+  return staticExamCardState(state, skill).hidden;
+}
+
+/**
+ * Body of a generation request. Built ONLY from the current, ready manifest so a stale mounted workspace
+ * can never send the previous exam's profile id or a part the current exam does not have.
+ */
+export function buildGenerateRequestBody(
+  state: ExamWorkspaceState,
+  module: string,
+  partId: string
+): { profileId: string; module: string; partId: string; mode: 'adaptive_practice' } {
+  if (state.status !== 'ready' || !state.manifest || !state.profileId || state.manifest.profileId !== state.profileId) {
+    throw new Error('exam_not_ready');
+  }
+  const part = state.manifest.modules.find((m) => m.id === module)?.parts.find((p) => p.id === partId);
+  if (!part) throw new Error('part_not_in_current_exam');
+  return { profileId: state.profileId, module, partId, mode: 'adaptive_practice' };
 }
 
 /** Why an exam skill cannot be opened right now, or '' when it can (or is unknown). */
@@ -113,6 +174,7 @@ function esc(s: string): string {
 }
 
 export function renderOverviewHtml(manifest: ExamManifest): string {
+  const manifestCards = usesManifestCards(manifest);
   const rows = buildNavModel(manifest)
     .map((m) => {
       const parts = `${m.partCount} ${m.partCount === 1 ? 'part' : 'parts'}`;
@@ -122,17 +184,22 @@ export function renderOverviewHtml(manifest: ExamManifest): string {
         : m.availableParts < m.partCount
           ? ` <span class="gl-exam-soon">${m.availableParts} of ${m.partCount} ready</span>`
           : '';
+      const code = m.code ? `<span class="gl-exam-code">${esc(m.code)}</span>` : '';
+      const note = manifestCards && m.note ? `<span class="gl-exam-module-note">${esc(m.note)}</span>` : '';
       return (
-        `<li class="gl-exam-module" data-exam-module="${esc(m.id)}">` +
-        `<span class="gl-exam-module-name">${esc(m.label)}</span>` +
-        `<span class="gl-exam-module-meta">${parts}${time}${soon}</span></li>`
+        `<li class="gl-exam-module" data-exam-module="${esc(m.id)}"${m.code ? ` data-exam-module-code="${esc(m.code)}"` : ''}>` +
+        `${code}<span class="gl-exam-module-name">${esc(m.label)}</span>` +
+        `<span class="gl-exam-module-meta">${parts}${time}${soon}</span>${note}</li>`
       );
     })
     .join('');
+  const disclaimer = manifest.presentation?.disclaimer
+    ? `<p class="gl-exam-disclaimer">${esc(manifest.presentation.disclaimer)}</p>`
+    : '';
   return (
     `<h3 class="gl-exam-title" data-exam-profile="${esc(manifest.profileId)}">${esc(manifest.displayName)}</h3>` +
     `<p class="gl-exam-sub">Prepare for your actual exam format</p>` +
-    `<ul class="gl-exam-modules">${rows}</ul>`
+    `<ul class="gl-exam-modules${manifestCards ? ' gl-exam-modules--manifest' : ''}">${rows}</ul>${disclaimer}`
   );
 }
 
@@ -334,8 +401,20 @@ export function createExamWorkspace(hooks: ExamWorkspaceHooks, deps: ExamWorkspa
 
 let disposeTaskWorkspace: (() => void) | undefined;
 let workspaceBase = '';
+// The workspace state object is mutated in place; requests read it at CLICK time, never a captured snapshot.
+let latestState: ExamWorkspaceState = { profileId: null, manifest: null, status: 'idle' };
+
+function applyChatPanelLinks(state: ExamWorkspaceState): void {
+  document.querySelectorAll<HTMLElement>('.ncb-german-panel-link[data-workspace-skill]').forEach((link) => {
+    const hide = chatPanelLinkHidden(state, link.getAttribute('data-workspace-skill') || '');
+    link.hidden = hide;
+    // chatbot.css gives .ncb-german-panel-link an explicit display, which overrides [hidden]: hide it explicitly.
+    link.style.display = hide ? 'none' : '';
+  });
+}
 
 function applyDom(state: ExamWorkspaceState): void {
+  latestState = state;
   disposeTaskWorkspace?.();
   disposeTaskWorkspace = undefined;
   const root = document.getElementById('glExamGroup');
@@ -345,16 +424,12 @@ function applyDom(state: ExamWorkspaceState): void {
   root.querySelectorAll<HTMLElement>('.gl-skill-card[data-skill]').forEach((card) => {
     const skill = card.getAttribute('data-skill') || '';
     if (!EXAM_SKILLS.includes(skill)) return;
-    if (state.status === 'ready' && state.manifest) {
-      const nav = buildNavModel(state.manifest).find((m) => m.skill === skill);
-      card.hidden = !nav; // a module the exam does not have simply does not exist here
-      card.classList.toggle('gl-skill-card-soon', !!nav && !nav.available);
-    } else if (state.status === 'loading' || state.status === 'error') {
-      card.hidden = true; // never show a previous exam's (or a guessed) structure
-    } else {
-      card.hidden = false; // no exam-specific profile: unchanged legacy behaviour
-    }
+    const visibility = staticExamCardState(state, skill);
+    card.hidden = visibility.hidden;
+    card.classList.toggle('gl-skill-card-soon', visibility.soon);
   });
+  applyChatPanelLinks(state);
+  ensureExamStructureStyles();
   if (overview) {
     if (state.status === 'ready' && state.manifest) {
       overview.innerHTML = renderOverviewHtml(state.manifest);
@@ -363,7 +438,7 @@ function applyDom(state: ExamWorkspaceState): void {
       disposeTaskWorkspace = mountTaskWorkspace(taskRoot, state.manifest, async (module, part, signal) => {
         const response = await authenticatedFetch(workspaceBase + '/api/ai/german-exam/generate', {
           method: 'POST', signal, headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({profileId:state.profileId, module, partId:part.id, mode:'adaptive_practice'})
+          body: JSON.stringify(buildGenerateRequestBody(latestState, module, part.id))
         });
         if (!response.ok) throw new Error('generation failed');
         return response.json();
@@ -411,6 +486,17 @@ export function initExamWorkspace(hooks: ExamWorkspaceHooks): ExamWorkspaceContr
   window.addEventListener('ss-profile-updated', () => {
     void ctl.refresh();
   });
+  // The chatbot German panel can mount after the manifest settled: apply the same manifest rule to it then.
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver((records) => {
+      const added = records.some((r) =>
+        Array.from(r.addedNodes).some(
+          (n) => n instanceof HTMLElement && (n.matches('.ncb-german-panel-link') || !!n.querySelector('.ncb-german-panel-link'))
+        )
+      );
+      if (added) applyChatPanelLinks(ctl.state);
+    }).observe(document.body, { childList: true, subtree: true });
+  }
   document.addEventListener('click', (e) => {
     if ((e.target as HTMLElement | null)?.closest?.('.gl-exam-retry')) {
       ctl.clearCache();
@@ -420,3 +506,6 @@ export function initExamWorkspace(hooks: ExamWorkspaceHooks): ExamWorkspaceContr
   void ctl.refresh();
   return ctl;
 }
+
+// Exposed so a browser harness can drive the real DOM-apply path with a ready manifest state.
+export { applyDom as applyExamStateToDom };

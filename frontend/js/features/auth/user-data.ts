@@ -1,6 +1,7 @@
 import { checkAdminStatus } from '../../services/admin-service.js';
 import { authenticatedSupabaseFetch } from '../../services/authenticated-fetch.js';
 import { resolveGermanExamProfileIdClient, populateGermanLevelSelect } from './german-profile.js';
+import { renderExamPreviewInto } from '../german-exam/exam-structure-preview.js';
 
 interface ProfileRow {
   full_name?: string;
@@ -650,4 +651,28 @@ export function applyUserTypeUI(): void {
   // Level options depend on the chosen test family, so repopulate them here
   // instead of relying on a static list that could disagree with onboarding.
   if (gl) populateGermanLevelSelect(gl, germanTest, germanLevel);
+  syncProfileExamPreview();
+}
+
+let _profilePreviewWired = false;
+/** Profile page: describe the exam structure of the currently selected test + level (built from the profile data). */
+function syncProfileExamPreview(): void {
+  const gt = document.getElementById('profileGermanTest') as HTMLSelectElement | null;
+  const gl = document.getElementById('profileGermanLevel') as HTMLSelectElement | null;
+  if (!gt || !gl) return;
+  let host = document.getElementById('profileExamPreview');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'profileExamPreview';
+    gl.closest('.pf-group')?.after(host);
+  }
+  renderExamPreviewInto(host, gt.value, gl.value);
+  if (!_profilePreviewWired) {
+    _profilePreviewWired = true;
+    // The level list is repopulated by profile.js on a test change; re-read after it has run.
+    document.addEventListener('change', (e) => {
+      const id = (e.target as HTMLElement | null)?.id;
+      if (id === 'profileGermanTest' || id === 'profileGermanLevel') setTimeout(syncProfileExamPreview, 0);
+    });
+  }
 }
