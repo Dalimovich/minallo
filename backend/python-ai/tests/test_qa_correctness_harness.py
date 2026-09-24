@@ -92,7 +92,9 @@ def test_check_grading_matches_the_known_reachable_telc_writing_task_only():
     ok, _ = harness.check_grading("goethe_c1", "writing", "schreiben_1", "forum_discussion_post")
     assert ok is False
     ok, _ = harness.check_grading("testdaf_digital", "writing", "schreiben_1", "argumentative_essay")
-    assert ok is False
+    assert ok is True
+    ok, _ = harness.check_grading("testdaf_digital", "writing", "schreiben_2", "text_graph_summary")
+    assert ok is True
 
 
 def test_check_grading_matches_the_known_reachable_telc_speaking_parts_only():
