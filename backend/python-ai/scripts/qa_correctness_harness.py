@@ -110,8 +110,11 @@ def check_answer_key(part, content: Any) -> tuple[bool, dict[str, Any]]:
 
 
 def check_grading(profile_id: str, module: str, part_id: str, task_type: str) -> tuple[bool, dict[str, Any]]:
-    reachable = task_type in _GRADING_REACHABLE_TASK_TYPES or (profile_id, module, part_id) in _GRADING_REACHABLE_PARTS
-    return reachable, {"source": "static table derived from routers/german_exam.py, see GRADING_AUDIT.md"}
+    from app.services.german_exam_writing_grading import gradable_writing_task_types
+
+    writing_ok = module == "writing" and task_type in gradable_writing_task_types()
+    reachable = writing_ok or task_type in _GRADING_REACHABLE_TASK_TYPES or (profile_id, module, part_id) in _GRADING_REACHABLE_PARTS
+    return reachable, {"source": "writing: live gradable_writing_task_types(); speaking: static table from routers/german_exam.py"}
 
 
 def check_delivery(task_type: str) -> tuple[bool, dict[str, Any]]:
