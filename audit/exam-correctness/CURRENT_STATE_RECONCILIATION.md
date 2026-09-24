@@ -23,9 +23,9 @@ Status values: FIXED, PARTIALLY_FIXED, STILL_OPEN, BLOCKED, UNVERIFIED. Code exi
 | 13 | Playwright execution | BLOCKED | Needs `E2E_EMAIL`/`E2E_PASSWORD`. Chromium is installed, specs compile, generation is mocked in spec 33 so a run costs no AI credit |
 
 ## Official facts verified this pass
-- TELC C1 Hochschule Sprechen: 20 min prep; pair ca. 16 min, trio ca. 24 min; Teil 1A ca. 3 min, Teil 1B ca. 2 min per participant; Teil 2 ca. 6 min; points 1A=6, 1B=4, language=32.
+- TELC C1 Hochschule Sprechen: 20 min prep; pair ca. 16 min, trio ca. 24 min; Teil 1A ca. 3 min, Teil 1B ca. 2 min per participant; Teil 2 ca. 6 min; points 1A=6, 1B=4, Teil 2=6, language=32.
   Source: telc Handbuch (telc.net .../Deutsch_c1_hochschule_Handbuch.pdf), pp.47-50.
-- Not verified: Teil 2 point weight (6 in profile; the extracted text did not show it), Goethe Sprechen criterion weights, the `_BAND_THRESHOLDS` approximation, TestDaF raw-to-scaled conversion.
+- Not verified: Goethe Sprechen criterion weights, the `_BAND_THRESHOLDS` approximation, TestDaF raw-to-scaled conversion.
 
 ## Release gate
 Zero parts outside the 10 TELC parts are available. Nothing here changes an `available` value, writes inventory, or enables a task.
