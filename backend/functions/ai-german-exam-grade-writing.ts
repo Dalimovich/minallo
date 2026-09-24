@@ -98,13 +98,20 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const writingCoachTaskTypeRaw = body.writingCoachTaskType;
   const text = body.text;
   const selectedTopic = body.selectedTopic as Record<string, unknown> | undefined;
-  if (!selectedTopic || typeof selectedTopic !== 'object' || Array.isArray(selectedTopic) ||
+  const task = body.task as Record<string, unknown> | undefined;
+  // Productive-task shape (e.g. TestDaF): a single generated task instead of a TELC topic choice.
+  // python-ai validates the task against the resolved part; here only its shape is checked.
+  const hasTask = task !== undefined && task !== null;
+  if (hasTask && (typeof task !== 'object' || Array.isArray(task) || JSON.stringify(task).length > 60000)) {
+    return fail(400, 'task must be an object');
+  }
+  if (!hasTask && (!selectedTopic || typeof selectedTopic !== 'object' || Array.isArray(selectedTopic) ||
       selectedTopic.questionId !== topicId ||
       !Array.isArray(selectedTopic.statements) || selectedTopic.statements.length !== 2 ||
       !selectedTopic.statements.every(s => typeof s === 'string' && s.trim() && s.length <= 2000) ||
       !['title', 'communicativeSituation', 'taskInstructions'].every(key =>
         typeof selectedTopic[key] === 'string' && (selectedTopic[key] as string).trim().length > 0 &&
-        (selectedTopic[key] as string).length <= 6000)) {
+        (selectedTopic[key] as string).length <= 6000))) {
     return fail(400, 'selectedTopic with title, situation and instructions is required');
   }
 
@@ -146,7 +153,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       topicId,
       generationId: typeof generationId === 'string' ? generationId : null,
       writingCoachTaskType,
-      selectedTopic,
+      ...(hasTask ? { task } : { selectedTopic }),
       text
     },
     GRADE_UPSTREAM_TIMEOUT_MS

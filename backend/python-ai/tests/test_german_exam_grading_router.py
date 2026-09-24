@@ -99,16 +99,39 @@ def test_grade_writing_telc_accepted(client: TestClient) -> None:
     assert r.json()["scoreValue"] == 40
 
 
+def _testdaf_task() -> dict:
+    return {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "Schreiben Sie einen Text.", "sources": []}
+
+
 def test_grade_writing_testdaf_accepted(client: TestClient) -> None:
-    """The core regression: testdaf_digital's argumentative_essay Schreiben
-    part used to hit the hardcoded `!= "choice_long_form_writing"` gate and
-    always 501. It must now resolve through to the shared grading adapter."""
-    r = client.post(
-        "/german-exam/grade-writing", headers=AUTH,
-        json=_writing_payload("testdaf_digital", "schreiben_1"),
-    )
+    """A real TestDaF writing task is a productive-task-v1 object, not a TELC
+    two-statement topic. The route must accept exactly that shape."""
+    payload = _writing_payload("testdaf_digital", "schreiben_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 200
     assert r.json()["scoreValue"] == 40
+
+
+def test_grade_writing_testdaf_requires_task(client: TestClient) -> None:
+    payload = _writing_payload("testdaf_digital", "schreiben_1")
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_testdaf_rejects_model_answer_task(client: TestClient) -> None:
+    payload = _writing_payload("testdaf_digital", "schreiben_1", task={**_testdaf_task(), "modelAnswer": "x"})
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_telc_still_requires_matching_topic(client: TestClient) -> None:
+    payload = _writing_payload("telc_c1_hochschule", "schreiben_1")
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
 
 
 def test_grade_writing_unsupported_profile_rejected(client: TestClient) -> None:

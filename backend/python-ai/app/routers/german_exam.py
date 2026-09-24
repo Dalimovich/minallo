@@ -28,6 +28,7 @@ from ..services.german_exam_generator import generate_task
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
+from ..services.german_exam_productive import validate_productive
 from ..services.german_exam_writing_grading import gradable_writing_task_types, grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
 from ..services.german_exam_validator import hard_issues, validate_content
@@ -181,7 +182,8 @@ class GradeWritingRequest(BaseModel):
     topicId: str
     generationId: str | None = None
     writingCoachTaskType: str = "freier_text"
-    selectedTopic: WritingTopic
+    selectedTopic: WritingTopic | None = None
+    task: dict[str, Any] | None = None
     text: str = Field(min_length=1, max_length=8000)
 
 
@@ -209,10 +211,22 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
                             detail=f"grading for task type {part.task_type!r} is not available yet")
 
     text = (payload.text or "").strip()
-    if payload.selectedTopic.questionId != payload.topicId:
-        raise HTTPException(status_code=400, detail="selected topic does not match topicId")
     if not text:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="text is required")
+    if part.task_type == "choice_long_form_writing":
+        # TELC topic-choice shape: the learner picked one of two generated topics.
+        if payload.selectedTopic is None or payload.selectedTopic.questionId != payload.topicId:
+            raise HTTPException(status_code=400, detail="selected topic does not match topicId")
+        task_context = payload.selectedTopic.model_dump()
+    else:
+        # Productive-task shape (e.g. TestDaF): the single generated task is the context.
+        if payload.task is None:
+            raise HTTPException(status_code=400, detail="task is required for this writing task type")
+        try:
+            validate_productive(part, payload.task)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid task: {exc}") from exc
+        task_context = payload.task
 
     try:
         return grade_writing_submission(
@@ -222,7 +236,7 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
             generation_id=payload.generationId,
             writing_coach_task_type=payload.writingCoachTaskType,
             text=text,
-            selected_topic=payload.selectedTopic.model_dump(),
+            selected_topic=task_context,
         )
     except Exception as exc:  # noqa: BLE001
         log.exception("german-exam writing grading failed")
