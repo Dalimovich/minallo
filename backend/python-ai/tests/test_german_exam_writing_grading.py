@@ -167,3 +167,25 @@ def test_invalid_writing_coach_task_type_falls_back_to_freier_text(monkeypatch: 
     )
 
     assert calls["kwargs"]["task_type"] == "freier_text"
+
+
+def test_testdaf_writing_has_no_invented_point_scale_or_fabricated_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TestDaF has no published ScoringSpec, and its source_fidelity/linguistic_range/
+    comprehensibility dimensions have no Writing Coach axis. The adapter must report
+    no signal for them and must never emit an exam score or a default 48-point max."""
+    from app.services import german_exam_writing_grading as mod
+    from app.services.german_exams import get_profile, get_part
+
+    monkeypatch.setattr(mod, "analyse_writing", lambda **kw: _fake_analysis())
+    profile = get_profile("testdaf_digital")
+    part = get_part("testdaf_digital", "writing", "schreiben_1")
+    result = mod.grade_writing_submission(
+        user_id="u", profile=profile, part=part, generation_id="g",
+        writing_coach_task_type="freier_text", text="Ein Text.", selected_topic={"prompt": "p"},
+    )
+    assert result["scoreValue"] is None
+    assert result["maxScoreValue"] is None
+    assert result["rubric"]["examScoreValue"] is None
+    scored = {item["itemId"] for item in result["examResultItems"]}
+    assert scored == {"rubric_task_fulfilment", "rubric_coherence"}
+    assert not scored & {"rubric_source_fidelity", "rubric_linguistic_range", "rubric_comprehensibility"}

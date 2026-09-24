@@ -186,12 +186,18 @@ def grade_writing_submission(
     dimension_skill_tags: dict[str, list[str]] = {}
     for dim in dims:
         spec = _RUBRIC_DIMENSIONS.get(dim)
-        score_key = spec["scoreKey"] if spec else _DIMENSION_SCORE_KEYS.get(dim)
-        dimension_scores[dim] = score.get(score_key) if score_key else _avg(score.get("structure"), score.get("style"))
+        if spec is None and dim not in _DIMENSION_SCORE_KEYS:
+            # No Writing Coach axis measures this dimension (e.g. TestDaF source_fidelity):
+            # report no signal rather than silently reusing another axis's score.
+            dimension_scores[dim] = None
+        else:
+            score_key = spec["scoreKey"] if spec else _DIMENSION_SCORE_KEYS.get(dim)
+            dimension_scores[dim] = score.get(score_key) if score_key else _avg(score.get("structure"), score.get("style"))
         dimension_skill_tags[dim] = spec["skillTags"] if spec else [dim]
 
     banded = _banded_rubric_score(part, dimension_scores)
-    max_points = part.scoring.max_points if part.scoring else 48
+    # A part with no published ScoringSpec (TestDaF) has no official point scale: never invent one.
+    max_points = part.scoring.max_points if part.scoring else None
     if banded is not None:
         # Goethe-style banded scoring (see _banded_rubric_score) — points, not a 0-100 percentage.
         overall = _avg(*dimension_scores.values())
@@ -208,7 +214,7 @@ def grade_writing_submission(
         # telc's original continuous-percentage method — unchanged.
         complete = all(isinstance(v, (int, float)) for v in dimension_scores.values())
         overall = _avg(*dimension_scores.values()) if complete else None
-        exam_score_value = round(overall / 100 * max_points, 1) if overall is not None else None
+        exam_score_value = round(overall / 100 * max_points, 1) if overall is not None and max_points is not None else None
         rubric = {
             "taskFulfilment": dimension_scores.get("task_fulfilment"),
             "correctness": dimension_scores.get("correctness"),
