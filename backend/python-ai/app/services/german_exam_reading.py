@@ -600,6 +600,40 @@ def _generate_mc_article_then_items(profile: ExamProfile, part: PartBlueprint, t
     return {"text": article, "questions": questions}
 
 
+# ── Lesen 2 (Digital TestDaF): paragraph_ordering ────────────────────────────
+# Official source: testdaf.de demo PDF p.6 ("Lesen – Aufgabentyp 2 (Textabschnitte
+# ordnen)") — 5 standalone paragraphs, no distractor paragraph, exactly one correct
+# reading order; the printed solution key (p.35) confirms all 5 are used. Unlike
+# lesen_1's gap-in-a-frame-text model, there is no surrounding text and nothing is
+# left unused — the backend only needs the model to write naturally in one coherent
+# order (word counts are NOT officially specified for this task; the demo's own
+# paragraphs run roughly 25-40 words each, used here only as prompt guidance, not a
+# structural constraint).
+
+
+def _prompt_paragraph_ordering(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 5)
+    system = (
+        f"You generate ORIGINAL German reading-exam practice content for {profile.family} "
+        f"{profile.variant or ''} ({part.title}), matching the official paragraph_ordering task format "
+        "(TestDaF Lesen – Aufgabentyp 2, 'Textabschnitte ordnen'). You must NOT copy any real exam "
+        "content — generate an entirely new, coherent academic or study-relevant text with the same "
+        "structure and difficulty. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Write a short expository text on the topic '{topic['label']}' as EXACTLY {item_count} short "
+        "paragraphs, each about 25-40 words, in the ONE correct logical reading order (the first "
+        "paragraph opens the topic; every following paragraph must connect to the one immediately "
+        "before it through an explicit connector, pronoun, or reference that only makes sense right "
+        "after that specific paragraph — so a reader given the paragraphs out of order can reconstruct "
+        "exactly one correct sequence, with no two paragraphs interchangeable). Do not number the "
+        "paragraphs yourself and do not include a heading."
+        + _adaptation_guidance(plan)
+        + "\n\nOutput JSON shape exactly: {\"paragraphs\": [\"paragraph 1 text\", \"paragraph 2 text\", "
+        f"...]}} — a flat array of exactly {item_count} strings, in the correct reading order, no other keys."
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
     "reading_multiple_choice": _prompt_reading_multiple_choice,
@@ -608,6 +642,7 @@ _PROMPT_BUILDERS = {
     "text_reconstruction_sentence_matching": _prompt_lesen1,
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,
+    "paragraph_ordering": _prompt_paragraph_ordering,
 }
 
 
@@ -937,7 +972,31 @@ def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[Val
     return content
 
 
+def _postprocess_paragraph_ordering(content: dict[str, Any]) -> dict[str, Any]:
+    """The model writes the paragraphs in the one correct reading order (the only thing it can do that
+    a computer can't); the backend assigns stable ids, records that order as correctOrder, then
+    shuffles the DISPLAY order — same 'model never manages indices/shuffling' split as Sprachbausteine
+    (german_exam_language_elements.py) and shuffle_candidates() above."""
+    paragraphs = content.get("paragraphs")
+    if not isinstance(paragraphs, list) or not all(isinstance(p, str) and p.strip() for p in paragraphs):
+        return content  # malformed — let the validator report this precisely
+    questions = [
+        {"questionId": f"p{i + 1}", "text": p.strip(), "skillTags": ["text_structure"]}
+        for i, p in enumerate(paragraphs)
+    ]
+    correct_order = [q["questionId"] for q in questions]
+    import hashlib
+    import random
+
+    seed = hashlib.sha256(json.dumps(questions, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    shuffled = list(questions)
+    random.Random(seed).shuffle(shuffled)
+    return {"questions": shuffled, "correctOrder": correct_order}
+
+
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
+    if part.task_type == "paragraph_ordering":
+        content = _postprocess_paragraph_ordering(content)
     if "presentation" in part.constraints:
         from copy import deepcopy
         content["presentation"] = deepcopy(part.constraints["presentation"])

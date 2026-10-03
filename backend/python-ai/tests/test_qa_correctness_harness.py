@@ -115,7 +115,9 @@ def test_check_grading_matches_the_known_reachable_telc_speaking_parts_only():
 def test_check_delivery_mirrors_the_real_task_type_registry():
     ok, _ = harness.check_delivery("choice_long_form_writing")
     assert ok is True
-    ok, _ = harness.check_delivery("paragraph_ordering")  # TestDaF lesen_2 — genuinely unimplemented
+    ok, _ = harness.check_delivery("paragraph_ordering")  # TestDaF lesen_2 — now implemented
+    assert ok is True
+    ok, _ = harness.check_delivery("reading_summary_error_detection")  # TestDaF lesen_7 — still unimplemented
     assert ok is False
 
 

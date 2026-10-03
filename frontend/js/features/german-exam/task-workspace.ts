@@ -4,6 +4,7 @@ import { createWritingGrader } from './writing-grader.js';
 /** One manifest-driven workspace for reusable interactions across exam families. */
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
+import { mountOrdering, gradeOrdering, type OrderingPart, type OrderingContent } from './ordering-task.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
 export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
@@ -25,6 +26,17 @@ for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) =
   const submit=document.createElement('button'); submit.type='button';submit.textContent='Submit';root.append(submit);
   submit.onclick=()=>{const result=Object.values(gradeSelection(c,answers));dispose();
     dispose=mountSelection(source,questions,part as unknown as SelectionPart,c,answers,true);
+    submit.disabled=true; const status=document.createElement('p');status.setAttribute('role','status');
+    status.textContent=`${result.filter(r=>r.correct).length} / ${result.length} correct (practice)`;root.append(status);};
+  return ()=>{dispose();root.replaceChildren();};
+};
+TASK_RENDERERS['paragraph_ordering']=(root,part,content)=>{
+  const container=document.createElement('div'); root.append(container);
+  const answers: Record<string,string|null>={}; const c=content as OrderingContent;
+  let dispose=mountOrdering(container,part as unknown as OrderingPart,c,answers);
+  const submit=document.createElement('button'); submit.type='button';submit.textContent='Submit';root.append(submit);
+  submit.onclick=()=>{const result=Object.values(gradeOrdering(c,answers));dispose();
+    dispose=mountOrdering(container,part as unknown as OrderingPart,c,answers,true);
     submit.disabled=true; const status=document.createElement('p');status.setAttribute('role','status');
     status.textContent=`${result.filter(r=>r.correct).length} / ${result.length} correct (practice)`;root.append(status);};
   return ()=>{dispose();root.replaceChildren();};

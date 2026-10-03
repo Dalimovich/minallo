@@ -420,6 +420,50 @@ def _verify_prompt_goethe_schreiben(part: PartBlueprint, content: dict[str, Any]
     return system, user
 
 
+def _verify_prompt_paragraph_ordering(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    """No elif branch in _verification_schema/_apply_audits for this task type — it uses the generic
+    duplicateItemIds audit fallback, same as _verify_prompt_goethe_schreiben, so (like that function)
+    this writes its own complete prompt rather than _base_verifier_preamble (whose example output
+    doesn't show the audit field a strict schema call actually requires)."""
+    item_count = part.constraints.get("itemCount", 5)
+    system = (
+        "You are an INDEPENDENT exam-item verifier for a GENERATED German reading exercise "
+        f"({part.task_type}, TestDaF-style Lesen Teil 2, Textabschnitte ordnen). You are given "
+        f"{item_count} paragraphs and correctOrder (a list of questionId stating the ONE intended "
+        "correct reading order). You must NOT improve, rewrite, or complete the exercise. Judge ONLY "
+        "whether correctOrder is genuinely the UNIQUE correct order. Do not request or output hidden "
+        "reasoning/chain-of-thought — give only a concise issue code, one-sentence message, and evidence "
+        "references. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Allowed issue codes — you MUST only use codes from this exact list, never invent new ones: "
+        f"{sorted(SEMANTIC_ISSUE_CODES)}.\n\n"
+        "For each paragraph (item) verify it genuinely belongs at its exact position in correctOrder: "
+        "does it follow logically and cohesively — via an explicit connector, pronoun, or reference — "
+        "from the paragraph immediately before it, and lead naturally into the paragraph immediately "
+        "after it (the first paragraph only needs to open the topic; the last only needs to follow from "
+        "the one before it)? If a paragraph could equally well sit in a DIFFERENT position without "
+        "breaking any connector or reference — e.g. two paragraphs could be swapped, or a paragraph "
+        "would fit equally well elsewhere — use AMBIGUOUS_MAPPING with evidence.questionIds listing "
+        "every OTHER paragraph it could swap with. Use DUPLICATE_INFORMATION (via the item's own "
+        "audit.duplicateItemIds) if two paragraphs restate the same point. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the paragraphs don't form one coherent, original, C1-level text when "
+        "read in correctOrder, or the register isn't C1-appropriate.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "passed": true,\n'
+        '  "partWideIssues": [],\n'
+        '  "items": [{"questionId": "p1", "audit": {"duplicateItemIds": []}, "passed": true, "issues": []}]\n'
+        "}\n"
+        "Include EVERY paragraph's questionId from the supplied content in the items array, even ones "
+        'with no issues (passed: true, issues: []). severity is "error" (blocks acceptance) or "warning" '
+        "(informational, does not block acceptance). Set an item's passed to true exactly when it has no "
+        "error issues. Set overall passed to true exactly when all items pass and no part-wide error "
+        "exists. A warning alone must not set either passed flag to false."
+    )
+    payload = {"questions": content.get("questions") or [], "correctOrder": content.get("correctOrder")}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_sprachbausteine(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     system = _base_verifier_preamble(part) + (
         "\n\nThis is cloze_mc4_language_elements (telc-style Sprachbausteine). You are given the full text "
@@ -587,6 +631,7 @@ _VERIFY_PROMPT_BUILDERS = {
     "sentence_completion_mc3": _verify_prompt_hv2,
     "structured_note_completion": _verify_prompt_hv3,
     "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
+    "paragraph_ordering": _verify_prompt_paragraph_ordering,
     "section_statement_matching": _verify_prompt_lesen2,
     "multi_author_statement_matching_with_none": _verify_prompt_multi_author,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
