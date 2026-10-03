@@ -1,14 +1,21 @@
 import { mountSpeaking } from './speaking-task.js';
 import { mountWriting, type ProductivePart, type ProductiveContent } from './productive-task.js';
+import { createWritingGrader } from './writing-grader.js';
 /** One manifest-driven workspace for reusable interactions across exam families. */
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
 export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
-export type TaskRenderer = (root: HTMLElement, part: TaskPart, content: unknown, identity: string) => () => void;
+export type TaskRenderer = (root: HTMLElement, part: TaskPart, content: unknown, identity: string, envelope: TaskEnvelope) => () => void;
 export const TASK_RENDERERS: Record<string, TaskRenderer> = {};
-for (const type of ['argumentative_essay','text_graph_summary']) TASK_RENDERERS[type]=(root,part,content,identity)=>mountWriting(root,part as unknown as ProductivePart,content as ProductiveContent,identity);
+// forum_discussion_post/formal_context_message = Goethe C1; argumentative_essay/
+// text_graph_summary = TestDaF — all four are the same productive-task-v1 writing
+// shape, graded through the same backend adapter (german_exam_writing_grading.py),
+// so they share one real grader here rather than a per-exam renderer.
+for (const type of ['argumentative_essay','text_graph_summary','forum_discussion_post','formal_context_message'])
+  TASK_RENDERERS[type]=(root,part,content,identity,envelope)=>mountWriting(root,part as unknown as ProductivePart,content as ProductiveContent,identity,
+    createWritingGrader(envelope,content as ProductiveContent,part.gradingDimensions||[]));
 for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summary','spoken_information_comparison','recorded_topic_presentation','spoken_argument_response','spoken_measure_critique']) TASK_RENDERERS[type]=(root,part,content)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent);
 for (const type of Object.keys(MEDIA_TASKS)) TASK_RENDERERS[type] = (root,part,content) => mountMediaTask(root,part as unknown as MediaPart,content as MediaContent);
 for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) => {
@@ -37,7 +44,7 @@ export function mountTaskWorkspace(root: HTMLElement, manifest: TaskManifest,
       if (envelope.exam.profileId!==manifest.profileId || envelope.exam.profileVersion!==manifest.profileVersion || envelope.module!==module || envelope.part.id!==part.id || envelope.part.taskType!==part.taskType) throw new Error('Exercise identity mismatch');
       content.replaceChildren();
       const identity=[window._currentUser?.id || 'anonymous',manifest.profileId,manifest.profileVersion,module,part.id,envelope.generationId || crypto.randomUUID()].join(':');
-      disposeTask=TASK_RENDERERS[part.taskType]!(content,part,envelope.content,identity);
+      disposeTask=TASK_RENDERERS[part.taskType]!(content,part,envelope.content,identity,envelope);
     } catch {if(mine===epoch) content.textContent='Could not load this exercise. Select the part to retry.';}
   };
   for (const module of manifest.modules) {

@@ -147,6 +147,40 @@ def test_insufficient_context_omits_score_dimensions_rather_than_fabricating(mon
     assert result["rubric"]["examScoreValue"] is None
 
 
+def test_testdaf_rubric_exposes_its_own_dimension_names_not_just_telc_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TestDaF's writing dimensions (task_fulfilment/source_fidelity/coherence/
+    linguistic_range/comprehensibility, testdaf_digital.py) are NOT telc's four
+    names — the continuous (non-banded) rubric path must expose them under their
+    own real names, not just telc's taskFulfilment/correctness/repertoire/
+    communicativeDesign keys (which are mostly None for a non-telc profile)."""
+    from app.services import german_exam_writing_grading as mod
+    from app.services.german_exams import get_part, get_profile
+
+    monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis())
+
+    profile = get_profile("testdaf_digital")
+    part = get_part("testdaf_digital", "writing", "schreiben_1")
+    result = mod.grade_writing_submission(
+        user_id="u1", profile=profile, part=part, generation_id="gen-1",
+        writing_coach_task_type="freier_text", text="text",
+    )
+
+    rubric = result["rubric"]
+    assert rubric["task_fulfilment"] == 85  # taskFulfillment axis
+    assert rubric["coherence"] == pytest.approx((72 + 68) / 2)  # avg(structure, style), same as telc's communicative_design
+    # TestDaF's source_fidelity/linguistic_range/comprehensibility have no matching
+    # Writing Coach axis at all (german_exam_writing_grading.py's dimension_scores
+    # guard) — never fabricated, reported as None rather than silently omitted.
+    assert rubric["source_fidelity"] is None
+    assert rubric["linguistic_range"] is None
+    assert rubric["comprehensibility"] is None
+    # telc's legacy fixed keys are still present (backward compatible) even though
+    # most are None here, since TestDaF has no "correctness"/"repertoire" dimension.
+    assert rubric["taskFulfilment"] == 85
+    assert rubric["correctness"] is None
+    assert rubric["repertoire"] is None
+
+
 def test_invalid_writing_coach_task_type_falls_back_to_freier_text(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import german_exam_writing_grading as mod
     from app.services.german_exams import get_profile, get_part

@@ -4,9 +4,10 @@ POST /german-exam/speaking.
 Covers the profile/task-driven gates that replaced the old TELC-only
 hardcodes (part.task_type != "choice_long_form_writing" for writing;
 profileId: Literal["telc_c1_hochschule"] for speaking): TELC keeps behaving
-exactly as before, TestDaF's writing task types are now admitted through to
-the shared grading adapter, and every unsupported profile/task combination
-still comes back as a clean 4xx/501 — never a crash, never silent success.
+exactly as before, TestDaF's and Goethe's writing task types are now admitted
+through to the shared grading adapter, and every unsupported profile/task
+combination still comes back as a clean 4xx/501 — never a crash, never
+silent success.
 
 TestDaF SPEAKING is intentionally NOT tested as "accepted": the shared
 speaking dispatch (german_exam_speaking_practice.py) is still hardcoded to
@@ -142,14 +143,33 @@ def test_grade_writing_unsupported_profile_rejected(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+def test_grade_writing_goethe_schreiben1_accepted(client: TestClient) -> None:
+    """Goethe's schreiben_1 (forum_discussion_post) is a productive-task-v1
+    shape, exactly like TestDaF — not TELC's topic-choice shape."""
+    payload = _writing_payload("goethe_c1", "schreiben_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 200
+    assert r.json()["scoreValue"] == 40
+
+
+def test_grade_writing_goethe_schreiben2_accepted(client: TestClient) -> None:
+    payload = _writing_payload("goethe_c1", "schreiben_2", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 200
+    assert r.json()["scoreValue"] == 40
+
+
 def test_grade_writing_unsupported_task_type_rejected(client: TestClient) -> None:
-    """goethe_c1's schreiben_1 (forum_discussion_post) is a real, registered
-    part — but its task type is deliberately not in the gradable set yet, so
-    it must still 501, exactly like before this change."""
-    r = client.post(
-        "/german-exam/grade-writing", headers=AUTH,
-        json=_writing_payload("goethe_c1", "schreiben_1"),
-    )
+    """DSH's tp_1 (dsh_tp_chart_based_argumentation) is a real, registered
+    writing-module part that already declares grading_dimensions — but DSH is
+    deliberately excluded from GRADABLE_WRITING_PROFILE_IDS (no DSH content/
+    grading pipeline exists yet), so it must still 501, never silently grade
+    against another exam's rubric."""
+    payload = _writing_payload("dsh", "tp_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 501
 
 

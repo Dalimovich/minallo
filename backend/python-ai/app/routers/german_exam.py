@@ -202,10 +202,9 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
 
     # Profile/task-driven gate: the resolved part's task type must be one the
     # shared grading adapter (german_exam_writing_grading.py) is confirmed to
-    # support — see gradable_writing_task_types() for exactly which profiles'
-    # writing task types that is today (telc_c1_hochschule + testdaf_digital;
-    # Goethe's forum_discussion_post/formal_context_message stay unsupported
-    # here, unchanged from current behaviour).
+    # support — see GRADABLE_WRITING_PROFILE_IDS for exactly which profiles'
+    # writing task types that is today (telc_c1_hochschule, testdaf_digital,
+    # goethe_c1; DSH's tp_1 stays unsupported here, unchanged).
     if part.task_type not in gradable_writing_task_types():
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,
                             detail=f"grading for task type {part.task_type!r} is not available yet")

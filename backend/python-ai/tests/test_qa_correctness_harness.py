@@ -86,15 +86,21 @@ def test_check_answer_key_never_assumes_pass_on_an_unrecognised_shape():
     assert "unrecognised" in detail["reason"]
 
 
-def test_check_grading_matches_the_known_reachable_telc_writing_task_only():
+def test_check_grading_matches_the_known_reachable_writing_tasks():
     ok, _ = harness.check_grading("telc_c1_hochschule", "writing", "schreiben_1", "choice_long_form_writing")
     assert ok is True
     ok, _ = harness.check_grading("goethe_c1", "writing", "schreiben_1", "forum_discussion_post")
-    assert ok is False
+    assert ok is True
+    ok, _ = harness.check_grading("goethe_c1", "writing", "schreiben_2", "formal_context_message")
+    assert ok is True
     ok, _ = harness.check_grading("testdaf_digital", "writing", "schreiben_1", "argumentative_essay")
     assert ok is True
     ok, _ = harness.check_grading("testdaf_digital", "writing", "schreiben_2", "text_graph_summary")
     assert ok is True
+    # DSH's tp_1 declares grading_dimensions too but stays deliberately excluded
+    # (no DSH content/grading pipeline exists yet) — must still read as unreachable.
+    ok, _ = harness.check_grading("dsh", "writing", "tp_1", "dsh_tp_chart_based_argumentation")
+    assert ok is False
 
 
 def test_check_grading_matches_the_known_reachable_telc_speaking_parts_only():

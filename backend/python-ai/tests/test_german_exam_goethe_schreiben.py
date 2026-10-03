@@ -6,10 +6,18 @@ wiring in german_exam_writing_grading.py (banded scoring path)."""
 
 from __future__ import annotations
 
+import pytest
+
 from app.services import german_exam_writing as writing
 from app.services import german_exam_semantic_verify as verify
 from app.services.german_exam_validator import hard_issues, validate_content
-from app.services.german_exam_writing_grading import _band_for_score, _banded_rubric_score
+from app.services.german_exam_writing_grading import (
+    GRADABLE_WRITING_PROFILE_IDS,
+    _band_for_score,
+    _banded_rubric_score,
+    gradable_writing_task_types,
+    grade_writing_submission,
+)
 from app.services.german_exams import get_part, get_profile
 from app.services.german_exams.task_types import is_task_type_implemented
 
@@ -118,3 +126,61 @@ def test_banded_rubric_score_falls_back_when_a_dimension_is_missing() -> None:
 def test_banded_rubric_score_is_none_for_profiles_without_band_fractions() -> None:
     telc_schreiben_1 = get_part("telc_c1_hochschule", "writing", "schreiben_1")
     assert _banded_rubric_score(telc_schreiben_1, {"task_fulfilment": 90, "correctness": 90, "repertoire": 90, "communicative_design": 90}) is None
+
+
+# ── end-to-end wiring: goethe_c1 is a gradable profile ───────────────────────
+
+
+def test_goethe_is_a_gradable_writing_profile() -> None:
+    assert "goethe_c1" in GRADABLE_WRITING_PROFILE_IDS
+    assert "forum_discussion_post" in gradable_writing_task_types()
+    assert "formal_context_message" in gradable_writing_task_types()
+
+
+def _fake_analysis(**overrides: object) -> dict:
+    base = {
+        "score": {"overall": 75, "grammar": 60, "vocabulary": 95, "structure": 80, "style": 70, "taskFulfillment": 90},
+        "feedbackItems": [], "insufficientContext": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_grade_writing_submission_goethe_schreiben1_uses_banded_scoring(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import german_exam_writing_grading as mod
+
+    monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis())
+    profile = get_profile("goethe_c1")
+    result = grade_writing_submission(
+        user_id="u1", profile=profile, part=SCHREIBEN_1, generation_id="gen-1",
+        writing_coach_task_type="freier_text", text="Ein Forumsbeitrag ..." * 10,
+    )
+
+    assert result["rubric"]["scoringMethod"] == "banded_rubric_v1_approximate_cutpoints"
+    assert result["maxScoreValue"] == 60
+    # task_fulfilment=90(A,14*1=14) coherence=avg(80,70)=75(B,14*.75=10.5)
+    # vocabulary=95(A,16*1=16) structures=60(C,16*.5=8) -> 14+10.5+16+8=48.5
+    assert result["scoreValue"] == 48.5
+
+    items = result["examResultItems"]
+    assert {i["metadata"]["rubricDimension"] for i in items} == {"task_fulfilment", "coherence", "vocabulary", "structures"}
+    for item in items:
+        assert set(item["skillTags"]) <= set(SCHREIBEN_1.allowed_skill_tags), item["skillTags"]
+        assert item["firstAttemptCorrect"] is None and item["finalCorrect"] is None
+
+
+def test_grade_writing_submission_goethe_schreiben2_uses_its_own_max_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import german_exam_writing_grading as mod
+
+    monkeypatch.setattr(mod, "analyse_writing", lambda **kwargs: _fake_analysis())
+    profile = get_profile("goethe_c1")
+    result = grade_writing_submission(
+        user_id="u1", profile=profile, part=SCHREIBEN_2, generation_id="gen-2",
+        writing_coach_task_type="freier_text", text="Eine formelle Nachricht ..." * 10,
+    )
+
+    assert result["maxScoreValue"] == 40
+    items = result["examResultItems"]
+    assert {i["metadata"]["rubricDimension"] for i in items} == {"task_fulfilment", "coherence", "vocabulary", "structures"}
+    for item in items:
+        assert set(item["skillTags"]) <= set(SCHREIBEN_2.allowed_skill_tags), item["skillTags"]

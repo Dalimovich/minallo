@@ -34,11 +34,10 @@ from .writing_coach import ALLOWED_TASK_TYPES, analyse_writing
 # grade_writing_submission() below keys its dimension mapping off. Adding a new
 # profile here means "this profile's writing parts are ready to be graded", not
 # "this profile is generated/released" (see PartBlueprint.available, untouched by
-# this module). Goethe C1's Schreiben parts already declare grading_dimensions
-# too (see goethe_c1.py) but are intentionally left out of this set — routing
-# real Goethe writing submissions through grading is a separate, not-yet-scoped
-# change and must not happen as a side effect of enabling TestDaF here.
-GRADABLE_WRITING_PROFILE_IDS: frozenset[str] = frozenset({"telc_c1_hochschule", "testdaf_digital"})
+# this module). DSH's tp_1 also declares grading_dimensions (dsh.py) but is
+# intentionally excluded — see GRADABLE_SPEAKING_PROFILE_IDS's sibling rule and
+# test_german_exam_dsh_zero_cost.py; DSH grading is unscoped future work.
+GRADABLE_WRITING_PROFILE_IDS: frozenset[str] = frozenset({"telc_c1_hochschule", "testdaf_digital", "goethe_c1"})
 
 
 def gradable_writing_task_types() -> frozenset[str]:
@@ -89,6 +88,18 @@ _DIMENSION_SCORE_KEYS: dict[str, str | None] = {
     "structures": "grammar",
     "communicative_design": None,
     "coherence": None,
+}
+
+# Skill tags for dimension names that have a _DIMENSION_SCORE_KEYS entry (so a real
+# score reaches examResultItems) but no curated multi-tag list in _RUBRIC_DIMENSIONS
+# above — without this, the generic fallback below would tag the item with the bare
+# dimension name itself, which is not a member of every profile's allowed_skill_tags.
+# Goethe's "vocabulary"/"structures" (goethe_c1.py) mean the same underlying concepts
+# as telc's "repertoire"/"correctness" above, just under Goethe's own Handbuch-defined
+# dimension names; tag them with the matching skill tags from Goethe's own vocabulary.
+_DIMENSION_SKILL_TAGS: dict[str, list[str]] = {
+    "vocabulary": ["vocabulary_range"],
+    "structures": ["grammar_accuracy", "orthography"],
 }
 
 # Continuous analyse_writing() 0-100 score -> letter band, evenly spaced quintiles.
@@ -193,7 +204,7 @@ def grade_writing_submission(
         else:
             score_key = spec["scoreKey"] if spec else _DIMENSION_SCORE_KEYS.get(dim)
             dimension_scores[dim] = score.get(score_key) if score_key else _avg(score.get("structure"), score.get("style"))
-        dimension_skill_tags[dim] = spec["skillTags"] if spec else [dim]
+        dimension_skill_tags[dim] = spec["skillTags"] if spec else _DIMENSION_SKILL_TAGS.get(dim, [dim])
 
     banded = _banded_rubric_score(part, dimension_scores)
     # A part with no published ScoringSpec (TestDaF) has no official point scale: never invent one.
@@ -211,11 +222,20 @@ def grade_writing_submission(
             "scoringMethod": banded["scoringMethod"],
         }
     else:
-        # telc's original continuous-percentage method — unchanged.
+        # telc's original continuous-percentage method — unchanged. The legacy
+        # taskFulfilment/correctness/repertoire/communicativeDesign keys are telc's own
+        # dimension names, kept verbatim for byte-for-byte backward compatibility; the
+        # dim-keyed spread alongside them is what actually exposes a profile's REAL
+        # dimension names (e.g. TestDaF's source_fidelity/linguistic_range/
+        # comprehensibility), which used to be silently absent from `rubric` for any
+        # profile whose grading_dimensions aren't telc's four — examResultItems below
+        # was never affected (it already iterates dimension_scores directly), only this
+        # display dict was incomplete.
         complete = all(isinstance(v, (int, float)) for v in dimension_scores.values())
         overall = _avg(*dimension_scores.values()) if complete else None
         exam_score_value = round(overall / 100 * max_points, 1) if overall is not None and max_points is not None else None
         rubric = {
+            **{dim: dimension_scores.get(dim) for dim in dims},
             "taskFulfilment": dimension_scores.get("task_fulfilment"),
             "correctness": dimension_scores.get("correctness"),
             "repertoire": dimension_scores.get("repertoire"),
