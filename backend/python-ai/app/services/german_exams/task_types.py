@@ -18,7 +18,7 @@ TASK_TYPES: dict[str, bool] = {
     "speech_act_matching": True,
     "statement_category_matching": True,
     "statement_concept_pair_matching": True,
-    "reading_summary_error_detection": False,
+    "reading_summary_error_detection": True,
     "listening_overview_completion": True,
     "listening_concept_pair_notes": True,
     "listening_summary_error_detection": True,

@@ -5,6 +5,7 @@ import { createWritingGrader } from './writing-grader.js';
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
 import { mountOrdering, gradeOrdering, type OrderingPart, type OrderingContent } from './ordering-task.js';
+import { mountSummaryError, type SummaryErrorPart, type SummaryErrorContent } from './summary-error-task.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
 export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
@@ -30,6 +31,7 @@ for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) =
     status.textContent=`${result.filter(r=>r.correct).length} / ${result.length} correct (practice)`;root.append(status);};
   return ()=>{dispose();root.replaceChildren();};
 };
+TASK_RENDERERS['reading_summary_error_detection']=(root,part,content)=>mountSummaryError(root,part as unknown as SummaryErrorPart,content as SummaryErrorContent);
 TASK_RENDERERS['paragraph_ordering']=(root,part,content)=>{
   const container=document.createElement('div'); root.append(container);
   const answers: Record<string,string|null>={}; const c=content as OrderingContent;

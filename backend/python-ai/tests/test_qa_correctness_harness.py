@@ -117,7 +117,9 @@ def test_check_delivery_mirrors_the_real_task_type_registry():
     assert ok is True
     ok, _ = harness.check_delivery("paragraph_ordering")  # TestDaF lesen_2 — now implemented
     assert ok is True
-    ok, _ = harness.check_delivery("reading_summary_error_detection")  # TestDaF lesen_7 — still unimplemented
+    ok, _ = harness.check_delivery("reading_summary_error_detection")  # TestDaF lesen_7 — now implemented
+    assert ok is True
+    ok, _ = harness.check_delivery("dsh_hv_lecture_tasks")  # DSH — still genuinely unimplemented
     assert ok is False
 
 

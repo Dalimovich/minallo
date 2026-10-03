@@ -379,6 +379,55 @@ def validate_paragraph_ordering(part: PartBlueprint, content: dict[str, Any]) ->
     return issues
 
 
+def validate_reading_summary_error_detection(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
+    """TestDaF Lesen 7 (Fehler in Zusammenfassung erkennen): a summary whose sentences (questions) each
+    restate the source (sources: text + optionally a graphic); correctIds names exactly itemCount of
+    them as content-wise wrong. Reuses validate_graphic (german_exam_productive.py) for the graphic
+    source — never duplicated here. Note: validate_content()'s generic pre-check already guarantees
+    every question has a nonempty, unique questionId before this function is even called."""
+    from .german_exam_productive import validate_graphic
+
+    issues: list[ValidationIssue] = []
+    sources = content.get("sources")
+    required = set(part.constraints.get("requiredSourceKinds", ()))
+    kinds: set[str] = set()
+    if not isinstance(sources, list) or not sources:
+        issues.append(ValidationIssue(None, "sources must be a nonempty array"))
+    else:
+        for source in sources:
+            if not isinstance(source, dict) or not source.get("id") or source.get("kind") not in ("text", "graphic"):
+                issues.append(ValidationIssue(None, "invalid source entry"))
+                continue
+            kinds.add(source["kind"])
+            if source["kind"] == "text" and not (source.get("text") or "").strip():
+                issues.append(ValidationIssue(None, "empty text source"))
+            elif source["kind"] == "graphic":
+                try:
+                    validate_graphic(source.get("graphic"))
+                except ValueError as exc:
+                    issues.append(ValidationIssue(None, f"invalid graphic source: {exc}"))
+        if not required <= kinds:
+            issues.append(ValidationIssue(None, f"missing required source kind(s): {sorted(required - kinds)}"))
+
+    questions = content.get("questions")
+    item_count = part.constraints.get("itemCount", 3)
+    if not isinstance(questions, list) or len(questions) <= item_count:
+        issues.append(ValidationIssue(None, f"expected a multi-sentence summary with more than {item_count} sentences, got {len(questions) if isinstance(questions, list) else 0}"))
+
+    ids = {q.get("questionId") for q in questions if isinstance(q, dict)} if isinstance(questions, list) else set()
+    correct_ids = content.get("correctIds")
+    if (not isinstance(correct_ids, list) or len(correct_ids) != item_count
+            or len(set(correct_ids)) != item_count or not set(correct_ids) <= ids):
+        issues.append(ValidationIssue(None, f"correctIds must name exactly {item_count} of the summary's own sentence ids"))
+
+    if isinstance(questions, list):
+        issues.extend(_check_skill_tags(part.module, questions, "questionId"))
+        for q in questions:
+            if isinstance(q, dict) and any(tag not in part.allowed_skill_tags for tag in q.get("skillTags") or []):
+                issues.append(ValidationIssue(q.get("questionId"), "skill tag not allowed by blueprint"))
+    return issues
+
+
 def validate_text_reconstruction_sentence_matching(part: PartBlueprint, content: dict[str, Any]) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     text = content.get("text") or {}
@@ -1209,6 +1258,7 @@ VALIDATORS: dict[str, Callable[[PartBlueprint, dict[str, Any]], list[ValidationI
     "structured_note_completion": validate_structured_note_completion,
     "text_reconstruction_sentence_matching": validate_text_reconstruction_sentence_matching,
     "paragraph_ordering": validate_paragraph_ordering,
+    "reading_summary_error_detection": validate_reading_summary_error_detection,
     "section_statement_matching": validate_section_statement_matching,
     "detail_tristate_with_global_heading": validate_detail_tristate_with_global_heading,
     "reading_detail_mc3": validate_reading_detail_mc3,

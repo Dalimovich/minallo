@@ -420,6 +420,28 @@ def _verify_prompt_goethe_schreiben(part: PartBlueprint, content: dict[str, Any]
     return system, user
 
 
+def _verify_prompt_reading_summary_error_detection(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 3)
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied source text/graphic"
+    ) + (
+        "\n\nThis is reading_summary_error_detection (TestDaF-style Lesen Teil 7, Fehler in "
+        "Zusammenfassung erkennen): a summary's sentences each restate a claim from the source, and "
+        f"exactly {item_count} of them (named in correctIds) are content-wise WRONG — they contradict or "
+        "misstate the source; every other sentence must be a genuinely accurate restatement. For each "
+        "sentence (item) judge independently from the supplied source ONLY: does it accurately reflect "
+        "what the source states (not erroneous), or does it contradict/distort it (erroneous)? Fill "
+        "audit.isErroneous with your own independent verdict — a mismatch against correctIds is reported "
+        "automatically as TRISTATE_VERDICT_MISMATCH. Use TRIVIAL_ITEM if a sentence's error is obvious "
+        "without checking the source at all, and OFF_LEVEL_CONTENT if the register isn't C1-appropriate. "
+        "Part-wide: INSUFFICIENT_SOURCE_CONTENT if the source doesn't give enough basis to judge every "
+        "sentence; PART_WIDE_INCOHERENCE if the source and summary don't form one coherent topic."
+    )
+    payload = {"sources": content.get("sources") or [], "questions": content.get("questions") or [], "correctIds": content.get("correctIds")}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_paragraph_ordering(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     """No elif branch in _verification_schema/_apply_audits for this task type — it uses the generic
     duplicateItemIds audit fallback, same as _verify_prompt_goethe_schreiben, so (like that function)
@@ -632,6 +654,7 @@ _VERIFY_PROMPT_BUILDERS = {
     "structured_note_completion": _verify_prompt_hv3,
     "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
     "paragraph_ordering": _verify_prompt_paragraph_ordering,
+    "reading_summary_error_detection": _verify_prompt_reading_summary_error_detection,
     "section_statement_matching": _verify_prompt_lesen2,
     "multi_author_statement_matching_with_none": _verify_prompt_multi_author,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
@@ -769,6 +792,8 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
     elif part.task_type in _CLOZE_MC4_TASK_TYPES:
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
+    elif part.task_type == "reading_summary_error_detection":
+        audit = _object_schema({"isErroneous": {"type": "boolean"}})
     else:
         audit = _object_schema({"duplicateItemIds": strings})
     issues = {"type": "array", "items": issue}
@@ -889,6 +914,14 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                     code = "AMBIGUOUS_MAPPING"
             else:
                 code = "VERIFIER_RESPONSE_INVALID"
+        elif part.task_type == "reading_summary_error_detection":
+            value = audit.get("isErroneous")
+            if type(value) is not bool:
+                code = "VERIFIER_RESPONSE_INVALID"
+            else:
+                expected = item.item_id in (content.get("correctIds") or [])
+                if value != expected:
+                    code = "TRISTATE_VERDICT_MISMATCH"
         else:
             values = audit.get("duplicateItemIds")
             if not isinstance(values, list) or any(not isinstance(v, str) or v not in questions or v == item.item_id for v in values):

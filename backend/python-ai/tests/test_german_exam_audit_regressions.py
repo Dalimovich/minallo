@@ -151,19 +151,20 @@ def test_only_the_telc_profile_file_opts_parts_in_explicitly():
 
 def test_an_unimplemented_task_type_cannot_be_served_even_if_a_part_were_hypothetically_available():
     """Uses the REAL registry (no monkeypatching) to prove `is_task_type_implemented` alone is
-    enough to block a hypothetically-available part. `reading_summary_error_detection` (TestDaF
-    `lesen_7`) is a genuinely unimplemented task type (no generator/validator exists for it at
-    all) — `paragraph_ordering` (`lesen_2`) no longer qualifies as the example here since its
-    generator/validator/semantic-verifier were implemented (german_exam_reading.py,
-    german_exam_validator.py, german_exam_semantic_verify.py); see
-    test_german_exam_testdaf_lesen2_paragraph_ordering.py for that part's own coverage, unlike the
-    7 TestDaF speaking task types whose registry flag was corrected on 2026-09-23 — see the test
+    enough to block a hypothetically-available part. Both TestDaF reading task types that used to
+    serve as this test's example (`paragraph_ordering`/lesen_2, `reading_summary_error_detection`/
+    lesen_7) now have real generators/validators/semantic-verifiers — see
+    test_german_exam_testdaf_lesen2_paragraph_ordering.py and
+    test_german_exam_testdaf_lesen7_summary_error_detection.py for their own coverage — so this
+    uses a DSH task type instead: DSH is structurally registered (profile, manifest, scoring) but
+    deliberately has no content generator/validator for any of its 5 task types yet, unlike the 7
+    TestDaF speaking task types whose registry flag was corrected on 2026-09-23 — see the test
     below for that pair's own regression coverage."""
     import dataclasses
 
-    profile = get_profile("testdaf_digital")
-    part = get_part("testdaf_digital", "reading", "lesen_7")
-    assert part.task_type == "reading_summary_error_detection"
+    profile = get_profile("dsh")
+    part = get_part("dsh", "listening", "hv_1")
+    assert part.task_type == "dsh_hv_lecture_tasks"
     assert is_task_type_implemented(part.task_type) is False  # today's real registry state
     hypothetically_available = dataclasses.replace(part, available=True)
     with pytest.raises(NotImplementedError):
@@ -216,6 +217,23 @@ def test_paragraph_ordering_is_now_implemented_but_lesen2_stays_gated_by_availab
         _require_available(profile, part)
     with pytest.raises(NotImplementedError):
         generate_task("fake-user-id", "testdaf_digital", "reading", "lesen_2", mode="practice")
+
+
+def test_reading_summary_error_detection_is_now_implemented_but_lesen7_stays_gated_by_available():
+    """reading_summary_error_detection (TestDaF lesen_7) gained a real generator/validator/
+    semantic-verifier — see test_german_exam_testdaf_lesen7_summary_error_detection.py — but that
+    is an engine-capability fact, not a release decision: lesen_7 keeps `available=False` like
+    every other TestDaF part, and `_require_available` must keep raising on the `available` check
+    alone."""
+    profile = get_profile("testdaf_digital")
+    part = get_part("testdaf_digital", "reading", "lesen_7")
+    assert part.task_type == "reading_summary_error_detection"
+    assert is_task_type_implemented("reading_summary_error_detection") is True  # engine capability, implemented here
+    assert part.available is False  # release gate untouched by this fix
+    with pytest.raises(NotImplementedError):
+        _require_available(profile, part)
+    with pytest.raises(NotImplementedError):
+        generate_task("fake-user-id", "testdaf_digital", "reading", "lesen_7", mode="practice")
 
 
 def test_registry_contains_every_profiles_task_types_with_no_kerror():

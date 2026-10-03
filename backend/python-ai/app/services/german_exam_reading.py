@@ -634,6 +634,69 @@ def _prompt_paragraph_ordering(profile: ExamProfile, part: PartBlueprint, plan: 
     return system, user
 
 
+# ── Lesen 7 (Digital TestDaF): reading_summary_error_detection ───────────────
+# Official source: testdaf.de demo PDF p.14 ("Lesen – Aufgabentyp 7 (Fehler in
+# Zusammenfassung erkennen)") + solution key p.36. Mechanics confirmed from the
+# primary source: a source text (+ a graphic per requiredSourceKinds), and a
+# summary of several sentences in an order that does NOT follow the source text
+# ("Die Items folgen nicht dem Textverlauf"); exactly itemCount (officially 3)
+# of the summary's sentences are content-wise wrong, the rest genuinely accurate
+# restatements — the demo's own summary ran 9 sentences for 3 wrong ones, used
+# here only as prompt guidance (no official sentence-count is published).
+
+
+def _prompt_reading_summary_error_detection(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 3)
+    required = part.constraints.get("requiredSourceKinds", ())
+    needs_graphic = "graphic" in required
+    system = (
+        f"You generate ORIGINAL German reading-exam practice content for {profile.family} "
+        f"{profile.variant or ''} ({part.title}), matching the official reading_summary_error_detection "
+        "task format (TestDaF Lesen – Aufgabentyp 7, 'Fehler in Zusammenfassung erkennen'). You must NOT "
+        "copy any real exam content — generate entirely new, original material. Reply with ONLY valid "
+        "JSON, no markdown fences, no commentary.\n\n"
+        f"Write: (1) a source reading text of 250-350 words on the topic '{topic['label']}', academic or "
+        "study-relevant register"
+        + (("; (2) a simple data graphic (a small table, 2-4 columns and 2-5 rows, with a title and unit) "
+            "presenting information CONSISTENT with and complementary to the text — it must add genuinely "
+            "checkable facts (numbers/trends) of its own, not just restate the text as a table")
+           if needs_graphic else "")
+        + f"; ({3 if needs_graphic else 2}) a SUMMARY of the source as a flat list of 8-10 short, "
+        "independent sentences (each one its own item/questionId). The summary sentences must NOT follow "
+        f"the source text's own order. EXACTLY {item_count} of the summary sentences must be content-wise "
+        "WRONG — each one clearly contradicts or misstates one specific, checkable fact from the text"
+        + (" or graphic" if needs_graphic else "")
+        + " (never a vague or merely-debatable claim). Every other sentence must be a genuinely accurate "
+        "restatement of the source, confirmable with certainty by checking it against the source — not "
+        "just plausible-sounding."
+        + _adaptation_guidance(plan)
+        + "\n\nOutput JSON shape exactly: {\"sources\": [{\"id\": \"s1\", \"kind\": \"text\", \"text\": "
+        "\"...\"}"
+        + (", {\"id\": \"s2\", \"kind\": \"graphic\", \"graphic\": {\"title\": \"...\", \"unit\": \"...\", "
+           "\"columns\": [{\"id\": \"c1\", \"label\": \"...\"}], \"rows\": [{\"id\": \"r1\", \"label\": "
+           "\"...\", \"values\": {\"c1\": 0}}]}}" if needs_graphic else "")
+        + "], \"questions\": [{\"questionId\": \"sent1\", \"text\": \"...\"}, ...], \"correctIds\": "
+        f"[\"...\"]}} — questions lists every summary sentence in DISPLAY order (not source order), "
+        f"correctIds names exactly {item_count} of their questionIds (the wrong ones), no other keys."
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+def _postprocess_reading_summary_error_detection(content: dict[str, Any]) -> dict[str, Any]:
+    """skillTags are backend-assigned (uniform for this task — identifying a content error is always
+    detail_comprehension), never asked of the model, matching _postprocess_paragraph_ordering above."""
+    questions = content.get("questions")
+    if not isinstance(questions, list):
+        return content
+    out = dict(content)
+    out["questions"] = [
+        {**q, "skillTags": ["detail_comprehension"]} if isinstance(q, dict) else q
+        for q in questions
+    ]
+    return out
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
     "reading_multiple_choice": _prompt_reading_multiple_choice,
@@ -643,6 +706,7 @@ _PROMPT_BUILDERS = {
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,
     "paragraph_ordering": _prompt_paragraph_ordering,
+    "reading_summary_error_detection": _prompt_reading_summary_error_detection,
 }
 
 
@@ -997,6 +1061,8 @@ def _postprocess_paragraph_ordering(content: dict[str, Any]) -> dict[str, Any]:
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
     if part.task_type == "paragraph_ordering":
         content = _postprocess_paragraph_ordering(content)
+    elif part.task_type == "reading_summary_error_detection":
+        content = _postprocess_reading_summary_error_detection(content)
     if "presentation" in part.constraints:
         from copy import deepcopy
         content["presentation"] = deepcopy(part.constraints["presentation"])
