@@ -548,3 +548,53 @@ def test_oral_routed_before_the_shared_sprechen_1_part_id_branch(monkeypatch) ->
     result = generate_speaking_part(None, ORAL_PART, [], TOPIC)
     assert result == sentinel
     assert len(calls) == 1
+
+
+# ---- grading-readiness audit: generator output vs the existing qualification gates -----------
+# Discovered during the execution-path audit (not a regression — the generators never claimed
+# compatibility with these gates): LV/HV's own validators (validate_lv_content/validate_hv_content)
+# never required a referenceAnswer, so generate_dsh_lv_part/generate_dsh_hv_part don't produce
+# one — but dsh_qualification.qualify_open_tasks's items_well_formed gate DOES require it ("a
+# reference answer is required to validate the key"). This is the exact, precise reason LV/HV
+# open-answer grading cannot yet honestly reuse qualify_open_tasks: not a missing official score
+# conversion, a missing field in the generator's own output. WS and TP do NOT have this gap —
+# their generators already call qualify_lv_ws/qualify_tp directly as part of their own pipeline
+# (see those generators' own code), so their output is qualify_*-compatible by construction.
+
+
+def test_lv_generator_output_is_not_yet_compatible_with_qualify_open_tasks() -> None:
+    from app.services.german_exams.dsh_qualification import qualify_open_tasks
+
+    content = _valid_content()
+    report = qualify_open_tasks(content, LV_PART)
+    assert report.status == "failed"
+    assert "items_well_formed" in report.failed
+    assert any("reference answer" in g["detail"] for g in report.gates if g["name"] == "items_well_formed")
+
+
+def test_hv_generator_output_is_not_yet_compatible_with_qualify_open_tasks() -> None:
+    from app.services.german_exams.dsh_qualification import qualify_open_tasks
+
+    content = _valid_hv_content()
+    report = qualify_open_tasks(content, HV_PART)
+    assert report.status == "failed"
+    assert "items_well_formed" in report.failed
+
+
+def test_ws_generator_output_is_already_compatible_with_qualify_lv_ws() -> None:
+    """Contrast case: WS's generator is already integration-compatible because it calls
+    qualify_lv_ws itself — proving (not assuming) the asymmetry the header comment states."""
+    from app.services.german_exam_dsh_generators import generate_dsh_ws_part
+
+    lv_content = _valid_ws_lv_content()
+    items = _raw_ws_items()
+    provider = _scripted_provider({"items": items}, *_blind_answers(items))
+    ws_content, _ = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    from app.services.german_exams.dsh_qualification import qualify_lv_ws
+
+    # A real blind solver would be an LLM call (see generate_dsh_ws_part's own _llm_blind_solver);
+    # this fixture-level fake just returns the known-correct answer per item, which is enough to
+    # prove the STRUCTURAL/binding gates (the ones this test is actually about) all pass.
+    by_item = {item["itemId"]: item["families"][0]["accepted"][0] for item in items}
+    report = qualify_lv_ws(lv_content, ws_content, LV_PART, WS_PART, blind_solver=lambda raw: by_item[raw["itemId"]])
+    assert report.status == "qualified"
