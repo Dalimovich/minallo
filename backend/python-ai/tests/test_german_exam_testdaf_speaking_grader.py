@@ -10,7 +10,9 @@ grader's output actually satisfies the generic schema, not just my own assumptio
 
 from __future__ import annotations
 
+import base64
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -164,6 +166,74 @@ def test_never_claims_an_official_score() -> None:
     provider = _fake_provider({"task_fulfilment": {"feedback": "TDN 5, scaledScore 18", "quotes": []}})
     result = grade_testdaf_speaking_transcript(_request(), _segments(), provider=provider)
     assert not any(k in result for k in ("scaledScore", "tdn", "pass", "officialScore", "rawScore"))
+
+
+# ── transcription transport (storage-agnostic: bytes in, segments out) ───
+
+
+def _segment(start, end, text) -> SimpleNamespace:
+    return SimpleNamespace(start=start, end=end, text=text)
+
+
+@pytest.mark.parametrize("data,mime", [
+    ("not-base64!", "audio/webm"),
+    (base64.b64encode(b"x").decode(), "audio/webm"),  # under the 100-byte floor
+    (base64.b64encode(b"x" * 1000).decode(), "text/plain"),  # unsupported mime
+])
+def test_transcribe_rejects_bad_recordings_before_calling_the_provider(data, mime) -> None:
+    from app.services.german_exam_testdaf_speaking import transcribe_testdaf_speaking_recording
+
+    with pytest.raises(ValueError):
+        transcribe_testdaf_speaking_recording(data, mime)
+
+
+def test_transcribe_calls_whisper_verbose_json_and_returns_segments(monkeypatch) -> None:
+    from app.services import german_exam_testdaf_speaking as mod
+
+    calls = []
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(segments=[_segment(0.0, 3.2, "Also, äh, ich würde dir empfehlen.")], usage=None)
+
+    monkeypatch.setattr(mod, "get_openai_client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(mod, "record_usage", lambda **kwargs: None)
+    segments = mod.transcribe_testdaf_speaking_recording(base64.b64encode(b"x" * 1000).decode(), "audio/webm;codecs=opus")
+    assert calls[0]["model"] == "whisper-1"
+    assert calls[0]["response_format"] == "verbose_json"
+    assert calls[0]["language"] == "de"
+    assert calls[0]["file"][0].endswith(".webm")
+    assert segments == [{"start": 0.0, "end": 3.2, "text": "Also, äh, ich würde dir empfehlen."}]
+
+
+def test_transcribe_drops_malformed_segments_and_fails_closed_with_none_usable(monkeypatch) -> None:
+    from app.services import german_exam_testdaf_speaking as mod
+
+    def create(**kwargs):
+        return SimpleNamespace(segments=[_segment(None, None, "garbage timestamps")], usage=None)
+
+    monkeypatch.setattr(mod, "get_openai_client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(mod, "record_usage", lambda **kwargs: None)
+    with pytest.raises(ValueError, match="No usable speech"):
+        mod.transcribe_testdaf_speaking_recording(base64.b64encode(b"x" * 1000).decode(), "audio/webm")
+
+
+def test_transcribe_output_feeds_the_grader_directly_with_no_adapter(monkeypatch) -> None:
+    """Proves the transcription helper's segment shape is exactly what
+    grade_testdaf_speaking_transcript expects — no translation layer needed between them."""
+    from app.services import german_exam_testdaf_speaking as mod
+
+    def create(**kwargs):
+        return SimpleNamespace(segments=[_segment(0.0, 3.2, "mit deinem Chef zu sprechen")], usage=None)
+
+    monkeypatch.setattr(mod, "get_openai_client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(mod, "record_usage", lambda **kwargs: None)
+    segments = mod.transcribe_testdaf_speaking_recording(base64.b64encode(b"x" * 1000).decode(), "audio/webm")
+
+    provider = _fake_provider({"task_fulfilment": {"feedback": "Gut.", "quotes": ["mit deinem Chef zu sprechen"]}})
+    result = mod.grade_testdaf_speaking_transcript(_request(), segments, provider=provider)
+    tf = next(d for d in result["dimensions"] if d["id"] == "task_fulfilment")
+    assert tf["evidence"] == [{"quote": "mit deinem Chef zu sprechen", "startSeconds": 0.0}]
 
 
 # ── full round-trip through the real generic contract ────────────────────

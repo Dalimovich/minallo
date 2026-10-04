@@ -20,32 +20,43 @@ fluency or pronunciation." validate_feedback() (german_exam_productive.py) separ
 structurally forbids this module from ever returning a numeric official score
 (scaledScore/tdn/pass/officialScore/rawScore) regardless of what it's asked for.
 
-OPEN INTEGRATION QUESTION (deliberately not resolved here — see the backlog report, not a code
-TODO): speaking-task.ts's mountSpeaking() already has a two-phase UI (upload() -> {recordingId},
-then grader({recordingId, durationSeconds})) with upload() currently stubbed
+transcribe_testdaf_speaking_recording() below supplies the one piece that's storage-agnostic by
+construction: already-obtained audio bytes -> timestamped segments, via whisper-1's
+verbose_json (NOT telc's gpt-4o-mini-transcribe/`response_format="json"`, which returns no
+segment timestamps at all — this module's evidence.startSeconds needs real ones). It never
+fetches, uploads, or persists a recording itself.
+
+OPEN INTEGRATION QUESTION (still deliberately NOT resolved here — see the backlog report, not a
+code TODO): speaking-task.ts's mountSpeaking() already has a two-phase UI (upload() ->
+{recordingId}, then grader({recordingId, durationSeconds})) with upload() currently stubbed
 'Upload is not connected'. Wiring a real `upload` needs a genuine architectural decision this
 module does not make: (a) persist the recording in a private bucket (mirrors storage.py's
 existing upload_exam_video/signed_video_url pattern) and delete it immediately after
 transcription succeeds — keeps the existing two-phase UI exactly as built, but needs a new
 bucket + migration + retention policy for voice data; or (b) redesign mountSpeaking() into a
-single combined upload-and-grade call so no recording is ever persisted server-side at all
-(strongest privacy stance, closest to telc's own "without storing recordings" principle) at the
-cost of changing an already-built, tested UI flow. Both are legitimate; this is a product
-decision about handling a learner's voice recording, not an engineering one this module should
-make unilaterally. Whichever is chosen, the transcription call feeding this module's `segments`
-parameter should use `whisper-1` with `response_format="verbose_json"` (not
-telc's gpt-4o-mini-transcribe/`response_format="json"`, which returns no segment timestamps at
-all) — needed for genuine, non-fabricated evidence.startSeconds per quote.
+single combined upload-and-grade call so no recording is ever persisted server-side at all,
+matching telc's own german_exam_speaking_practice.transcribe() precedent exactly (audio arrives
+base64-encoded in the request, is transcribed synchronously, and is never written to storage at
+all) — at the cost of changing an already-built, tested UI flow. Both are legitimate; this is a
+product decision about handling a learner's voice recording, not an engineering one this module
+should make unilaterally.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
 from ..config import get_settings
 from .german_exam_productive import SPEAKING_TYPES
+from .german_exam_speaking_practice import MIME_EXTENSIONS
 from .llm_json import chat_json
+from .openai_client import get_openai_client
+from .usage_meter import record_usage
+
+# Mirrors german_exam_speaking_practice.transcribe()'s own bound — not re-derived per task type.
+_MAX_RECORDING_BYTES = 6 * 1024 * 1024
 
 # Zero signal survives transcription to text — never scored, regardless of what the model returns.
 _PRONUNCIATION_ONLY_DIMENSION = "pronunciation"
@@ -72,6 +83,41 @@ def _quotable_segment(quote: str, segments: list[dict[str, Any]], duration_secon
         if quote in text and isinstance(start, (int, float)) and 0 <= start < duration_seconds:
             return {"quote": quote, "startSeconds": float(start)}
     return None
+
+
+def transcribe_testdaf_speaking_recording(
+    audio_base64: str, mime_type: str, *, user_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Pure transport: base64-encoded audio -> timestamped transcript segments. Storage-agnostic —
+    how these bytes were obtained (fetched from storage, or carried directly in a request) is
+    deliberately out of scope here; see the module docstring's OPEN INTEGRATION QUESTION for what
+    still has to be decided before this can be wired to a real recordingId/upload path."""
+    mime = mime_type.split(";")[0]
+    if mime not in MIME_EXTENSIONS:
+        raise ValueError("Unsupported recording format")
+    try:
+        audio = base64.b64decode(audio_base64, validate=True)
+    except Exception as exc:
+        raise ValueError("Invalid audio encoding") from exc
+    if not 100 <= len(audio) <= _MAX_RECORDING_BYTES:
+        raise ValueError("Recording must contain audio and be under 6 MB")
+    model = "whisper-1"
+    result = get_openai_client().audio.transcriptions.create(
+        model=model, file=(f"speech.{MIME_EXTENSIONS[mime]}", audio, mime),
+        language="de", response_format="verbose_json", timeout=90,
+    )
+    usage = getattr(result, "usage", None)
+    record_usage(feature="testdaf_speaking_transcription", model=model, user_id=user_id,
+                 prompt_tokens=getattr(usage, "input_tokens", 0), completion_tokens=getattr(usage, "output_tokens", 0))
+    segments: list[dict[str, Any]] = []
+    for raw in getattr(result, "segments", None) or ():
+        start, end = getattr(raw, "start", None), getattr(raw, "end", None)
+        text = (getattr(raw, "text", None) or "").strip()
+        if text and isinstance(start, (int, float)) and isinstance(end, (int, float)):
+            segments.append({"start": float(start), "end": float(end), "text": text})
+    if not segments:
+        raise ValueError("No usable speech detected. Please record again.")
+    return segments
 
 
 def grade_testdaf_speaking_transcript(
