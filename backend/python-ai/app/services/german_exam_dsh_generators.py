@@ -55,6 +55,7 @@ from .german_exams.dsh_content_model import (
     source_fingerprint,
     validate_hv_content,
     validate_lv_content,
+    validate_oral_content,
     validate_tp_content,
 )
 from .german_exams.dsh_qualification import qualify_lv_ws, qualify_tp
@@ -632,3 +633,126 @@ def generate_dsh_tp_part(
             "liveQualificationRequired": True,
         }
     raise DshGenerationError(f"could not produce a valid DSH TP part after {_MAX_REGENERATIONS} regenerations: {last_error}")
+
+
+# ---- Oral (Kurzvortrag stimulus only) ----------------------------------------------------------
+# ONLY the Kurzvortrag's stimulus material (the short text the learner presents on) — the content
+# model this generator is bound to (validate_oral_content, added in the prior phase) covers
+# nothing else. The ~15-minute conversation that follows is a live, unscripted exchange
+# (constraints["interactive"] is True); this generator does not generate an examiner conversation
+# script, does not simulate the dialogue, and does not touch grading (the official §11c criteria
+# have no published numeric weights — see audit/exam-correctness/GRADING_AUDIT.md's 2026-10-04
+# Goethe follow-up for the identical weights gap in a sibling exam; the same "stays UNVERIFIED,
+# not guessed" rule applies here).
+
+# DECISION: one "short_text" input — the realistic single Kurzvortrag stimulus shape. "graphic"
+# (the other official inputKind) is skipped for this first build, same reasoning LV's optional
+# graphic and TP's chart/table/diagram kinds were skipped.
+_ORAL_INPUT_COUNT = 1
+
+_ORAL_GENERATION_SHAPE = {
+    "inputs": [{"id": "i1", "kind": "short_text", "text": "the short text the learner will present on"}],
+    "languageActs": ["two or more of: describe | summarize | compare | justify | evaluate | take_position"],
+    "instructions": "the task instructions shown to the learner, anchored in the input above",
+    "inputRefs": ["i1"],
+}
+
+
+def _oral_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
+    c = part.constraints
+    shape = json.dumps(_ORAL_GENERATION_SHAPE, ensure_ascii=False)
+    system = (
+        "Generate ONE DSH (Deutsche Sprachprüfung für den Hochschulzugang) mündliche Prüfung "
+        "Kurzvortrag STIMULUS in German — a short text the learner will give a short presentation "
+        f"({c['presentationStyle'].replace('_', ' ')}) on, requiring NO specialist knowledge "
+        "beyond general academic literacy. You are generating the STIMULUS ONLY — never an "
+        "examiner's conversation script, never a model presentation the learner could copy.\n\n"
+        f"Produce exactly {_ORAL_INPUT_COUNT} input (kind \"short_text\"): a short, self-contained "
+        "academic text a non-specialist can understand and present on in under 5 minutes.\n\n"
+        "Write instructions that: (1) explicitly reference and require engaging with the given "
+        "text; (2) name at least two language acts from this official list the learner must "
+        f"perform in their presentation: {list(c['languageActs'])}; (3) are answerable by a "
+        "non-specialist academically literate adult; (4) do NOT pre-formulate any passage the "
+        "learner could just copy into their own presentation.\n\n"
+        f"Topic: {topic.get('label', '')}.\n\n"
+        f"Return JSON only, in exactly this shape: {shape}"
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+def _oral_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
+    system = (
+        "You are an INDEPENDENT reviewer auditing a DSH mündliche Prüfung Kurzvortrag STIMULUS — "
+        "there is no correct answer to verify, no model presentation, nothing to grade; you are "
+        "reviewing the stimulus itself for quality. Verify: (a) the instructions genuinely "
+        "require engaging with the given text, not answerable while ignoring it; (b) the "
+        "stimulus is answerable/presentable by a non-specialist academically literate adult, "
+        "with NO specialist knowledge needed, in under 5 minutes; (c) the instructions do not "
+        "pre-formulate any passage the learner could copy into their own presentation.\n\n"
+        'Return JSON only: {"requiresTheInput": true, "answerableWithoutSpecialistKnowledge": '
+        'true, "noPreformulatedPassage": true}'
+    )
+    user = json.dumps(content, ensure_ascii=False)
+    return system, user
+
+
+def _oral_audit_passed(audit: Any) -> tuple[bool, str]:
+    if not isinstance(audit, dict):
+        return False, "audit response was not a JSON object"
+    if audit.get("requiresTheInput") is not True:
+        return False, "presentation is answerable while ignoring the input text"
+    if audit.get("answerableWithoutSpecialistKnowledge") is not True:
+        return False, "stimulus requires specialist knowledge"
+    if audit.get("noPreformulatedPassage") is not True:
+        return False, "instructions pre-formulate a passage the learner could copy"
+    return True, ""
+
+
+def generate_dsh_oral_part(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    *, provider: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (content, validation_meta). KURZVORTRAG STIMULUS ONLY — see this section's header
+    comment for the hard boundary (no conversation script, no dialogue simulation, no grading).
+
+    Pipeline: generation -> structural validation (validate_oral_content, from the prior phase)
+    -> independent semantic audit -> bounded full-regeneration repair ->
+    accept/DshGenerationError. No dsh_qualification.py gate exists for oral content yet (it
+    postdates validate_oral_content) — unlike WS/TP, there is nothing pre-built here to reuse."""
+    call = provider or chat_json
+    last_error = ""
+    for attempt in range(_MAX_REGENERATIONS + 1):
+        # 1. GENERATION
+        system, user = _oral_generation_prompt(part, topic)
+        result = call(system=system, user=user, model=part.constraints.get("generationModel") or get_settings().german_exam_model, max_tokens=2000)
+        content = result.data if isinstance(result.data, dict) else {}
+
+        # 2. STRUCTURAL VALIDATION
+        try:
+            validate_oral_content(content, part)
+            inputs = content.get("inputs") or []
+            if len(inputs) != _ORAL_INPUT_COUNT:
+                raise DshContentError(f"expected {_ORAL_INPUT_COUNT} input, got {len(inputs)}")
+            if any(i.get("kind") != "short_text" for i in inputs):
+                raise DshContentError("this generator only produces the short_text input kind")
+        except DshContentError as exc:
+            last_error = f"structural: {exc}"
+            log.info("dsh_oral_generation structural_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 3. SEMANTIC/CONTENT VALIDATION
+        audit_system, audit_user = _oral_audit_prompt(content)
+        audit_result = call(system=audit_system, user=audit_user, model=part.constraints.get("verifierModel") or get_settings().german_exam_model, max_tokens=1000)
+        passed, reason = _oral_audit_passed(audit_result.data)
+        if not passed:
+            last_error = f"semantic: {reason}"
+            log.info("dsh_oral_generation semantic_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 5. ACCEPT
+        return content, {
+            "deterministicPassed": True, "semanticPassed": True, "regenerationCount": attempt,
+            "liveQualificationRequired": True,
+        }
+    raise DshGenerationError(f"could not produce a valid DSH Oral stimulus after {_MAX_REGENERATIONS} regenerations: {last_error}")

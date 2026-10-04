@@ -13,11 +13,13 @@ import pytest
 from app.services.german_exam_dsh_generators import (
     _HV_ITEM_COUNT,
     _LV_ITEM_COUNT,
+    _ORAL_INPUT_COUNT,
     _TP_INPUT_COUNT,
     _WS_ITEM_COUNT,
     DshGenerationError,
     generate_dsh_hv_part,
     generate_dsh_lv_part,
+    generate_dsh_oral_part,
     generate_dsh_tp_part,
     generate_dsh_ws_part,
 )
@@ -27,6 +29,7 @@ LV_PART = get_part("dsh", "reading", "lv_1")
 HV_PART = get_part("dsh", "listening", "hv_1")
 WS_PART = get_part("dsh", "scientific_structures", "ws_1")
 TP_PART = get_part("dsh", "writing", "tp_1")
+ORAL_PART = get_part("dsh", "speaking", "sprechen_1")
 TOPIC = {"topicId": "open_science", "label": "Offene Wissenschaft"}
 SENTENCE = "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war."
 
@@ -461,5 +464,87 @@ def test_tp_routed_from_the_real_writing_dispatcher_before_productive_or_telc_lo
     monkeypatch.setattr(dsh_gen, "generate_dsh_tp_part", lambda *a, **kw: calls.append((a, kw)) or sentinel)
 
     result = generate_writing_part(None, TP_PART, [], TOPIC)
+    assert result == sentinel
+    assert len(calls) == 1
+
+
+# ---- Oral (Kurzvortrag stimulus only) ----------------------------------------------------------
+
+
+def _valid_oral_content(**over) -> dict:
+    content = {
+        "inputs": [{"id": "i1", "kind": "short_text", "text": "Ein kurzer Text über wissenschaftliche Methoden."}],
+        "languageActs": ["describe", "evaluate"],
+        "instructions": "Beschreiben Sie den Text und nehmen Sie begründet Stellung dazu.",
+        "inputRefs": ["i1"],
+    }
+    content.update(over)
+    return content
+
+
+def _valid_oral_audit() -> dict:
+    return {"requiresTheInput": True, "answerableWithoutSpecialistKnowledge": True, "noPreformulatedPassage": True}
+
+
+def test_oral_accepts_a_valid_generation_and_audit_on_the_first_attempt() -> None:
+    content = _valid_oral_content()
+    provider = _scripted_provider(content, _valid_oral_audit())
+    result, meta = generate_dsh_oral_part(None, ORAL_PART, [], TOPIC, provider=provider)
+    assert len(result["inputs"]) == _ORAL_INPUT_COUNT
+    assert meta["regenerationCount"] == 0
+    assert len(provider.calls) == 2
+
+
+def test_oral_structural_failure_regenerates_then_succeeds() -> None:
+    bad = _valid_oral_content(inputs=[])
+    good = _valid_oral_content()
+    provider = _scripted_provider(bad, good, _valid_oral_audit())
+    _, meta = generate_dsh_oral_part(None, ORAL_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_oral_non_short_text_input_kind_is_rejected_by_this_generator() -> None:
+    """This generator deliberately only produces the short_text input kind — "graphic" (the
+    other official kind) is a scope decision skipped for this first build, not silently faked."""
+    bad = _valid_oral_content(inputs=[{"id": "i1", "kind": "graphic", "text": "x"}])
+    good = _valid_oral_content()
+    provider = _scripted_provider(bad, good, _valid_oral_audit())
+    _, meta = generate_dsh_oral_part(None, ORAL_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("requiresTheInput", False), ("answerableWithoutSpecialistKnowledge", False), ("noPreformulatedPassage", False),
+])
+def test_oral_each_semantic_audit_criterion_independently_blocks_acceptance(field, value) -> None:
+    content = _valid_oral_content()
+    audit = _valid_oral_audit()
+    audit[field] = value
+    good = _valid_oral_content()
+    provider = _scripted_provider(content, audit, good, _valid_oral_audit())
+    _, meta = generate_dsh_oral_part(None, ORAL_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_oral_raises_after_exhausting_the_regeneration_budget_never_returns_bad_content() -> None:
+    always_bad = _valid_oral_content(inputs=[])
+    provider = _scripted_provider(always_bad, always_bad, always_bad)
+    with pytest.raises(DshGenerationError):
+        generate_dsh_oral_part(None, ORAL_PART, [], TOPIC, provider=provider)
+
+
+def test_oral_routed_before_the_shared_sprechen_1_part_id_branch(monkeypatch) -> None:
+    """DSH's oral part shares the part_id "sprechen_1" convention with TELC/Goethe — without the
+    DSH task_type check running FIRST in generate_speaking_part, this would silently fall into
+    the shared part_id=="sprechen_1" branch and get TELC/Goethe's presentation-topic-choice
+    prompt instead of the Kurzvortrag stimulus shape. Pins that the DSH check wins."""
+    import app.services.german_exam_dsh_generators as dsh_gen
+    from app.services.german_exam_speaking import generate_speaking_part
+
+    sentinel = ({"inputs": "sentinel"}, {"deterministicPassed": True})
+    calls = []
+    monkeypatch.setattr(dsh_gen, "generate_dsh_oral_part", lambda *a, **kw: calls.append((a, kw)) or sentinel)
+
+    result = generate_speaking_part(None, ORAL_PART, [], TOPIC)
     assert result == sentinel
     assert len(calls) == 1

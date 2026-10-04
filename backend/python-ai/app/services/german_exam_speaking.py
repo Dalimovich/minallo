@@ -17,6 +17,15 @@ DISCUSSION_GUIDING_POINTS = [
 
 
 def generate_speaking_part(profile: ExamProfile, part: PartBlueprint, plan, topic: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+    # DSH's oral part is ALSO named part_id "sprechen_1" (same convention as TELC/Goethe), so this
+    # check must run BEFORE the part_id=="sprechen_1" branch below — otherwise DSH would silently
+    # get TELC/Goethe's presentation-topic-choice prompt instead of its own Kurzvortrag stimulus
+    # shape. Routed to its own generator (german_exam_dsh_generators.py) for the same reason
+    # LV/HV/WS/TP are — see that module's docstring.
+    from .german_exams.dsh import TASK_TYPE_ORAL as DSH_TASK_TYPE_ORAL
+    if part.task_type == DSH_TASK_TYPE_ORAL:
+        from .german_exam_dsh_generators import generate_dsh_oral_part
+        return generate_dsh_oral_part(profile, part, plan, topic)
     from .german_exam_productive import SPEAKING_TYPES, generate_productive
     if part.task_type in SPEAKING_TYPES:
         return generate_productive(profile, part, plan, topic)
