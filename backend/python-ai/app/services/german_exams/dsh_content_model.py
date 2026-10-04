@@ -233,6 +233,40 @@ def validate_lv_ws_bundle(lv: Mapping[str, Any], ws: Mapping[str, Any], lv_part:
             raise DshSourceMismatch(f"{item.get('itemId')}: quoted sentence is not the LV text at that span")
 
 
+# ---- Raw generated item -> validated domain object (shared by HV and LV generators) -----------
+def open_answer_item_from_generated(item_id: str, task_form: str, raw: Mapping[str, Any]) -> OpenAnswerItem:
+    """Converts one raw generated item (camelCase dict, the same shape _check_task_forms below
+    structurally checks) into a constructed OpenAnswerItem/ContentPoint. _check_task_forms only
+    confirms requiredPoints is non-empty and assessLanguage is not True — it deliberately does not
+    construct these dataclasses (data shapes only), so it never catches a duplicate point id, a
+    non-positive point value, or points that can't reach max_points. A GENERATOR must call this
+    too; it is not optional extra rigor, it is the actual per-item content-point validation."""
+    if not isinstance(raw, Mapping):
+        raise DshContentError(f"{item_id}: item must be an object")
+
+    def _point(p: Any) -> ContentPoint:
+        if not isinstance(p, Mapping):
+            raise DshContentError(f"{item_id}: content point must be an object")
+        return ContentPoint(
+            point_id=p.get("pointId"), description=p.get("description"),
+            points=p.get("points"), alternatives=tuple(p.get("alternatives") or ()),
+        )
+
+    required_raw = raw.get("requiredPoints")
+    if not isinstance(required_raw, list) or not required_raw:
+        raise DshContentError(f"{item_id}: requiredPoints must be a non-empty list")
+    required = tuple(_point(p) for p in required_raw)
+    optional = tuple(_point(p) for p in (raw.get("optionalPoints") or ()))
+    max_points = raw.get("maxPoints")
+    if max_points is None:
+        max_points = sum((p.points for p in required + optional), Fraction(0))
+    return OpenAnswerItem(
+        item_id=item_id, task_form=task_form, question=raw.get("question"), max_points=max_points,
+        required_points=required, optional_points=optional, grading_notes=raw.get("gradingNotes") or "",
+        assess_language=bool(raw.get("assessLanguage", False)),
+    )
+
+
 # ---- Structural validators per task type (content dicts a future generator must produce) ------
 def _check_task_forms(tasks: Any, allowed: tuple[str, ...], label: str) -> None:
     if not isinstance(tasks, list) or not tasks:

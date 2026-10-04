@@ -14,8 +14,9 @@ from app.services.german_exams import GermanExamProfileError, get_part
 from app.services.german_exams.dsh_content_model import (
     GRADING_CONTENT, GRADING_CONTENT_AND_LANGUAGE, GRADING_LANGUAGE, GRADING_ORAL, AnswerFamily, ContentPoint,
     DshContentError, DshSourceMismatch, OpenAnswerItem, StructureItem, grading_mode_for_module, match_answer_family,
-    score_content_item, score_structure_item, source_fingerprint, validate_dsh_task_content, validate_hv_content,
-    validate_lv_content, validate_lv_ws_bundle, validate_oral_content, validate_tp_content,
+    open_answer_item_from_generated, score_content_item, score_structure_item, source_fingerprint,
+    validate_dsh_task_content, validate_hv_content, validate_lv_content, validate_lv_ws_bundle,
+    validate_oral_content, validate_tp_content,
 )
 
 LV_PART = get_part("dsh", "reading", "lv_1")
@@ -71,6 +72,50 @@ def test_content_score_takes_no_answer_text_and_is_capped() -> None:
         score_content_item(item, ["nope"])
     import inspect
     assert list(inspect.signature(score_content_item).parameters) == ["item", "matched_point_ids"]  # no learner text
+
+
+def _raw_item(**over) -> dict:
+    raw = {"question": "Warum?", "requiredPoints": [{"pointId": "p1", "description": "Ursache", "points": 2}]}
+    raw.update(over)
+    return raw
+
+
+def test_open_answer_item_from_generated_builds_a_real_validated_item() -> None:
+    item = open_answer_item_from_generated("i1", "questions", _raw_item())
+    assert item.item_id == "i1" and item.task_form == "questions" and item.max_points == Fraction(2)
+    assert item.grading_mode == GRADING_CONTENT
+
+
+def test_open_answer_item_from_generated_derives_max_points_when_absent() -> None:
+    item = open_answer_item_from_generated("i1", "questions", _raw_item(
+        requiredPoints=[{"pointId": "p1", "description": "a", "points": 1}, {"pointId": "p2", "description": "b", "points": 1}]))
+    assert item.max_points == Fraction(2)
+
+
+def test_open_answer_item_from_generated_rejects_what_the_dataclasses_reject() -> None:
+    """Enforces the per-item rules _check_task_forms deliberately leaves to this constructor:
+    duplicate point ids, non-positive points, assess_language=True, points that can't reach
+    the stated max, and a missing/empty requiredPoints list — never silently accepted."""
+    for bad in (
+        _raw_item(requiredPoints=[]),
+        _raw_item(requiredPoints="not-a-list"),
+        _raw_item(requiredPoints=[{"pointId": "p1", "description": "a", "points": 0}]),
+        _raw_item(requiredPoints=[{"pointId": "p1", "description": "a", "points": 1}, {"pointId": "p1", "description": "b", "points": 1}]),
+        _raw_item(requiredPoints=[{"pointId": "p1", "description": "a", "points": 1}], maxPoints=5),
+        _raw_item(assessLanguage=True),
+        _raw_item(requiredPoints=[{"pointId": "p1", "description": "", "points": 1}]),
+        _raw_item(question=""),
+    ):
+        with pytest.raises(DshContentError):
+            open_answer_item_from_generated("i1", "questions", bad)
+
+
+def test_open_answer_item_from_generated_keeps_optional_points_and_alternatives() -> None:
+    item = open_answer_item_from_generated("i1", "questions", _raw_item(
+        requiredPoints=[{"pointId": "p1", "description": "a", "points": 1, "alternatives": ["alt1", "alt2"]}],
+        optionalPoints=[{"pointId": "p2", "description": "b", "points": 1}], maxPoints=2))
+    assert item.required_points[0].alternatives == ("alt1", "alt2")
+    assert item.optional_points[0].point_id == "p2" and item.max_points == Fraction(2)
 
 
 def test_open_item_validation() -> None:
