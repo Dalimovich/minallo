@@ -1378,7 +1378,16 @@ def generate_reading_part(
     (+ targeted repair, except lesen_1 which always regenerates on semantic
     item errors) -> deterministic re-validation -> semantic re-verification
     -> accept. Raises ReadingGenerationError rather than ever returning
-    known-invalid content once the regeneration budget is exhausted."""
+    known-invalid content once the regeneration budget is exhausted.
+
+    DSH's dsh_lv_text_tasks is routed to its own generator (german_exam_dsh_generators.py): DSH's
+    content shape (open-answer content points, raise-based validation) is a different, already-
+    established contract this file's own validate_content()/hard_issues() pipeline does not speak
+    — see that module's docstring for why."""
+    from .german_exams.dsh import TASK_TYPE_LV as DSH_TASK_TYPE_LV
+    if part.task_type == DSH_TASK_TYPE_LV:
+        from .german_exam_dsh_generators import generate_dsh_lv_part
+        return generate_dsh_lv_part(profile, part, plan, topic)
     from .german_exam_objective import SELECTION_TYPES, generate_selection
     if part.task_type in SELECTION_TYPES:
         return generate_selection(profile, part, plan, topic)
