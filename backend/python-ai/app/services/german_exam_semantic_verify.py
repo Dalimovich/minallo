@@ -935,7 +935,10 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
     return result
 
 
-def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens: int | None = None) -> SemanticVerificationResult:
+def verify_semantic(
+    part: PartBlueprint, content: dict[str, Any], *,
+    max_tokens: int | None = None, reasoning_effort: str | None = None,
+) -> SemanticVerificationResult:
     """One batched call for the whole part. Deliberately does NOT receive the
     adaptation plan or topic-selection rationale — the verifier judges the
     frozen content on its own merits, not biased by why it was generated."""
@@ -1052,9 +1055,13 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
         # unchanged (10000 floor) for every task type with <=15 items.
         item_count = len(content.get("questions") or [])
         verify_max_tokens = max_tokens if max_tokens is not None else max(10000, 6000 + item_count * 400)
+        # An explicit override (currently: the chunked verifier's bounded degraded-effort
+        # retry, see german_exam_semantic_chunked.py) replaces the default policy outright;
+        # unset, every caller keeps today's exact behavior.
+        effort = reasoning_effort if reasoning_effort is not None else ("medium" if model.startswith("gpt-5") else None)
         result = chat_json(system=system, user=user, max_tokens=verify_max_tokens,
                            model=model, json_schema=_verification_schema(part, content),
-                           reasoning_effort="medium" if model.startswith("gpt-5") else None)
+                           reasoning_effort=effort)
     except Exception:
         log.warning("Semantic verifier call failed", exc_info=True)
         return _parse_result(None, expected_ids)
