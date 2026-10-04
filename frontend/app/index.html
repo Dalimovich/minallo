@@ -2,6 +2,16 @@
 <html lang="en">
  <head>
   <meta charset="UTF-8" />
+  <!-- loader.ts's "Full app" section (SECTIONS/FEATURE_SECTIONS fetches, CSS
+       hrefs, script src assignments — ~60 references) was written assuming
+       it runs from /, using paths like 'css/base.css' and 'pages/portal.html'
+       with no leading slash. It now only ever runs from here (/app/), where
+       those same relative paths would resolve to /app/css/base.css and
+       404. This <base> tag is the fix: it makes every relative URL in this
+       document — including ones loader.ts builds dynamically in JS — resolve
+       against / again, so loader.ts needs no changes. Do not remove without
+       first auditing loader.ts for an alternative fix. -->
+  <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>Minallo</title>
