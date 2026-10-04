@@ -11,13 +11,16 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.german_exam_dsh_generators import (
+    _HV_ITEM_COUNT,
     _LV_ITEM_COUNT,
     DshGenerationError,
+    generate_dsh_hv_part,
     generate_dsh_lv_part,
 )
 from app.services.german_exams import get_part
 
 LV_PART = get_part("dsh", "reading", "lv_1")
+HV_PART = get_part("dsh", "listening", "hv_1")
 TOPIC = {"topicId": "open_science", "label": "Offene Wissenschaft"}
 SENTENCE = "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war."
 
@@ -167,6 +170,67 @@ def test_raises_after_exhausting_the_regeneration_budget_never_returns_bad_conte
     provider = _scripted_provider(always_bad, always_bad, always_bad)
     with pytest.raises(DshGenerationError):
         generate_dsh_lv_part(None, LV_PART, [], TOPIC, provider=provider)
+
+
+# ---- HV (Hörverstehen) — same shared pipeline, different top-level field/constraints ----------
+
+
+def _valid_hv_content(item_count: int = _HV_ITEM_COUNT, **over) -> dict:
+    items = [
+        {"itemId": f"q{i}", "question": f"Frage {i}?", "requiredPoints": [{"pointId": f"p{i}", "description": f"Punkt {i}", "points": 1}]}
+        for i in range(1, item_count + 1)
+    ]
+    content = {"lectureText": _text(6000), "tasks": [{"form": "questions", "items": items}]}
+    content.update(over)
+    return content
+
+
+def test_hv_accepts_a_valid_generation_and_audit_on_the_first_attempt() -> None:
+    content = _valid_hv_content()
+    provider = _scripted_provider(content, _valid_audit(content))
+    result, meta = generate_dsh_hv_part(None, HV_PART, [], TOPIC, provider=provider)
+    assert len(result["tasks"][0]["items"]) == _HV_ITEM_COUNT
+    assert "sourceId" not in result  # HV has no sourceId concept, unlike LV
+    assert meta["regenerationCount"] == 0
+    assert len(provider.calls) == 2
+
+
+def test_hv_structural_failure_regenerates_then_succeeds() -> None:
+    bad = _valid_hv_content(lectureText="too short")
+    good = _valid_hv_content()
+    provider = _scripted_provider(bad, good, _valid_audit(good))
+    _, meta = generate_dsh_hv_part(None, HV_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_hv_semantic_audit_failure_regenerates_even_when_structurally_valid() -> None:
+    content = _valid_hv_content()
+    audit = _valid_audit(content)
+    audit["items"][0]["answerableFromTextAlone"] = False
+    good = _valid_hv_content()
+    provider = _scripted_provider(content, audit, good, _valid_audit(good))
+    _, meta = generate_dsh_hv_part(None, HV_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_hv_raises_after_exhausting_the_regeneration_budget_never_returns_bad_content() -> None:
+    always_bad = _valid_hv_content(item_count=1)
+    provider = _scripted_provider(always_bad, always_bad, always_bad)
+    with pytest.raises(DshGenerationError):
+        generate_dsh_hv_part(None, HV_PART, [], TOPIC, provider=provider)
+
+
+def test_hv_routed_from_the_real_listening_dispatcher_before_any_other_exam_logic(monkeypatch) -> None:
+    import app.services.german_exam_dsh_generators as dsh_gen
+    from app.services.german_exam_listening import generate_listening_part
+
+    sentinel = ({"lectureText": "sentinel"}, {"deterministicPassed": True})
+    calls = []
+    monkeypatch.setattr(dsh_gen, "generate_dsh_hv_part", lambda *a, **kw: calls.append((a, kw)) or sentinel)
+
+    result = generate_listening_part(None, HV_PART, [], TOPIC)
+    assert result == sentinel
+    assert len(calls) == 1
 
 
 def test_routed_from_the_real_reading_dispatcher_not_telc_testdaf_goethe_logic(monkeypatch) -> None:

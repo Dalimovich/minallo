@@ -43,6 +43,7 @@ from .german_exams import ExamProfile, PartBlueprint
 from .german_exams.dsh_content_model import (
     DshContentError,
     open_answer_item_from_generated,
+    validate_hv_content,
     validate_lv_content,
 )
 from .llm_json import chat_json
@@ -160,45 +161,59 @@ def _audit_passed(audit: Any, expected_item_ids: set[str]) -> tuple[bool, str]:
     return True, ""
 
 
-def generate_dsh_lv_part(
-    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
-    *, provider: Any = None,
+def _build_open_answer_items(content: dict[str, Any]) -> list[Any]:
+    """Shared by every open-answer DSH generator (HV, LV): walks content["tasks"][].items[] and
+    constructs a real OpenAnswerItem per item (see open_answer_item_from_generated for why this
+    is required in addition to validate_*_content). Raises DshContentError on the first invalid
+    item — the caller's own try/except turns that into a structural-failure regeneration."""
+    items_built = []
+    for task in content.get("tasks") or ():
+        for item in task.get("items") or ():
+            items_built.append(open_answer_item_from_generated(item.get("itemId"), task.get("form"), item))
+    return items_built
+
+
+def _run_open_answer_pipeline(
+    *, label: str, part: PartBlueprint, item_count: int, call: Any,
+    generation_prompt: Any, audit_prompt: Any, structural_validate: Any,
+    gen_max_tokens: int, audit_max_tokens: int, source_id_field: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Returns (content, validation_meta). See module docstring for the 5-stage pipeline."""
-    call = provider or chat_json
+    """Shared 5-stage pipeline for every DSH open-answer generator (HV, LV — both produce the
+    SAME content["tasks"][].items[] shape with OpenAnswerItem/ContentPoint content points, just
+    with a different top-level text field and different official constraints). Each caller
+    supplies its own generation/audit prompt builders and structural validator; this function
+    owns only the orchestration (generate -> validate -> audit -> bounded regenerate -> accept),
+    so that shape never has to be duplicated per generator."""
     last_error = ""
     for attempt in range(_MAX_REGENERATIONS + 1):
         # 1. GENERATION
-        system, user = _lv_generation_prompt(part, topic)
-        result = call(system=system, user=user, model=part.constraints.get("generationModel") or get_settings().german_exam_model, max_tokens=6000)
+        system, user = generation_prompt()
+        result = call(system=system, user=user, model=part.constraints.get("generationModel") or get_settings().german_exam_model, max_tokens=gen_max_tokens)
         content = result.data if isinstance(result.data, dict) else {}
-        if not content.get("sourceId"):
-            content["sourceId"] = f"dsh-lv-{uuid.uuid4().hex[:12]}"
+        if source_id_field and not content.get(source_id_field):
+            content[source_id_field] = f"dsh-{label}-{uuid.uuid4().hex[:12]}"
 
         # 2. STRUCTURAL VALIDATION
         try:
-            validate_lv_content(content, part)
-            items_built = []
-            for task in content.get("tasks") or ():
-                for item in task.get("items") or ():
-                    items_built.append(open_answer_item_from_generated(item.get("itemId"), task.get("form"), item))
+            structural_validate(content, part)
+            items_built = _build_open_answer_items(content)
             ids = [i.item_id for i in items_built]
-            if len(ids) != _LV_ITEM_COUNT:
-                raise DshContentError(f"expected {_LV_ITEM_COUNT} items, got {len(ids)}")
+            if len(ids) != item_count:
+                raise DshContentError(f"expected {item_count} items, got {len(ids)}")
             if len(set(ids)) != len(ids):
                 raise DshContentError("duplicate item ids")
         except DshContentError as exc:
             last_error = f"structural: {exc}"
-            log.info("dsh_lv_generation structural_failure attempt=%s error=%s", attempt, last_error)
+            log.info("dsh_%s_generation structural_failure attempt=%s error=%s", label, attempt, last_error)
             continue
 
         # 3. SEMANTIC/CONTENT VALIDATION
-        audit_system, audit_user = _lv_audit_prompt(content)
-        audit_result = call(system=audit_system, user=audit_user, model=part.constraints.get("verifierModel") or get_settings().german_exam_model, max_tokens=3000)
+        audit_system, audit_user = audit_prompt(content)
+        audit_result = call(system=audit_system, user=audit_user, model=part.constraints.get("verifierModel") or get_settings().german_exam_model, max_tokens=audit_max_tokens)
         passed, reason = _audit_passed(audit_result.data, set(ids))
         if not passed:
             last_error = f"semantic: {reason}"
-            log.info("dsh_lv_generation semantic_failure attempt=%s error=%s", attempt, last_error)
+            log.info("dsh_%s_generation semantic_failure attempt=%s error=%s", label, attempt, last_error)
             continue
 
         # 5. ACCEPT
@@ -206,4 +221,117 @@ def generate_dsh_lv_part(
             "deterministicPassed": True, "semanticPassed": True, "regenerationCount": attempt,
             "liveQualificationRequired": True,
         }
-    raise DshGenerationError(f"could not produce a valid DSH LV part after {_MAX_REGENERATIONS} regenerations: {last_error}")
+    raise DshGenerationError(f"could not produce a valid DSH {label.upper()} part after {_MAX_REGENERATIONS} regenerations: {last_error}")
+
+
+def generate_dsh_lv_part(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    *, provider: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (content, validation_meta). See module docstring for the 5-stage pipeline."""
+    return _run_open_answer_pipeline(
+        label="lv", part=part, item_count=_LV_ITEM_COUNT, call=provider or chat_json,
+        generation_prompt=lambda: _lv_generation_prompt(part, topic),
+        audit_prompt=_lv_audit_prompt, structural_validate=validate_lv_content,
+        gen_max_tokens=6000, audit_max_tokens=3000, source_id_field="sourceId",
+    )
+
+
+# ---- HV (Hörverstehen) ----------------------------------------------------------------------
+# CONTENT ONLY — no audio anywhere in this generator's output, deliberately. Audio synthesis,
+# the two-play delivery timing (dsh_hv_playback.py) and synchronization/segment metadata are ALL
+# separate concerns this generator does not touch, exactly mirroring german_exam_listening.py's
+# own "Returns CONTENT ONLY — no TTS call" rule for every other exam's Hören. A structurally and
+# semantically valid lectureText + tasks here is necessary, not sufficient, for a real HV task:
+# without real, qualified audio this remains a structurally complete generator for a
+# media-backed task that stays unavailable (see the module docstring's own availability note).
+
+# DECISION (not an official count): 8 items, same density reasoning as LV's own item count —
+# the MPO states none for HV either.
+_HV_ITEM_COUNT = 8
+
+_HV_GENERATION_SHAPE = {
+    "lectureText": f"ORIGINAL German lecture/seminar-talk transcript, {{min}}-{{max}} characters with spaces",
+    "tasks": [{
+        "form": "questions",
+        "items": [{
+            "itemId": "q1", "question": "an open comprehension question answerable from the lecture alone",
+            "requiredPoints": [{"pointId": "p1", "description": "one idea the answer must contain, in your own words", "points": 1}],
+            "gradingNotes": "optional note for a future human/AI grader",
+        }],
+    }],
+}
+
+
+def _hv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
+    c = part.constraints
+    shape = json.dumps(_HV_GENERATION_SHAPE, ensure_ascii=False)
+    system = (
+        "Generate ONE DSH (Deutsche Sprachprüfung für den Hochschulzugang) Hörverstehen (HV) "
+        "listening-comprehension task in German, written as the TRANSCRIPT of a spoken academic "
+        f"lecture or seminar talk ({c['communicativeSituation'].replace('_', ' ')}) — write it as "
+        "natural SPOKEN academic German (the way a lecturer actually talks: signposting phrases, "
+        "spoken-register connectors, not a written article), for the official 'questions' task "
+        "form.\n\n"
+        f"The transcript must be ORIGINAL, {c['lectureCharsMin']}-{c['lectureCharsMax']} "
+        "characters including spaces (measuring the transcript text, not an audio duration — none "
+        "is specified), and require NO specialist knowledge beyond general academic literacy — a "
+        "non-specialist, academically literate listener must be able to follow it from the "
+        "transcript alone.\n\n"
+        f"Produce exactly {_HV_ITEM_COUNT} open comprehension questions (task form \"questions\"). "
+        "Each question must be answerable from the transcript ALONE, with exactly ONE defensible "
+        "reading — never ambiguous, never requiring information the transcript does not state, "
+        "never answerable from outside/world knowledge instead of the transcript. For each "
+        "question, give the required content point(s) a correct answer must contain (as idea "
+        "descriptions, NOT exact quotes — content-level paraphrase is fine; these are graded on "
+        "content only, never on language).\n\n"
+        f"Topic: {topic.get('label', '')}. Never mention being an AI or that this is a generated "
+        "exercise within the transcript itself.\n\n"
+        f"Return JSON only, in exactly this shape: {shape}"
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+def _hv_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
+    text = content["lectureText"]
+    items = [
+        {
+            "itemId": item["itemId"], "question": item["question"],
+            "claimedPoints": [p["description"] for p in item["requiredPoints"]],
+        }
+        for task in content["tasks"] for item in task["items"]
+    ]
+    system = (
+        "You are an INDEPENDENT reviewer auditing a DSH Hörverstehen listening-comprehension "
+        "task's TRANSCRIPT (you are given the transcript text, not audio — judge from it exactly "
+        "as a listener who heard the lecture would). You are given the transcript and, per "
+        "question, the content points its own answer key claims are required — treat those claims "
+        "as UNVERIFIED, not as ground truth; judge everything against the transcript alone. For "
+        "each question verify: (a) it is answerable from the transcript alone, with no outside/"
+        "world knowledge needed; (b) it has exactly ONE defensible reading, never two equally "
+        "valid interpretations; (c) EVERY claimed content point is actually, genuinely stated or "
+        "clearly implied by the transcript — flag any claimed point the transcript does not "
+        "actually support. Also flag if the transcript itself requires specialist knowledge "
+        "beyond general academic literacy, or does not read as a coherent, natural, original "
+        "spoken lecture/seminar talk.\n\n"
+        'Return JSON only: {"items": [{"itemId": "q1", "answerableFromTextAlone": true, '
+        '"singleDefensibleReading": true, "unsupportedPointDescriptions": []}, ...], '
+        '"textRequiresSpecialistKnowledge": false, "textIsCoherent": true}'
+    )
+    user = json.dumps({"transcript": text, "items": items}, ensure_ascii=False)
+    return system, user
+
+
+def generate_dsh_hv_part(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    *, provider: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (content, validation_meta). content has NO audio field anywhere — see this
+    section's own header comment for why that is deliberate, not an oversight."""
+    return _run_open_answer_pipeline(
+        label="hv", part=part, item_count=_HV_ITEM_COUNT, call=provider or chat_json,
+        generation_prompt=lambda: _hv_generation_prompt(part, topic),
+        audit_prompt=_hv_audit_prompt, structural_validate=validate_hv_content,
+        gen_max_tokens=6500, audit_max_tokens=3000, source_id_field=None,
+    )
