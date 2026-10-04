@@ -197,7 +197,17 @@ h1 {
   border-top: 1px solid var(--seo-line);
 }
 
+.seo-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
 @media (max-width: 760px) {
+  .seo-footer__links {
+    gap: 10px;
+  }
+
   .seo-page {
     padding-inline: 18px;
   }
