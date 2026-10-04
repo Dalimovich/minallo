@@ -3,18 +3,33 @@ established in german_exams/dsh.py and german_exams/dsh_content_model.py.
 
 Every generator follows the same five explicit stages (never merged, never skipped):
   1. GENERATION      — one chat_json call, prompted from the part's own OFFICIAL constraints only.
-  2. STRUCTURAL VALIDATION — dsh_content_model's existing validate_*_content() (shape, length,
-     official task forms/input kinds) PLUS open_answer_item_from_generated() per item (the
-     deeper per-item rules: duplicate point ids, non-positive points, points vs max_points).
+  2. STRUCTURAL VALIDATION — HV/LV reuse dsh_qualification.qualify_open_tasks() (no content_matcher:
+     this proves the structure gate — validate_hv_content/validate_lv_content, dispatched via
+     validate_dsh_task_content — AND the items_well_formed gate, i.e. every item carries a
+     referenceAnswer, exactly the contract the repository's own golden content
+     (tests/dsh_golden_content.py) and 50-test offline qualification suite already establish:
+     requiredPoints (content-point-based) AND one referenceAnswer per item AND at least one
+     errorfulVariant per part — option "both", not a choice between them) PLUS
+     open_answer_item_from_generated() per item (the deeper per-item rules qualify_open_tasks's
+     own well_formed() doesn't reach: duplicate point ids, non-positive points, points vs
+     max_points) PLUS this module's own check that at least one errorfulVariant is present (the
+     gate qualify_open_tasks can only check WITH a content_matcher, which none exists yet).
   3. SEMANTIC/CONTENT VALIDATION — an INDEPENDENT second chat_json call that re-checks
-     answerability/ambiguity/no-outside-knowledge against the text alone, never trusting the
-     first call's own content points as ground truth (mirrors german_exam_media_tasks.py's own
-     generate-then-independently-audit shape).
+     answerability/ambiguity/no-outside-knowledge against the text alone, AND that the
+     referenceAnswer itself genuinely covers every claimed required point — never trusting the
+     first call's own content points or reference answer as ground truth (mirrors
+     german_exam_media_tasks.py's own generate-then-independently-audit shape).
   4. REPAIR — bounded full-regeneration only (no targeted per-item repair yet): simpler, and this
      is a first build with no live qualification data yet showing targeted repair is needed (the
      same reasoning Sprachbausteine's repair started from before it grew more targeted).
   5. ACCEPT / REJECT — raises DshGenerationError rather than ever returning content that failed
      either validation stage once the regeneration budget is exhausted.
+
+IMPORTANT: this still does NOT implement grading. score_content_item() and a real content_matcher
+judgement (an LLM that decides which content points a LEARNER's own answer covers) remain
+entirely unbuilt — referenceAnswer/errorfulVariant exist so a FUTURE content_matcher can be
+qualified against this content via qualify_open_tasks's existing gates, not because grading
+happens here.
 
 Why NOT german_exam_validator.py's validate_content()/hard_issues()/repair_items_semantic()
 pipeline every other module uses: those return list[ValidationIssue] for a flat content["questions"]
@@ -22,8 +37,9 @@ shape; dsh_content_model's validators raise DshContentError for a nested content
 shape instead — an intentional, already-tested, audit-approved contract (see
 audit/dsh/IMPLEMENTATION_AUDIT.md's R-table) that this module does not change. Retrofitting either
 side to match the other would rewrite tested code just to force a shared pipeline; using
-dsh_content_model's own validators directly, with one consistent repair/audit shape across every
-DSH generator, satisfies "don't build five independent validation frameworks" without that rewrite.
+dsh_content_model's own validators directly (via qualify_open_tasks/qualify_tp/qualify_lv_ws, all
+three already-existing), with one consistent repair/audit shape across every DSH generator,
+satisfies "don't build five independent validation frameworks" without that rewrite.
 
 Availability is untouched by this module: nothing here ever sets a part's `available`. A
 generator succeeding is necessary, not sufficient, for availability — see each part's own
@@ -53,12 +69,10 @@ from .german_exams.dsh_content_model import (
     DshContentError,
     open_answer_item_from_generated,
     source_fingerprint,
-    validate_hv_content,
-    validate_lv_content,
     validate_oral_content,
     validate_tp_content,
 )
-from .german_exams.dsh_qualification import qualify_lv_ws, qualify_tp
+from .german_exams.dsh_qualification import qualify_lv_ws, qualify_open_tasks, qualify_tp
 from .llm_json import chat_json
 
 log = logging.getLogger(__name__)
@@ -84,6 +98,8 @@ _LV_GENERATION_SHAPE = {
         "items": [{
             "itemId": "q1", "question": "an open comprehension question answerable from the text alone",
             "requiredPoints": [{"pointId": "p1", "description": "one idea the answer must contain, in your own words", "points": 1}],
+            "referenceAnswer": "ONE full-German-sentence model answer that genuinely covers every required point above, in your own words",
+            "errorfulVariant": "OPTIONAL (at least one item in the whole task needs this): the SAME content as referenceAnswer, but with deliberate grammar/case/word-order mistakes — never a different or wrong answer",
             "gradingNotes": "optional note for a future human/AI grader",
         }],
     }],
@@ -108,7 +124,12 @@ def _lv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[s
         "content-level paraphrase is fine; these are graded on content only, never on language). "
         "A question may have one required point (worth 1-2 points) or two (each worth 1 point, "
         "summing to the question's max — but do not set maxPoints explicitly, it is derived from "
-        "the points you give).\n\n"
+        "the points you give). For EVERY question also give a referenceAnswer: one genuine, "
+        "full-sentence model answer that covers every one of its required points. For AT LEAST "
+        "ONE question across the whole task, also give an errorfulVariant: the exact same "
+        "content as its referenceAnswer, rewritten with deliberate grammar/case/word-order "
+        "mistakes — never a different answer, never a worse one content-wise, only worse "
+        "language (this proves content grading ignores language errors, so never skip it).\n\n"
         f"Topic: {topic.get('label', '')}. Never mention being an AI or that this is a generated "
         "exercise within the text itself.\n\n"
         f"Return JSON only, in exactly this shape: {shape}"
@@ -123,21 +144,25 @@ def _lv_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
         {
             "itemId": item["itemId"], "question": item["question"],
             "claimedPoints": [p["description"] for p in item["requiredPoints"]],
+            "referenceAnswer": item.get("referenceAnswer"),
         }
         for task in content["tasks"] for item in task["items"]
     ]
     system = (
         "You are an INDEPENDENT reviewer auditing a DSH Leseverstehen reading-comprehension task. "
-        "You are given the source text and, per question, the content points its own answer key "
-        "claims are required — treat those claims as UNVERIFIED, not as ground truth; judge "
-        "everything against the text alone. For each question verify: (a) it is answerable from "
-        "the text alone, with no outside/world knowledge needed; (b) it has exactly ONE defensible "
-        "reading, never two equally valid interpretations; (c) EVERY claimed content point is "
-        "actually, genuinely stated or clearly implied by the text — flag any claimed point the "
-        "text does not actually support. Also flag if the text itself requires specialist "
-        "knowledge beyond general academic literacy, or is not a coherent, natural, original text.\n\n"
+        "You are given the source text and, per question, the content points and reference "
+        "answer its own answer key claims — treat those claims as UNVERIFIED, not as ground "
+        "truth; judge everything against the text alone. For each question verify: (a) it is "
+        "answerable from the text alone, with no outside/world knowledge needed; (b) it has "
+        "exactly ONE defensible reading, never two equally valid interpretations; (c) EVERY "
+        "claimed content point is actually, genuinely stated or clearly implied by the text — "
+        "flag any claimed point the text does not actually support; (d) the referenceAnswer "
+        "itself genuinely covers EVERY one of the claimed required content points — flag it if "
+        "it misses one. Also flag if the text itself requires specialist knowledge beyond "
+        "general academic literacy, or is not a coherent, natural, original text.\n\n"
         'Return JSON only: {"items": [{"itemId": "q1", "answerableFromTextAlone": true, '
-        '"singleDefensibleReading": true, "unsupportedPointDescriptions": []}, ...], '
+        '"singleDefensibleReading": true, "unsupportedPointDescriptions": [], '
+        '"referenceAnswerCoversAllPoints": true}, ...], '
         '"textRequiresSpecialistKnowledge": false, "textIsCoherent": true}'
     )
     user = json.dumps({"text": text, "items": items}, ensure_ascii=False)
@@ -169,9 +194,28 @@ def _audit_passed(audit: Any, expected_item_ids: set[str]) -> tuple[bool, str]:
         unsupported = entry.get("unsupportedPointDescriptions") or []
         if unsupported:
             return False, f"{item_id}: unsupported content point(s) {unsupported!r}"
+        if entry.get("referenceAnswerCoversAllPoints") is not True:
+            return False, f"{item_id}: referenceAnswer does not cover every required point"
     if seen != expected_item_ids:
         return False, f"audit did not cover every item (missing {expected_item_ids - seen!r})"
     return True, ""
+
+
+def _fill_in_max_points(content: dict[str, Any]) -> None:
+    """Mutates content in place: any item missing maxPoints gets it computed as the sum of its
+    requiredPoints' points (the same fallback open_answer_item_from_generated already applies).
+    Done BEFORE qualify_open_tasks runs, because dsh_qualification.open_item() indexes
+    raw["maxPoints"] directly (no fallback) — tests/dsh_golden_content.py's hand-authored items
+    always set it explicitly; this generator's prompt deliberately doesn't ask the model to (one
+    less number for it to get wrong), so the real value is computed deterministically here
+    instead of trusted from the model either way."""
+    for task in content.get("tasks") or ():
+        for item in task.get("items") or ():
+            if not isinstance(item, dict) or item.get("maxPoints") is not None:
+                continue
+            points = [p.get("points") for p in (item.get("requiredPoints") or ()) if isinstance(p, dict)]
+            if points and all(isinstance(p, (int, float)) for p in points):
+                item["maxPoints"] = sum(points)
 
 
 def _build_open_answer_items(content: dict[str, Any]) -> list[Any]:
@@ -188,15 +232,18 @@ def _build_open_answer_items(content: dict[str, Any]) -> list[Any]:
 
 def _run_open_answer_pipeline(
     *, label: str, part: PartBlueprint, item_count: int, call: Any,
-    generation_prompt: Any, audit_prompt: Any, structural_validate: Any,
+    generation_prompt: Any, audit_prompt: Any,
     gen_max_tokens: int, audit_max_tokens: int, source_id_field: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Shared 5-stage pipeline for every DSH open-answer generator (HV, LV — both produce the
     SAME content["tasks"][].items[] shape with OpenAnswerItem/ContentPoint content points, just
     with a different top-level text field and different official constraints). Each caller
-    supplies its own generation/audit prompt builders and structural validator; this function
-    owns only the orchestration (generate -> validate -> audit -> bounded regenerate -> accept),
-    so that shape never has to be duplicated per generator."""
+    supplies its own generation/audit prompt builders; this function owns the orchestration
+    (generate -> validate via qualify_open_tasks -> audit -> bounded regenerate -> accept), so
+    that shape never has to be duplicated per generator. structural_validate is no longer a
+    caller-supplied parameter: qualify_open_tasks's own "structure" gate already dispatches to
+    validate_hv_content/validate_lv_content via validate_dsh_task_content(part.task_type, ...),
+    so passing one in would just be re-deriving what part.task_type already determines."""
     last_error = ""
     for attempt in range(_MAX_REGENERATIONS + 1):
         # 1. GENERATION
@@ -205,16 +252,26 @@ def _run_open_answer_pipeline(
         content = result.data if isinstance(result.data, dict) else {}
         if source_id_field and not content.get(source_id_field):
             content[source_id_field] = f"dsh-{label}-{uuid.uuid4().hex[:12]}"
+        _fill_in_max_points(content)
 
-        # 2. STRUCTURAL VALIDATION
+        # 2. STRUCTURAL VALIDATION — reuses qualify_open_tasks (no content_matcher: this runs
+        # exactly the gates that don't need one — "structure" and "items_well_formed", i.e. every
+        # item carries a referenceAnswer) rather than re-deriving them.
         try:
-            structural_validate(content, part)
+            report = qualify_open_tasks(content, part)
+            if report.failed:
+                raise DshContentError(f"qualify_open_tasks: {report.failed}")
             items_built = _build_open_answer_items(content)
             ids = [i.item_id for i in items_built]
             if len(ids) != item_count:
                 raise DshContentError(f"expected {item_count} items, got {len(ids)}")
             if len(set(ids)) != len(ids):
                 raise DshContentError("duplicate item ids")
+            raw_items = [item for task in content.get("tasks") or () for item in task.get("items") or ()]
+            if not any(str(item.get("errorfulVariant") or "").strip() for item in raw_items):
+                # The one gate qualify_open_tasks can only check WITH a content_matcher, which
+                # none exists yet — checked here so the generator still enforces it today.
+                raise DshContentError("at least one item needs an errorfulVariant to prove language-independence")
         except DshContentError as exc:
             last_error = f"structural: {exc}"
             log.info("dsh_%s_generation structural_failure attempt=%s error=%s", label, attempt, last_error)
@@ -245,7 +302,7 @@ def generate_dsh_lv_part(
     return _run_open_answer_pipeline(
         label="lv", part=part, item_count=_LV_ITEM_COUNT, call=provider or chat_json,
         generation_prompt=lambda: _lv_generation_prompt(part, topic),
-        audit_prompt=_lv_audit_prompt, structural_validate=validate_lv_content,
+        audit_prompt=_lv_audit_prompt,
         gen_max_tokens=6000, audit_max_tokens=3000, source_id_field="sourceId",
     )
 
@@ -270,6 +327,8 @@ _HV_GENERATION_SHAPE = {
         "items": [{
             "itemId": "q1", "question": "an open comprehension question answerable from the lecture alone",
             "requiredPoints": [{"pointId": "p1", "description": "one idea the answer must contain, in your own words", "points": 1}],
+            "referenceAnswer": "ONE full-German-sentence model answer that genuinely covers every required point above, in your own words",
+            "errorfulVariant": "OPTIONAL (at least one item in the whole task needs this): the SAME content as referenceAnswer, but with deliberate grammar/case/word-order mistakes — never a different or wrong answer",
             "gradingNotes": "optional note for a future human/AI grader",
         }],
     }],
@@ -297,7 +356,12 @@ def _hv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[s
         "never answerable from outside/world knowledge instead of the transcript. For each "
         "question, give the required content point(s) a correct answer must contain (as idea "
         "descriptions, NOT exact quotes — content-level paraphrase is fine; these are graded on "
-        "content only, never on language).\n\n"
+        "content only, never on language). For EVERY question also give a referenceAnswer: one "
+        "genuine, full-sentence model answer that covers every one of its required points. For "
+        "AT LEAST ONE question across the whole task, also give an errorfulVariant: the exact "
+        "same content as its referenceAnswer, rewritten with deliberate grammar/case/word-order "
+        "mistakes — never a different answer, never a worse one content-wise, only worse "
+        "language (this proves content grading ignores language errors, so never skip it).\n\n"
         f"Topic: {topic.get('label', '')}. Never mention being an AI or that this is a generated "
         "exercise within the transcript itself.\n\n"
         f"Return JSON only, in exactly this shape: {shape}"
@@ -312,6 +376,7 @@ def _hv_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
         {
             "itemId": item["itemId"], "question": item["question"],
             "claimedPoints": [p["description"] for p in item["requiredPoints"]],
+            "referenceAnswer": item.get("referenceAnswer"),
         }
         for task in content["tasks"] for item in task["items"]
     ]
@@ -319,17 +384,20 @@ def _hv_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
         "You are an INDEPENDENT reviewer auditing a DSH Hörverstehen listening-comprehension "
         "task's TRANSCRIPT (you are given the transcript text, not audio — judge from it exactly "
         "as a listener who heard the lecture would). You are given the transcript and, per "
-        "question, the content points its own answer key claims are required — treat those claims "
-        "as UNVERIFIED, not as ground truth; judge everything against the transcript alone. For "
-        "each question verify: (a) it is answerable from the transcript alone, with no outside/"
-        "world knowledge needed; (b) it has exactly ONE defensible reading, never two equally "
-        "valid interpretations; (c) EVERY claimed content point is actually, genuinely stated or "
-        "clearly implied by the transcript — flag any claimed point the transcript does not "
-        "actually support. Also flag if the transcript itself requires specialist knowledge "
-        "beyond general academic literacy, or does not read as a coherent, natural, original "
-        "spoken lecture/seminar talk.\n\n"
+        "question, the content points and reference answer its own answer key claims — treat "
+        "those claims as UNVERIFIED, not as ground truth; judge everything against the "
+        "transcript alone. For each question verify: (a) it is answerable from the transcript "
+        "alone, with no outside/world knowledge needed; (b) it has exactly ONE defensible "
+        "reading, never two equally valid interpretations; (c) EVERY claimed content point is "
+        "actually, genuinely stated or clearly implied by the transcript — flag any claimed "
+        "point the transcript does not actually support; (d) the referenceAnswer itself "
+        "genuinely covers EVERY one of the claimed required content points — flag it if it "
+        "misses one. Also flag if the transcript itself requires specialist knowledge beyond "
+        "general academic literacy, or does not read as a coherent, natural, original spoken "
+        "lecture/seminar talk.\n\n"
         'Return JSON only: {"items": [{"itemId": "q1", "answerableFromTextAlone": true, '
-        '"singleDefensibleReading": true, "unsupportedPointDescriptions": []}, ...], '
+        '"singleDefensibleReading": true, "unsupportedPointDescriptions": [], '
+        '"referenceAnswerCoversAllPoints": true}, ...], '
         '"textRequiresSpecialistKnowledge": false, "textIsCoherent": true}'
     )
     user = json.dumps({"transcript": text, "items": items}, ensure_ascii=False)
@@ -345,7 +413,7 @@ def generate_dsh_hv_part(
     return _run_open_answer_pipeline(
         label="hv", part=part, item_count=_HV_ITEM_COUNT, call=provider or chat_json,
         generation_prompt=lambda: _hv_generation_prompt(part, topic),
-        audit_prompt=_hv_audit_prompt, structural_validate=validate_hv_content,
+        audit_prompt=_hv_audit_prompt,
         gen_max_tokens=6500, audit_max_tokens=3000, source_id_field=None,
     )
 

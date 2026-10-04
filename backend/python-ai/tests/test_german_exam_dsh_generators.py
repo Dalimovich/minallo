@@ -41,7 +41,8 @@ def _text(chars: int = 5000) -> str:
 
 def _valid_content(item_count: int = _LV_ITEM_COUNT, **over) -> dict:
     items = [
-        {"itemId": f"q{i}", "question": f"Frage {i}?", "requiredPoints": [{"pointId": f"p{i}", "description": f"Punkt {i}", "points": 1}]}
+        {"itemId": f"q{i}", "question": f"Frage {i}?", "requiredPoints": [{"pointId": f"p{i}", "description": f"Punkt {i}", "points": 1}],
+         "maxPoints": 1, "referenceAnswer": f"Antwort {i}.", **({"errorfulVariant": f"Antwort {i} falsch."} if i == 1 else {})}
         for i in range(1, item_count + 1)
     ]
     content = {"sourceId": "src-1", "source": {"text": _text()}, "tasks": [{"form": "questions", "items": items}]}
@@ -52,7 +53,8 @@ def _valid_content(item_count: int = _LV_ITEM_COUNT, **over) -> dict:
 def _valid_audit(content: dict) -> dict:
     ids = [item["itemId"] for task in content["tasks"] for item in task["items"]]
     return {
-        "items": [{"itemId": i, "answerableFromTextAlone": True, "singleDefensibleReading": True, "unsupportedPointDescriptions": []} for i in ids],
+        "items": [{"itemId": i, "answerableFromTextAlone": True, "singleDefensibleReading": True, "unsupportedPointDescriptions": [],
+                   "referenceAnswerCoversAllPoints": True} for i in ids],
         "textRequiresSpecialistKnowledge": False, "textIsCoherent": True,
     }
 
@@ -117,6 +119,58 @@ def test_duplicate_item_ids_are_a_structural_failure() -> None:
     provider = _scripted_provider(bad, good, _valid_audit(good))
     _, meta = generate_dsh_lv_part(None, LV_PART, [], TOPIC, provider=provider)
     assert meta["regenerationCount"] == 1
+
+
+def test_missing_reference_answer_on_any_item_is_a_structural_failure() -> None:
+    """Locks the grading-readiness contract resolved this phase: qualify_open_tasks's
+    items_well_formed gate requires a referenceAnswer on every item, so this generator must
+    regenerate rather than accept content missing one — never silently produce content that
+    would fail the existing qualification suite."""
+    bad = _valid_content()
+    del bad["tasks"][0]["items"][0]["referenceAnswer"]
+    good = _valid_content()
+    provider = _scripted_provider(bad, good, _valid_audit(good))
+    _, meta = generate_dsh_lv_part(None, LV_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_no_errorful_variant_anywhere_in_the_part_is_a_structural_failure() -> None:
+    """qualify_open_tasks's language-independence gate (grading_ignores_language_errors) needs
+    at least one errorfulVariant in the whole part to even run — generating zero would make that
+    gate permanently unprovable for this content, so it must regenerate, not just warn."""
+    bad = _valid_content()
+    for item in bad["tasks"][0]["items"]:
+        item.pop("errorfulVariant", None)
+    good = _valid_content()
+    provider = _scripted_provider(bad, good, _valid_audit(good))
+    _, meta = generate_dsh_lv_part(None, LV_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_reference_answer_not_covering_every_point_is_a_semantic_failure() -> None:
+    """The structural gate only checks a referenceAnswer EXISTS — whether it actually covers
+    every claimed content point is a judgement call, made by this generator's own semantic
+    audit (extended this phase), never assumed true just because the field is non-empty."""
+    content = _valid_content()
+    audit = _valid_audit(content)
+    audit["items"][0]["referenceAnswerCoversAllPoints"] = False
+    good = _valid_content()
+    provider = _scripted_provider(content, audit, good, _valid_audit(good))
+    _, meta = generate_dsh_lv_part(None, LV_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_fill_in_max_points_computes_from_required_points_but_never_overrides_an_explicit_value() -> None:
+    from app.services.german_exam_dsh_generators import _fill_in_max_points
+
+    content = {"tasks": [{"form": "questions", "items": [
+        {"itemId": "a", "requiredPoints": [{"points": 1}, {"points": 2}]},  # no maxPoints: derive 3
+        {"itemId": "b", "maxPoints": 9, "requiredPoints": [{"points": 1}]},  # explicit: never touched
+    ]}]}
+    _fill_in_max_points(content)
+    items = content["tasks"][0]["items"]
+    assert items[0]["maxPoints"] == 3
+    assert items[1]["maxPoints"] == 9
 
 
 def test_semantic_audit_failure_regenerates_even_when_structurally_valid() -> None:
@@ -186,7 +240,8 @@ def test_raises_after_exhausting_the_regeneration_budget_never_returns_bad_conte
 
 def _valid_hv_content(item_count: int = _HV_ITEM_COUNT, **over) -> dict:
     items = [
-        {"itemId": f"q{i}", "question": f"Frage {i}?", "requiredPoints": [{"pointId": f"p{i}", "description": f"Punkt {i}", "points": 1}]}
+        {"itemId": f"q{i}", "question": f"Frage {i}?", "requiredPoints": [{"pointId": f"p{i}", "description": f"Punkt {i}", "points": 1}],
+         "maxPoints": 1, "referenceAnswer": f"Antwort {i}.", **({"errorfulVariant": f"Antwort {i} falsch."} if i == 1 else {})}
         for i in range(1, item_count + 1)
     ]
     content = {"lectureText": _text(6000), "tasks": [{"form": "questions", "items": items}]}
@@ -562,23 +617,34 @@ def test_oral_routed_before_the_shared_sprechen_1_part_id_branch(monkeypatch) ->
 # (see those generators' own code), so their output is qualify_*-compatible by construction.
 
 
-def test_lv_generator_output_is_not_yet_compatible_with_qualify_open_tasks() -> None:
+def test_lv_generator_output_is_now_compatible_with_qualify_open_tasks_structurally() -> None:
+    """Was 'not yet compatible' in the prior audit phase (missing referenceAnswer/maxPoints) —
+    this generator now emits both, closing that exact gap. items_well_formed passes; the
+    content_matcher-dependent grading gates stay correctly SKIPPED (never silently passed)
+    because no real content_matcher exists yet — that remains entirely unbuilt."""
     from app.services.german_exams.dsh_qualification import qualify_open_tasks
 
     content = _valid_content()
     report = qualify_open_tasks(content, LV_PART)
-    assert report.status == "failed"
-    assert "items_well_formed" in report.failed
-    assert any("reference answer" in g["detail"] for g in report.gates if g["name"] == "items_well_formed")
+    assert report.status == "incomplete"  # not "qualified": grading gates are skipped, not passed
+    assert report.failed == []
+    by_name = {g["name"]: g for g in report.gates}
+    assert by_name["structure"]["status"] == "passed"
+    assert by_name["items_well_formed"]["status"] == "passed"
+    for name in ("grading_reference_reaches_full_marks", "grading_empty_answer_scores_zero", "grading_ignores_language_errors"):
+        assert by_name[name]["status"] == "skipped"
 
 
-def test_hv_generator_output_is_not_yet_compatible_with_qualify_open_tasks() -> None:
+def test_hv_generator_output_is_now_compatible_with_qualify_open_tasks_structurally() -> None:
     from app.services.german_exams.dsh_qualification import qualify_open_tasks
 
     content = _valid_hv_content()
     report = qualify_open_tasks(content, HV_PART)
-    assert report.status == "failed"
-    assert "items_well_formed" in report.failed
+    assert report.status == "incomplete"
+    assert report.failed == []
+    by_name = {g["name"]: g for g in report.gates}
+    assert by_name["structure"]["status"] == "passed"
+    assert by_name["items_well_formed"]["status"] == "passed"
 
 
 def test_ws_generator_output_is_already_compatible_with_qualify_lv_ws() -> None:
