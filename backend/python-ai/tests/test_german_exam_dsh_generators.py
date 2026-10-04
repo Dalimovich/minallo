@@ -13,10 +13,12 @@ import pytest
 from app.services.german_exam_dsh_generators import (
     _HV_ITEM_COUNT,
     _LV_ITEM_COUNT,
+    _TP_INPUT_COUNT,
     _WS_ITEM_COUNT,
     DshGenerationError,
     generate_dsh_hv_part,
     generate_dsh_lv_part,
+    generate_dsh_tp_part,
     generate_dsh_ws_part,
 )
 from app.services.german_exams import get_part
@@ -24,6 +26,7 @@ from app.services.german_exams import get_part
 LV_PART = get_part("dsh", "reading", "lv_1")
 HV_PART = get_part("dsh", "listening", "hv_1")
 WS_PART = get_part("dsh", "scientific_structures", "ws_1")
+TP_PART = get_part("dsh", "writing", "tp_1")
 TOPIC = {"topicId": "open_science", "label": "Offene Wissenschaft"}
 SENTENCE = "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war."
 
@@ -370,3 +373,93 @@ def test_ws_is_deliberately_not_wired_into_generate_tasks_module_dispatch() -> N
 
     with pytest.raises(GermanExamProfileError):
         _dispatch_module("scientific_structures")
+
+
+# ---- TP (Textproduktion) ------------------------------------------------------------------------
+
+
+def _valid_tp_content(**over) -> dict:
+    content = {
+        "inputs": [{"id": "i1", "kind": "quotation", "text": "Wer nicht wagt, der nicht gewinnt."},
+                   {"id": "i2", "kind": "statement", "text": "Risikobereitschaft wird in der Forschung unterschätzt."}],
+        "languageActs": ["describe", "evaluate"],
+        "instructions": "Beschreiben Sie die Positionen in Zitat und Aussage und nehmen Sie begründet Stellung dazu.",
+        "wordCountApprox": 250, "inputRefs": ["i1", "i2"],
+    }
+    content.update(over)
+    return content
+
+
+def _valid_tp_audit() -> dict:
+    return {"requiresBothInputs": True, "answerableWithoutSpecialistKnowledge": True, "isFreeEssay": False, "inputsAreDistinct": True}
+
+
+def test_tp_accepts_a_valid_generation_and_audit_on_the_first_attempt() -> None:
+    content = _valid_tp_content()
+    provider = _scripted_provider(content, _valid_tp_audit())
+    result, meta = generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+    assert len(result["inputs"]) == _TP_INPUT_COUNT
+    assert meta["regenerationCount"] == 0
+    assert len(provider.calls) == 2
+
+
+def test_tp_structural_failure_regenerates_then_succeeds() -> None:
+    bad = _valid_tp_content(wordCountApprox=300)  # must exactly equal the official 250
+    good = _valid_tp_content()
+    provider = _scripted_provider(bad, good, _valid_tp_audit())
+    _, meta = generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_tp_non_text_input_kind_is_rejected_by_this_generator() -> None:
+    """This generator deliberately only produces text-only input kinds (no chart/table/diagram
+    DATA generation yet) — a diagram/graphic/table kind must regenerate, never be accepted."""
+    bad = _valid_tp_content(inputs=[{"id": "i1", "kind": "diagram", "text": "x"}, {"id": "i2", "kind": "statement", "text": "y"}])
+    good = _valid_tp_content()
+    provider = _scripted_provider(bad, good, _valid_tp_audit())
+    _, meta = generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_tp_reused_qualify_tp_free_essay_heuristic_blocks_a_bad_generation() -> None:
+    """Reuses dsh_qualification.qualify_tp's own not_free_essay heuristic rather than
+    re-implementing it — instructions with no language-act stem and no input anchoring fail here."""
+    bad = _valid_tp_content(instructions="Schreiben Sie einen freien Text über ein Thema Ihrer Wahl.")
+    good = _valid_tp_content()
+    provider = _scripted_provider(bad, good, _valid_tp_audit())
+    _, meta = generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+@pytest.mark.parametrize("field,value", [
+    ("requiresBothInputs", False), ("answerableWithoutSpecialistKnowledge", False),
+    ("isFreeEssay", True), ("inputsAreDistinct", False),
+])
+def test_tp_each_semantic_audit_criterion_independently_blocks_acceptance(field, value) -> None:
+    content = _valid_tp_content()
+    audit = _valid_tp_audit()
+    audit[field] = value
+    good = _valid_tp_content()
+    provider = _scripted_provider(content, audit, good, _valid_tp_audit())
+    _, meta = generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_tp_raises_after_exhausting_the_regeneration_budget_never_returns_bad_content() -> None:
+    always_bad = _valid_tp_content(wordCountApprox=999)
+    provider = _scripted_provider(always_bad, always_bad, always_bad)
+    with pytest.raises(DshGenerationError):
+        generate_dsh_tp_part(None, TP_PART, [], TOPIC, provider=provider)
+
+
+def test_tp_routed_from_the_real_writing_dispatcher_before_productive_or_telc_logic(monkeypatch) -> None:
+    import app.services.german_exam_dsh_generators as dsh_gen
+    from app.services.german_exam_writing import generate_writing_part
+
+    sentinel = ({"inputs": "sentinel"}, {"deterministicPassed": True})
+    calls = []
+    monkeypatch.setattr(dsh_gen, "generate_dsh_tp_part", lambda *a, **kw: calls.append((a, kw)) or sentinel)
+
+    result = generate_writing_part(None, TP_PART, [], TOPIC)
+    assert result == sentinel
+    assert len(calls) == 1

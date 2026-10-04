@@ -55,8 +55,9 @@ from .german_exams.dsh_content_model import (
     source_fingerprint,
     validate_hv_content,
     validate_lv_content,
+    validate_tp_content,
 )
-from .german_exams.dsh_qualification import qualify_lv_ws
+from .german_exams.dsh_qualification import qualify_lv_ws, qualify_tp
 from .llm_json import chat_json
 
 log = logging.getLogger(__name__)
@@ -494,3 +495,140 @@ def generate_dsh_ws_part(
             "liveQualificationRequired": True,
         }
     raise DshGenerationError(f"could not produce a valid DSH WS part after {_MAX_REGENERATIONS} regenerations: {last_error}")
+
+
+# ---- TP (Textproduktion) ----------------------------------------------------------------------
+# PROMPT/STIMULUS GENERATION ONLY — never a model answer, never a score. TP_RUBRIC (dsh.py) and
+# its numericWeights=None are the existing, official source of truth for how a submission would
+# eventually be graded; this generator does not invent one, does not touch grading at all, and
+# does not read TP_RUBRIC — grading a learner's submission against it is explicitly separate,
+# later work (same "generation is not grading" boundary HV/LV/WS all keep).
+
+# DECISION: two inputs (one of the official inputKinds each) is enough to require genuine
+# synthesis across sources without the chart/table/graphic-DATA generation complexity — kept to
+# TEXT-only input kinds for this first build, same reasoning LV's optional graphic was skipped.
+_TP_INPUT_COUNT = 2
+_TP_TEXT_INPUT_KINDS = ("quotation", "statement", "short_text", "keyword_list")
+
+_TP_GENERATION_SHAPE = {
+    "inputs": [{"id": "i1", "kind": "one of: quotation | statement | short_text | keyword_list", "text": "the input content itself"}],
+    "languageActs": ["two or more of: describe | summarize | compare | justify | evaluate | take_position"],
+    "instructions": "the task instructions shown to the learner, anchored in the inputs above",
+    "wordCountApprox": 250,
+    "inputRefs": ["i1"],
+}
+
+
+def _tp_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
+    c = part.constraints
+    shape = json.dumps(_TP_GENERATION_SHAPE, ensure_ascii=False)
+    system = (
+        "Generate ONE DSH (Deutsche Sprachprüfung für den Hochschulzugang) Textproduktion (TP) "
+        f"writing-task PROMPT in German — a {c['textType'].replace('_', ' ')} on a "
+        f"{c['topicKind'].replace('_', ' ')} topic, requiring NO specialist knowledge beyond "
+        "general academic literacy. You are generating the TASK ONLY — never a model answer, "
+        "never any sample text the learner could copy.\n\n"
+        f"Produce exactly {_TP_INPUT_COUNT} inputs, each one of: {list(_TP_TEXT_INPUT_KINDS)} "
+        "(a short, self-contained quotation, statement, short text, or keyword list — never a "
+        "chart/table/diagram in this generator). The two inputs must express or support "
+        "genuinely different angles on ONE shared topic, so a learner must synthesize across "
+        "them, not just restate one.\n\n"
+        "Write instructions that: (1) explicitly reference and require engaging with BOTH given "
+        "inputs — never a free-standing essay topic that could be answered while ignoring them; "
+        "(2) name at least two language acts from this official list the learner must perform: "
+        f"{list(c['languageActs'])}; (3) are answerable by a non-specialist academically literate "
+        f"adult, in approximately {c['wordCountApprox']} words; (4) are NOT a free-essay prompt "
+        "(never phrases like 'write freely about', 'your opinion on anything', an open personal "
+        "narrative) and do NOT pre-formulate any passage the learner could just copy into their "
+        "own text.\n\n"
+        f"Topic: {topic.get('label', '')}.\n\n"
+        f"Return JSON only, in exactly this shape: {shape}"
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+def _tp_audit_prompt(content: dict[str, Any]) -> tuple[str, str]:
+    system = (
+        "You are an INDEPENDENT reviewer auditing a DSH Textproduktion (TP) writing-task PROMPT "
+        "— there is no correct answer to verify, no model text, nothing to grade; you are "
+        "reviewing the TASK itself for quality. Verify: (a) the instructions genuinely require "
+        "engaging with BOTH given inputs, not answerable while ignoring one of them; (b) the task "
+        "is answerable by a non-specialist academically literate adult, with NO specialist "
+        "knowledge needed; (c) the instructions are NOT a free-essay prompt (an open personal "
+        "narrative or 'write freely about anything' framing) and do not pre-formulate any passage "
+        "the learner could copy; (d) the two inputs genuinely express different angles on one "
+        "shared topic (not simply duplicates of each other).\n\n"
+        'Return JSON only: {"requiresBothInputs": true, "answerableWithoutSpecialistKnowledge": '
+        'true, "isFreeEssay": false, "inputsAreDistinct": true}'
+    )
+    user = json.dumps(content, ensure_ascii=False)
+    return system, user
+
+
+def _tp_audit_passed(audit: Any) -> tuple[bool, str]:
+    if not isinstance(audit, dict):
+        return False, "audit response was not a JSON object"
+    if audit.get("requiresBothInputs") is not True:
+        return False, "task is answerable while ignoring one of the inputs"
+    if audit.get("answerableWithoutSpecialistKnowledge") is not True:
+        return False, "task requires specialist knowledge"
+    if audit.get("isFreeEssay") is True:
+        return False, "task reads as a free essay, not an input-bound task"
+    if audit.get("inputsAreDistinct") is not True:
+        return False, "the two inputs do not express genuinely different angles"
+    return True, ""
+
+
+def generate_dsh_tp_part(
+    profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str],
+    *, provider: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (content, validation_meta). PROMPT/STIMULUS ONLY — see this section's header
+    comment for why grading is explicitly out of scope here.
+
+    Pipeline: generation -> structural validation (validate_tp_content, reused from
+    dsh_content_model, PLUS dsh_qualification.qualify_tp's own not_free_essay() heuristic gate,
+    reused rather than re-implemented) -> independent semantic audit (a second chat_json call
+    making the real judgment the heuristic gate can only approximate: genuinely input-bound,
+    genuinely answerable without specialist knowledge, genuinely not a free essay, the two inputs
+    genuinely distinct) -> bounded full-regeneration repair -> accept/DshGenerationError."""
+    call = provider or chat_json
+    last_error = ""
+    for attempt in range(_MAX_REGENERATIONS + 1):
+        # 1. GENERATION
+        system, user = _tp_generation_prompt(part, topic)
+        result = call(system=system, user=user, model=part.constraints.get("generationModel") or get_settings().german_exam_model, max_tokens=2500)
+        content = result.data if isinstance(result.data, dict) else {}
+
+        # 2. STRUCTURAL VALIDATION — reused, not rebuilt
+        try:
+            validate_tp_content(content, part)
+            inputs = content.get("inputs") or []
+            if len(inputs) != _TP_INPUT_COUNT:
+                raise DshContentError(f"expected {_TP_INPUT_COUNT} inputs, got {len(inputs)}")
+            if any(i.get("kind") not in _TP_TEXT_INPUT_KINDS for i in inputs):
+                raise DshContentError("this generator only produces text-only input kinds")
+            report = qualify_tp(content, part)
+            if report.failed:
+                raise DshContentError(f"qualify_tp: {report.failed}")
+        except DshContentError as exc:
+            last_error = f"structural: {exc}"
+            log.info("dsh_tp_generation structural_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 3. SEMANTIC/CONTENT VALIDATION
+        audit_system, audit_user = _tp_audit_prompt(content)
+        audit_result = call(system=audit_system, user=audit_user, model=part.constraints.get("verifierModel") or get_settings().german_exam_model, max_tokens=1000)
+        passed, reason = _tp_audit_passed(audit_result.data)
+        if not passed:
+            last_error = f"semantic: {reason}"
+            log.info("dsh_tp_generation semantic_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 5. ACCEPT
+        return content, {
+            "deterministicPassed": True, "semanticPassed": True, "regenerationCount": attempt,
+            "liveQualificationRequired": True,
+        }
+    raise DshGenerationError(f"could not produce a valid DSH TP part after {_MAX_REGENERATIONS} regenerations: {last_error}")
