@@ -177,6 +177,21 @@ def test_deterministic_result_aggregation_across_multiple_items() -> None:
     assert result["officialScale"] is None, "the official 200-point DSH scale must not be invented here"
 
 
+def test_a_perfect_raw_score_still_does_not_imply_or_emit_an_official_200_point_value() -> None:
+    """Regression for the dedicated evidence phase that investigated the raw-LV/HV -> official
+    DSH score conversion and concluded CONVERSION NOT ESTABLISHED (no authoritative source gives
+    a formula, or even the underlying raw-point totals, for HV/LV — see this module's own
+    docstring). A perfect raw score's percent happens to be a "nice" number; that coincidence
+    must never be mistaken for, or silently promoted into, an official/secondary-scaled figure."""
+    content = _content(item_count=1)
+    matcher = lambda question, answer, points: {p.point_id for p in points}  # noqa: E731
+    result = grade_dsh_open_answer_part(content, {"q1": "correct"}, matcher=matcher)
+    assert result["rawPoints"] == result["rawMaxPoints"] == Fraction(1)
+    assert result["percent"] == 100.0
+    assert result["officialScale"] is None
+    assert "200" not in str(result) and "dshResult" not in result and "level" not in result
+
+
 def test_missing_learner_answer_for_an_item_is_treated_as_empty_not_an_error() -> None:
     content = _content(item_count=2)
     matcher = lambda question, answer, points: set()  # noqa: E731

@@ -28,6 +28,20 @@ secondary source in this repository establishes how a raw item/content-point tot
 HV or LV text converts into that scale (only the OVERALL §5(3) HV:LV:WS:TP=2:2:1:2 ratio and
 the §5(6) 57/67/82% thresholds are sourced) — inventing that conversion here would be exactly
 the kind of invented per-question weighting this phase was told not to introduce.
+
+CONFIRMED, not merely assumed (dedicated evidence phase, re-fetched the cited source directly
+rather than trusting the repository's own earlier summary of it): the MPO's own text is entirely
+percentage-based ("mindestens 57 % der gestellten Anforderungen" — a share of requirements met,
+weighted 2:2:1:2) and never mentions a point total at all; "200/200/100/200 = 700" is Uni
+Duisburg-Essen's own institutional grading convention (dsh.py's SECONDARY label), and that page
+states only each component's MAXIMUM and the point-equivalents of the 57/67/82 % thresholds
+against the 700 total (399/469/574 — pure arithmetic of percent * 700, already covered by
+dsh_result.py's own boundary tests) — it does not state how many raw points the underlying
+HV/LV sub-tests actually have, nor any formula for converting a raw score into the 200 figure.
+No source anywhere converts a raw, per-generation-variable item/content-point total (which is
+what grade_dsh_open_answer_part produces, since different generations have different numbers of
+items) into that or any fixed scale. The conclusion is CONVERSION NOT ESTABLISHED, not CODE GAP:
+the missing piece is authoritative evidence, not an unwritten function.
 """
 
 from __future__ import annotations
