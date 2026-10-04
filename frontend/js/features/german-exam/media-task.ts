@@ -71,10 +71,20 @@ export function gradeMediaTask(part: MediaPart, c: MediaContent, answers: Record
   }
   return {kind: 'practice', correct, total: part.constraints.itemCount};
 }
-export function mountMediaTask(root: HTMLElement, part: MediaPart, c: MediaContent): () => void {
+// Audio synthesis (when the generator shipped a script but no media.audioUrl) is a separate
+// contract from this module's own: fetchClips is injected, never imported here, so this file
+// stays dependency-free and the real network-calling implementation lives in
+// media-task-audio.ts (wired in by task-workspace.ts) — mirrors speaking-task.ts/
+// speaking-grader.ts's own split for exactly the same reason.
+export type SegmentClips = Record<string, {url: string; durationMs: number}>;
+export interface MediaDependencies {
+  fetchClips: (segments: Array<{id: string; text: string}>, signal: AbortSignal) => Promise<SegmentClips | null>;
+}
+export function mountMediaTask(root: HTMLElement, part: MediaPart, c: MediaContent, dependencies: Partial<MediaDependencies> = {}): () => void {
   root.replaceChildren(); validateMediaTask(part, c);
+  const deps: MediaDependencies = {fetchClips: async () => null, ...dependencies};
   const controller = new AbortController(); const answers: Record<string, string | boolean> = {};
-  let disposed = false; let submitted = false;
+  let disposed = false; let submitted = false; let ready = false;
   const media = document.createElement(part.constraints.mediaType); media.controls = true; media.preload = 'metadata';
   const status = document.createElement('p'); status.setAttribute('role','status'); status.textContent = 'Loading media?';
   const questions = document.createElement('fieldset'); questions.hidden = !!part.constraints.revealQuestionsAfterMedia;
@@ -83,11 +93,40 @@ export function mountMediaTask(root: HTMLElement, part: MediaPart, c: MediaConte
   transcript.hidden = c.media?.transcriptAvailability !== 'available';
   const submit = document.createElement('button'); submit.type = 'button'; submit.textContent = 'Submit'; submit.disabled = questions.hidden;
   const listen = (event: string, cb: () => void): void => media.addEventListener(event,cb,{signal:controller.signal});
+  function unavailable(): void { ready=false; status.textContent='Media unavailable. Please reload the exercise.'; submit.disabled=true; }
   listen('canplay', () => {status.textContent='Ready';}); listen('play', () => {status.textContent='Playing';});
-  listen('pause', () => {status.textContent='Paused';}); listen('error', () => {status.textContent='Media unavailable. Please reload the exercise.'; submit.disabled=true;});
-  listen('ended', () => {status.textContent='Playback complete'; questions.hidden=false; submit.disabled=submitted;});
-  const url = c.media?.[part.constraints.mediaType === 'video' ? 'videoUrl' : 'audioUrl'];
-  if (url) media.src=url; else {status.textContent='Media unavailable. Please reload the exercise.'; submit.disabled=true;}
+  listen('pause', () => {status.textContent='Paused';}); listen('error', unavailable);
+
+  // Two delivery shapes, never mixed: (a) one pre-attached file (c.media.audioUrl/videoUrl,
+  // always true for video — no video-synthesis path exists) played natively start to end; (b)
+  // no file but an "audio" part — sequentially play one real-TTS clip per source segment
+  // (fetched via deps.fetchClips, same /api/ai/tts-batch endpoint practice.js's lsPlayer
+  // already uses for telc's Hören), auto-advancing on 'ended' until the last clip completes.
+  const segmentOrder = c.source.segments.map(s => s.id);
+  let clips: SegmentClips | null = null;
+  let clipIndex = 0;
+  function playClip(idx: number): void {
+    const segId = segmentOrder[idx];
+    const clip = segId ? clips?.[segId] : undefined;
+    if (!clip) { unavailable(); return; }
+    clipIndex = idx; media.src = clip.url;
+  }
+  listen('ended', () => {
+    if (clips && clipIndex + 1 < segmentOrder.length) { playClip(clipIndex + 1); void media.play().catch(() => {}); return; }
+    status.textContent='Playback complete'; questions.hidden=false; submit.disabled=submitted;
+  });
+  const providedUrl = c.media?.[part.constraints.mediaType === 'video' ? 'videoUrl' : 'audioUrl'];
+  if (providedUrl) { ready = true; media.src = providedUrl; }
+  else if (part.constraints.mediaType === 'audio') {
+    status.textContent = 'Generating audio...';
+    void deps.fetchClips(c.source.segments.map(s => ({id: s.id, text: s.text})), controller.signal)
+      .then(result => {
+        if (disposed) return;
+        if (!result || segmentOrder.some(id => !result![id])) { unavailable(); return; }
+        clips = result; ready = true; playClip(0);
+      })
+      .catch(() => { if (!disposed) unavailable(); });
+  } else unavailable();
   for (const q of c.questions) {
     const label = document.createElement('label'); label.style.display='block'; label.textContent=q.prompt;
     const kind=MEDIA_TASKS[part.taskType];
@@ -102,7 +141,7 @@ export function mountMediaTask(root: HTMLElement, part: MediaPart, c: MediaConte
     questions.append(label);
   }
   submit.addEventListener('click',()=>{
-    if (disposed || submitted || !url) return;
+    if (disposed || submitted || !ready) return;
     try {const result=gradeMediaTask(part,c,answers); submitted=true; questions.disabled=true; submit.disabled=true;
       status.textContent=`${result.correct} / ${result.total} correct (practice)`;
       transcript.hidden=c.media?.transcriptAvailability==='hidden';

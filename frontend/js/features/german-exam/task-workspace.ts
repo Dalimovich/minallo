@@ -4,6 +4,7 @@ import { createWritingGrader } from './writing-grader.js';
 import { createSpeakingRecordingGrader } from './speaking-grader.js';
 /** One manifest-driven workspace for reusable interactions across exam families. */
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
+import { fetchSegmentClips } from './media-task-audio.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
 import { mountOrdering, gradeOrdering, type OrderingPart, type OrderingContent } from './ordering-task.js';
 import { mountSummaryError, type SummaryErrorPart, type SummaryErrorContent } from './summary-error-task.js';
@@ -22,7 +23,7 @@ for (const type of ['argumentative_essay','text_graph_summary','forum_discussion
 for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summary','spoken_information_comparison','recorded_topic_presentation','spoken_argument_response','spoken_measure_critique'])
   TASK_RENDERERS[type]=(root,part,content,_identity,envelope)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent,
     {submitRecording:createSpeakingRecordingGrader(envelope,content as ProductiveContent)});
-for (const type of Object.keys(MEDIA_TASKS)) TASK_RENDERERS[type] = (root,part,content) => mountMediaTask(root,part as unknown as MediaPart,content as MediaContent);
+for (const type of Object.keys(MEDIA_TASKS)) TASK_RENDERERS[type] = (root,part,content) => mountMediaTask(root,part as unknown as MediaPart,content as MediaContent,{fetchClips:fetchSegmentClips});
 for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) => {
   const source=document.createElement('div'); const questions=document.createElement('div'); root.append(source,questions);
   const answers: Record<string,string|null>={}; const c=content as SelectionContent;
