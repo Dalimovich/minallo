@@ -1,6 +1,7 @@
 import { mountSpeaking } from './speaking-task.js';
 import { mountWriting, type ProductivePart, type ProductiveContent } from './productive-task.js';
 import { createWritingGrader } from './writing-grader.js';
+import { createSpeakingRecordingGrader } from './speaking-grader.js';
 /** One manifest-driven workspace for reusable interactions across exam families. */
 import { mountMediaTask, MEDIA_TASKS, type MediaPart, type MediaContent } from './media-task.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
@@ -18,7 +19,9 @@ export const TASK_RENDERERS: Record<string, TaskRenderer> = {};
 for (const type of ['argumentative_essay','text_graph_summary','forum_discussion_post','formal_context_message'])
   TASK_RENDERERS[type]=(root,part,content,identity,envelope)=>mountWriting(root,part as unknown as ProductivePart,content as ProductiveContent,identity,
     createWritingGrader(envelope,content as ProductiveContent,part.gradingDimensions||[]));
-for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summary','spoken_information_comparison','recorded_topic_presentation','spoken_argument_response','spoken_measure_critique']) TASK_RENDERERS[type]=(root,part,content)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent);
+for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summary','spoken_information_comparison','recorded_topic_presentation','spoken_argument_response','spoken_measure_critique'])
+  TASK_RENDERERS[type]=(root,part,content,_identity,envelope)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent,
+    {submitRecording:createSpeakingRecordingGrader(envelope,content as ProductiveContent)});
 for (const type of Object.keys(MEDIA_TASKS)) TASK_RENDERERS[type] = (root,part,content) => mountMediaTask(root,part as unknown as MediaPart,content as MediaContent);
 for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) => {
   const source=document.createElement('div'); const questions=document.createElement('div'); root.append(source,questions);

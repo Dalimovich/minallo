@@ -10,12 +10,11 @@ function mockDeps(){
     start(){this.state='recording';}
     stop(){this.state='inactive';const data=new Blob(['x'],{type:'audio/webm'});
       queueMicrotask(()=>{this.ondataavailable&&this.ondataavailable({data});this.onstop&&this.onstop();});}}
-  window.__uploads=[];window.__grades=[];window.__failUpload=false;window.__failGrade=false;
+  window.__grades=[];window.__failGrade=false;
   window.__deps={
     getMedia:async()=>({getTracks:()=>[{stop(){}}]}),
     recorder:s=>new FakeRecorder(s),
-    upload:async(blob)=>{window.__uploads.push(blob.size);if(window.__failUpload)throw new Error('upload failed');return {recordingId:'rec-1'};},
-    grader:async(sub)=>{window.__grades.push(sub);if(window.__failGrade)throw new Error('grading failed');
+    submitRecording:async(blob,durationSeconds)=>{window.__grades.push({size:blob.size,durationSeconds});if(window.__failGrade)throw new Error('grading failed');
       return {kind:'practice_feedback',dimensions:window.__gradingDimensions.map(id=>({id,feedback:'Gut gemacht.',evidence:[]}))};},
     now:Date.now,
   };
@@ -78,17 +77,17 @@ for(const fixture of fixtures){
         await page.waitForFunction(()=>document.querySelector('[role=status]').textContent==='Recording ready');
       }
 
-      // Upload/grading failure keeps the recording available to retry.
-      await page.evaluate(()=>{window.__failUpload=true;});
+      // Grading failure keeps the recording available to retry.
+      await page.evaluate(()=>{window.__failGrade=true;});
       await page.getByRole('button',{name:'Submit recording'}).click();
       await page.waitForFunction(()=>document.querySelector('[role=status]').textContent.includes('failed'));
       assert.equal(await page.getByRole('button',{name:'Submit recording'}).isDisabled(),false);
 
-      await page.evaluate(()=>{window.__failUpload=false;});
+      await page.evaluate(()=>{window.__failGrade=false;});
       await page.getByRole('button',{name:'Submit recording'}).click();
       await page.waitForFunction(()=>document.querySelector('[role=status]').textContent==='Submitted');
       assert.equal(await page.locator('h4').textContent(),'Practice feedback');
-      assert.equal((await page.evaluate(()=>window.__grades.length)),1);
+      assert.equal((await page.evaluate(()=>window.__grades.length)),2);
       assert.equal((await page.evaluate(()=>window.__grades.at(-1).durationSeconds))<=seconds,true);
 
       await page.evaluate(()=>window.dispose());
