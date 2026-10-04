@@ -46,7 +46,7 @@ Cloudflare Pages
   |
   | Authenticated proxy calls
   v
-FastAPI AI service (Fly.io, Frankfurt)
+FastAPI AI service (Hetzner, Docker + Caddy)
   - backend/python-ai
   - PDF indexing, retrieval, streaming answers, generation, writing coach
   - Uses OpenAI models (gpt-4o, gpt-4o-mini, gpt-4.1-mini) and embeddings
