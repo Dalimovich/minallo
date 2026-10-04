@@ -1,8 +1,10 @@
 # Minallo
 
-Minallo is an AI study workspace for students. It combines course PDFs, grounded AI tutoring, page-level citations, PDF tools, notes, flashcards, quizzes, exam prep, cheatsheets, deep-learn mode, German practice, a writing coach, focus tools, music, study games, and student chat in one authenticated app.
+Minallo is an AI study workspace for students. It combines course PDFs, grounded AI tutoring, page-level citations, PDF tools, notes, flashcards, quizzes, exam prep, cheatsheets, deep-learn mode, German level tracking and tutoring, a writing coach, focus tools, music, study games, and student chat in one authenticated app.
 
-Production: [minallo.de](https://minallo.de)
+**Who it's for:** university students working from their own lecture PDFs, slides, and exercises in any subject, and German-language learners who want their level assessed and tutored in German specifically.
+
+Production: [minallo.de](https://minallo.de) · Plan: Student Pro, 7-day free trial then €11.99/month, cancel anytime — see [Pricing](#pricing) below.
 
 Legal pages:
 - [Impressum](https://minallo.de/impressum.html)
@@ -21,7 +23,7 @@ Core user flows:
 - View, annotate, summarize, merge, and organize PDFs.
 - Generate lecture notes, flashcards, quizzes, cheatsheets, and exam prep material.
 - Deep-learn mode for focused topic mastery with adaptive difficulty.
-- Practice German in a separate learner space with a writing coach.
+- Get your German level assessed (A1–C1) and tutored by AI in German, with a writing coach (Schreibtrainer). Structured Goethe/DSH/telc exam-format practice is in active development.
 - Use Pomodoro timer, streaks, games, and study progress tools.
 - Chat with other students in rooms and direct messages.
 - Manage subscriptions (Stripe / PayPal) with pause, cancel, and retention flows.
@@ -141,6 +143,9 @@ docs/                         Specs, launch notes, endpoint docs
 | ExamForge | Exam preparation material generator |
 | Deep Learn | Adaptive topic mastery with difficulty progression |
 | Writing Coach | German Schreibtrainer for language learners |
+| German Level Assessment | Reads a learner's current CEFR-style level (A1–C1) and tracks progress |
+| AI German Tutor | Step-by-step explanations and practice in German (grammar, vocabulary, usage) |
+| German Exam Tracks | Structured Goethe/DSH/telc exam-format practice — in active development |
 | PDF editor | Merge, annotate, convert PDFs |
 | Practice mode | Exercise-focused study sessions |
 | Study timer | Pomodoro timer with session tracking |
@@ -150,6 +155,20 @@ docs/                         Specs, launch notes, endpoint docs
 | Subscriptions | Stripe + PayPal with pause, cancel, retention offers |
 | Onboarding | University/major selection, guided setup |
 | Notifications | In-app notification system |
+
+## Pricing
+
+Minallo has one plan: **Student Pro**.
+
+| | |
+|---|---|
+| Trial | 7 days free |
+| Price after trial | €11.99/month |
+| Cancel | Anytime, no lock-in |
+| Hidden upsells | None — one plan includes every study tool |
+| Included | AI Tutor, Course Workspace, Files, Cheatsheet, Deep Learn, Flashcards, Quiz, ExamForge, Summaries, German level assessment, and AI German tutor |
+
+Start a free trial at [minallo.de](https://minallo.de).
 
 ## API Surface
 
