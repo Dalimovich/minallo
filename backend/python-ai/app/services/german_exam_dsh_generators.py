@@ -28,6 +28,15 @@ DSH generator, satisfies "don't build five independent validation frameworks" wi
 Availability is untouched by this module: nothing here ever sets a part's `available`. A
 generator succeeding is necessary, not sufficient, for availability — see each part's own
 PartBlueprint and the frozen availability-allowlist test.
+
+WS (Strukturen) is the one generator here that does NOT follow the five stages above as written:
+it reuses dsh_qualification.qualify_lv_ws() directly for BOTH structural validation (no
+blind_solver) and semantic/content validation (a real LLM-backed blind_solver) rather than a
+second parallel check, because that function already is this repository's existing,
+already-tested answer to "do the generated task and accepted answer families actually
+correspond" — reusing it, not rebuilding it, is what "don't build five independent validation
+frameworks" means here. WS is also NOT wired into generate_task()'s module dispatch: see
+generate_dsh_ws_part's own docstring for the pre-existing engine gap that blocks it.
 """
 
 from __future__ import annotations
@@ -43,9 +52,11 @@ from .german_exams import ExamProfile, PartBlueprint
 from .german_exams.dsh_content_model import (
     DshContentError,
     open_answer_item_from_generated,
+    source_fingerprint,
     validate_hv_content,
     validate_lv_content,
 )
+from .german_exams.dsh_qualification import qualify_lv_ws
 from .llm_json import chat_json
 
 log = logging.getLogger(__name__)
@@ -335,3 +346,151 @@ def generate_dsh_hv_part(
         audit_prompt=_hv_audit_prompt, structural_validate=validate_hv_content,
         gen_max_tokens=6500, audit_max_tokens=3000, source_id_field=None,
     )
+
+
+# ---- WS (Wissenschaftssprachliche Strukturen) -----------------------------------------------
+# NOT wired into generate_task()'s module dispatch. WS must bind to the SAME LV text the learner
+# already saw in the reading module for this same exam attempt (OFFICIAL §5(4)/§10(4)2d) — but
+# generate_task() generates one part at a time and has no concept of "this part's sibling part's
+# already-generated content" to supply that LV text automatically. That is a pre-existing,
+# already-documented engine gap (audit/dsh/IMPLEMENTATION_AUDIT.md section 5: "a 'shared LV+WS
+# 90-minute block' needs a delivery concept the engine does not have"), not something invented
+# around here. This function is the pure, directly-testable piece instead: given an ALREADY-VALID
+# LV content dict (e.g. generate_dsh_lv_part's own output), produce a WS bundle bound to it.
+
+# DECISION (not an official count): 6 items — the MPO states none for WS either.
+_WS_ITEM_COUNT = 6
+
+_WS_GENERATION_SHAPE = {
+    "items": [{
+        "itemId": "w1", "form": "completion", "category": "syntactic",
+        "sourceSentence": "<EXACT verbatim sentence copied character-for-character from the given text>",
+        "prompt": "the sentence as the learner sees it (a gap for 'completion', or the transformation "
+                  "instruction + original for 'paraphrase'/'transformation'/'complex_structure_comprehension') "
+                  "— must NOT already contain the answer",
+        "families": [{"familyId": "f1", "accepted": ["weil", "da"], "note": "optional: why these are interchangeable"}],
+        "maxPoints": 1,
+    }],
+}
+
+
+def _ws_generation_prompt(lv_text: str, ws_part: PartBlueprint) -> tuple[str, str]:
+    c = ws_part.constraints
+    shape = json.dumps(_WS_GENERATION_SHAPE, ensure_ascii=False)
+    system = (
+        "Generate DSH (Deutsche Sprachprüfung für den Hochschulzugang) Wissenschaftssprachliche "
+        "Strukturen (WS) items, bound to the GIVEN German academic text (the SAME text a learner "
+        "already read for Leseverstehen in this same exam). WS is graded on LINGUISTIC "
+        "CORRECTNESS only, never content.\n\n"
+        f"Produce exactly {_WS_ITEM_COUNT} items. Every item MUST: (1) quote an EXACT, VERBATIM "
+        "sentence from the given text as sourceSentence — copy it character-for-character, never "
+        f"paraphrase or alter it; (2) use one of these official task forms: {list(c['taskForms'])}; "
+        "(3) use one of these official structure categories: "
+        f"{list(c['structureCategories'])}; (4) give a prompt that does NOT already contain the "
+        "answer; (5) give one or more answer families, where EVERY family is a group of "
+        "genuinely interchangeable, linguistically correct answers — include EVERY common correct "
+        "variant you can think of in some family; never omit an equally correct alternative, and "
+        "never include an incorrect one.\n\n"
+        f"Return JSON only, in exactly this shape: {shape}"
+    )
+    user = json.dumps({"text": lv_text}, ensure_ascii=False)
+    return system, user
+
+
+def _llm_blind_solver(call: Any, model: str) -> Any:
+    """A BlindSolver (dsh_qualification.py's injectable judgement type) backed by a real model
+    call: solves a WS item from ONLY what qualify_lv_ws's own `hidden` set leaves visible
+    (itemId/form/category/prompt/maxPoints — never families, sourceSentence or sourceSpan), the
+    same information a real candidate who has not seen the key would have."""
+
+    def solve(blind_item: Any) -> str:
+        system = (
+            "Solve ONE German language-structure exercise (DSH Wissenschaftssprachliche "
+            "Strukturen). You are given only the task form, category and prompt — the source "
+            "text and answer key are not shown to you, exactly like a real candidate solving this "
+            "item fresh. Give the single best completion or transformed sentence.\n\n"
+            'Return JSON only: {"answer": "your completion or transformed sentence, nothing else"}'
+        )
+        user = json.dumps({k: blind_item.get(k) for k in ("form", "category", "prompt")}, ensure_ascii=False)
+        result = call(system=system, user=user, model=model, max_tokens=200)
+        data = result.data if isinstance(result.data, dict) else {}
+        return str(data.get("answer") or "")
+
+    return solve
+
+
+def generate_dsh_ws_part(
+    lv_part: PartBlueprint, lv_content: dict[str, Any], ws_part: PartBlueprint,
+    plan: list[AdaptationInstruction], topic: dict[str, str], *, provider: Any = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Returns (ws_content, validation_meta). See this section's header comment for why this is
+    not wired into generate_task() and takes lv_content as an explicit parameter instead.
+
+    Pipeline: generation -> GROUND every claimed sourceSentence in the actual LV text ourselves
+    (exact substring search, never trusting the model's own character-offset arithmetic) ->
+    dsh_qualification.qualify_lv_ws() with no blind_solver (structural: source binding, official
+    form/category, key-not-leaked-in-prompt) -> the SAME function again with a real LLM-backed
+    blind_solver (semantic: does an independent solver who never saw the key agree with every
+    family?) -> bounded full-regeneration repair -> accept/DshGenerationError."""
+    call = provider or chat_json
+    lv_text = lv_content["source"]["text"]
+    last_error = ""
+    for attempt in range(_MAX_REGENERATIONS + 1):
+        # 1. GENERATION
+        system, user = _ws_generation_prompt(lv_text, ws_part)
+        result = call(system=system, user=user, model=ws_part.constraints.get("generationModel") or get_settings().german_exam_model, max_tokens=4000)
+        raw = result.data if isinstance(result.data, dict) else {}
+        raw_items = raw.get("items") if isinstance(raw.get("items"), list) else []
+
+        # 2a. GROUNDING — deterministic, never LLM arithmetic
+        try:
+            items: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            for raw_item in raw_items:
+                if not isinstance(raw_item, dict):
+                    raise DshContentError("item must be an object")
+                item_id = raw_item.get("itemId")
+                if not isinstance(item_id, str) or not item_id or item_id in seen_ids:
+                    raise DshContentError("item id is missing, empty or duplicated")
+                seen_ids.add(item_id)
+                sentence = raw_item.get("sourceSentence")
+                if not isinstance(sentence, str) or not sentence.strip():
+                    raise DshContentError(f"{item_id}: sourceSentence must be a non-empty string")
+                if lv_text.count(sentence) != 1:
+                    raise DshContentError(f"{item_id}: sourceSentence is not found exactly once in the LV text")
+                start = lv_text.index(sentence)
+                items.append({**raw_item, "sourceSpan": {"start": start, "end": start + len(sentence)}})
+            if len(items) != _WS_ITEM_COUNT:
+                raise DshContentError(f"expected {_WS_ITEM_COUNT} items, got {len(items)}")
+        except DshContentError as exc:
+            last_error = f"grounding: {exc}"
+            log.info("dsh_ws_generation grounding_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        ws_content = {
+            "sourceRef": {"sourceId": lv_content["sourceId"], "sha256": source_fingerprint(lv_text)},
+            "items": items,
+        }
+
+        # 2b. STRUCTURAL VALIDATION — reused, not rebuilt (see module docstring)
+        structural = qualify_lv_ws(lv_content, ws_content, lv_part, ws_part)
+        if structural.failed:
+            last_error = f"structural: {structural.failed}"
+            log.info("dsh_ws_generation structural_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 3. SEMANTIC/CONTENT VALIDATION — the central WS risk this function exists to guard
+        # against: an independent blind solver, never the generator's own families as ground truth.
+        verifier_model = ws_part.constraints.get("verifierModel") or get_settings().german_exam_model
+        audited = qualify_lv_ws(lv_content, ws_content, lv_part, ws_part, blind_solver=_llm_blind_solver(call, verifier_model))
+        if audited.failed:
+            last_error = f"semantic: {audited.failed}"
+            log.info("dsh_ws_generation semantic_failure attempt=%s error=%s", attempt, last_error)
+            continue
+
+        # 5. ACCEPT
+        return ws_content, {
+            "deterministicPassed": True, "semanticPassed": True, "regenerationCount": attempt,
+            "liveQualificationRequired": True,
+        }
+    raise DshGenerationError(f"could not produce a valid DSH WS part after {_MAX_REGENERATIONS} regenerations: {last_error}")

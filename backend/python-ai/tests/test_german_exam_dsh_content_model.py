@@ -15,8 +15,8 @@ from app.services.german_exams.dsh_content_model import (
     GRADING_CONTENT, GRADING_CONTENT_AND_LANGUAGE, GRADING_LANGUAGE, GRADING_ORAL, AnswerFamily, ContentPoint,
     DshContentError, DshSourceMismatch, OpenAnswerItem, StructureItem, grading_mode_for_module, match_answer_family,
     open_answer_item_from_generated, score_content_item, score_structure_item, source_fingerprint,
-    validate_dsh_task_content, validate_hv_content, validate_lv_content, validate_lv_ws_bundle,
-    validate_oral_content, validate_tp_content,
+    validate_dsh_task_content, validate_hv_content, validate_lv_content,
+    validate_lv_ws_bundle, validate_oral_content, validate_tp_content,
 )
 
 LV_PART = get_part("dsh", "reading", "lv_1")

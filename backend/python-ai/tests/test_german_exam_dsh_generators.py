@@ -13,14 +13,17 @@ import pytest
 from app.services.german_exam_dsh_generators import (
     _HV_ITEM_COUNT,
     _LV_ITEM_COUNT,
+    _WS_ITEM_COUNT,
     DshGenerationError,
     generate_dsh_hv_part,
     generate_dsh_lv_part,
+    generate_dsh_ws_part,
 )
 from app.services.german_exams import get_part
 
 LV_PART = get_part("dsh", "reading", "lv_1")
 HV_PART = get_part("dsh", "listening", "hv_1")
+WS_PART = get_part("dsh", "scientific_structures", "ws_1")
 TOPIC = {"topicId": "open_science", "label": "Offene Wissenschaft"}
 SENTENCE = "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war."
 
@@ -246,3 +249,124 @@ def test_routed_from_the_real_reading_dispatcher_not_telc_testdaf_goethe_logic(m
     result = generate_reading_part(None, LV_PART, [], TOPIC)
     assert result == sentinel
     assert len(calls) == 1
+
+
+# ---- WS (Wissenschaftssprachliche Strukturen) — bound to an already-generated LV text ---------
+# Unlike HV/LV, WS needs each sourceSentence to be a UNIQUE substring of the LV text (the
+# grounding check rejects a sentence found zero or more-than-once times), so these fixtures use
+# six genuinely distinct sentences rather than one repeated sentence.
+
+WS_SENTENCES = [
+    "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war.",
+    "Viele Studierende nutzen digitale Bibliotheken für ihre Recherche.",
+    "Der Zugang zu wissenschaftlichen Daten bleibt jedoch oft eingeschränkt.",
+    "Einige Universitäten haben inzwischen offene Plattformen eingerichtet.",
+    "Kritiker bemängeln die uneinheitlichen Standards bei der Veröffentlichung.",
+    "Langfristig könnte dies die Zusammenarbeit zwischen Institutionen verbessern.",
+]
+
+
+def _ws_lv_text() -> str:
+    base = " ".join(WS_SENTENCES) + " "
+    filler = "Weitere Ausführungen ergänzen diesen Abschnitt des Textes ohne neue Aussage. "
+    text = base
+    while len(text) < 4600:
+        text += filler
+    return text
+
+
+def _valid_ws_lv_content() -> dict:
+    return _valid_content(source={"text": _ws_lv_text()})
+
+
+def _raw_ws_items() -> list[dict]:
+    return [
+        {"itemId": f"w{i}", "form": "completion", "category": "syntactic", "sourceSentence": sentence,
+         "prompt": f"Ergänzen Sie Lücke {i}: ___.", "families": [{"familyId": "f1", "accepted": [f"Antwort{i}"]}], "maxPoints": 1}
+        for i, sentence in enumerate(WS_SENTENCES, start=1)
+    ]
+
+
+def _blind_answers(items: list[dict], *, correct: bool = True) -> list[dict]:
+    return [{"answer": item["families"][0]["accepted"][0] if correct else "eine falsche Antwort"} for item in items]
+
+
+def test_ws_accepts_a_valid_generation_when_the_blind_solver_agrees_with_every_family() -> None:
+    lv_content = _valid_ws_lv_content()
+    items = _raw_ws_items()
+    provider = _scripted_provider({"items": items}, *_blind_answers(items))
+    result, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert result["sourceRef"]["sourceId"] == lv_content["sourceId"]
+    assert len(result["items"]) == _WS_ITEM_COUNT
+    assert meta["regenerationCount"] == 0
+    assert len(provider.calls) == 1 + _WS_ITEM_COUNT  # 1 generation + one blind-solve per item
+
+
+def test_ws_sentence_not_found_verbatim_in_the_lv_text_is_a_grounding_failure() -> None:
+    lv_content = _valid_ws_lv_content()
+    bad = _raw_ws_items()
+    bad[0]["sourceSentence"] = "Dieser Satz existiert nicht im gegebenen Text."
+    good = _raw_ws_items()
+    provider = _scripted_provider({"items": bad}, {"items": good}, *_blind_answers(good))
+    _, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_ws_duplicate_item_ids_are_a_grounding_failure() -> None:
+    lv_content = _valid_ws_lv_content()
+    bad = _raw_ws_items()
+    bad[1]["itemId"] = bad[0]["itemId"]
+    good = _raw_ws_items()
+    provider = _scripted_provider({"items": bad}, {"items": good}, *_blind_answers(good))
+    _, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_ws_non_official_task_form_is_a_structural_failure_via_qualify_lv_ws() -> None:
+    lv_content = _valid_ws_lv_content()
+    bad = _raw_ws_items()
+    bad[0]["form"] = "free_writing"
+    good = _raw_ws_items()
+    provider = _scripted_provider({"items": bad}, {"items": good}, *_blind_answers(good))
+    _, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_ws_answer_leaked_in_the_prompt_is_a_structural_failure_via_qualify_lv_ws() -> None:
+    lv_content = _valid_ws_lv_content()
+    bad = _raw_ws_items()
+    bad[0]["prompt"] = f"Die richtige Antwort ist {bad[0]['families'][0]['accepted'][0]}."
+    good = _raw_ws_items()
+    provider = _scripted_provider({"items": bad}, {"items": good}, *_blind_answers(good))
+    _, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_ws_blind_solver_disagreeing_with_a_family_is_a_semantic_failure_not_accepted() -> None:
+    """The central risk this function exists to guard against: a generated answer key is never
+    trusted just because it is well-formed — an independent solver must actually agree with it."""
+    lv_content = _valid_ws_lv_content()
+    items = _raw_ws_items()
+    good = _raw_ws_items()
+    provider = _scripted_provider({"items": items}, *_blind_answers(items, correct=False), {"items": good}, *_blind_answers(good))
+    _, meta = generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+    assert meta["regenerationCount"] == 1
+
+
+def test_ws_raises_after_exhausting_the_regeneration_budget_never_returns_bad_content() -> None:
+    lv_content = _valid_ws_lv_content()
+    always_empty = {"items": []}
+    provider = _scripted_provider(always_empty, always_empty, always_empty)
+    with pytest.raises(DshGenerationError):
+        generate_dsh_ws_part(LV_PART, lv_content, WS_PART, [], TOPIC, provider=provider)
+
+
+def test_ws_is_deliberately_not_wired_into_generate_tasks_module_dispatch() -> None:
+    """Pins the documented boundary: scientific_structures has no module dispatch branch at all
+    (see generate_dsh_ws_part's own docstring for why) — this must stay a deliberate, known gap,
+    not something a future session mistakes for an oversight and silently works around."""
+    from app.services.german_exam_generator import _dispatch_module
+    from app.services.german_exams import GermanExamProfileError
+
+    with pytest.raises(GermanExamProfileError):
+        _dispatch_module("scientific_structures")
