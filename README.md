@@ -284,13 +284,9 @@ See [supabase/migrations/README.md](supabase/migrations/README.md).
 
 Frontend deploys automatically via Cloudflare Pages on push to `main`.
 
-Python AI service requires manual deploy:
-
-```bash
-ssh deploy@ai.minallo.de
-cd /opt/minallo/backend/python-ai
-./deploy/update.sh
-```
+Python AI service requires manual deploy. SSH host, user, and server path are
+not published here — see `docs/deploy-internal.md` (local-only, gitignored;
+ask a maintainer if you don't have a copy).
 
 Fly.io is not a deployment target. Keep the old Fly service rollback-only
 until it is explicitly decommissioned.

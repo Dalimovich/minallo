@@ -55,6 +55,7 @@ test-results/
 free API.txt
 *api*key*.txt
 secrets.txt
+docs/deploy-internal.md
 
 # Claude Code internal worktrees
 .claude/worktrees/
