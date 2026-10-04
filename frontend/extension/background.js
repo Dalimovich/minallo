@@ -6,7 +6,10 @@ let authTabId = null;
 let originWinId = null;
 
 function startGoogleAuth() {
-  const redirectTo = 'https://minallo.de/';
+  // /app/ is the authenticated app shell — it reads #access_token= from the
+  // OAuth redirect the same way / used to. Must also be on Supabase's
+  // Redirect URLs allow-list (Dashboard → Authentication → URL Configuration).
+  const redirectTo = 'https://minallo.de/app/';
   const authUrl = `${SUPA_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
   chrome.windows.getCurrent({}, (win) => {
     originWinId = win.id;

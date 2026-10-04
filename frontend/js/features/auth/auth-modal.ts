@@ -208,7 +208,12 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
           return;
         }
 
-        const signUpResult = await sb.auth.signUp(email, password, 'https://minallo.de/');
+        // The app shell lives at /app/ now — a new user confirming their
+        // email should land where onboarding actually runs, not the static
+        // marketing page at /. Must also be on Supabase's Redirect URLs
+        // allow-list (Dashboard → Authentication → URL Configuration) or
+        // Supabase silently falls back to Site URL instead.
+        const signUpResult = await sb.auth.signUp(email, password, 'https://minallo.de/app/');
         // Supabase throttles confirmation emails; when the limit is hit the
         // signup itself is rejected with 429/over_email_send_rate_limit. Tell
         // the user what actually happened instead of "please try again" (which

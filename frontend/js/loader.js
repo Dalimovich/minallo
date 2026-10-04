@@ -216,122 +216,18 @@
         applyLandingTranslation(_landingLang === 'en' ? 'de' : 'en');
     };
     if (!window._ssIsLoggedIn) {
-        // Load new-landing CSS before rendering the page. The old landing.css
-        // remains in the repo (frontend/css/landing.css) but is no longer
-        // injected — the new landing replaces it visually.
-        (function () {
-            function ensureStylesheet(href) {
-                const path = href.split('?')[0] || href;
-                const exists = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).some((link) => {
-                    const current = link.getAttribute('href') || '';
-                    const currentPath = current.split('?')[0] || current;
-                    if (current === href)
-                        return true;
-                    if (currentPath.endsWith(path)) {
-                        link.setAttribute('href', href);
-                        return true;
-                    }
-                    return false;
-                });
-                if (exists)
-                    return;
-                const link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = href;
-                document.head.appendChild(link);
-            }
-            ensureStylesheet('css/new-landing.css?v=23');
-            ensureStylesheet('css/auth.css?v=6');
-        })();
-        _fetchTimeout('pages/new_landing.html?v=25', 10000)
-            .then((r) => {
-            if (!r.ok)
-                throw new Error('HTTP ' + r.status + ' loading new_landing.html');
-            return r.text();
-        })
-            .then((html) => {
-            root.innerHTML = html;
-            document.body.classList.add('nl-body');
-            // Inject the new-landing JS module after the fragment lands so it
-            // can find its #/data-* hooks on first query.
-            (function () {
-                const script = document.createElement('script');
-                script.src = 'js/pages/new-landing.js?v=22';
-                script.defer = true;
-                document.body.appendChild(script);
-            })();
-            // Google Identity Services loads from index.html directly (auth is
-            // infrastructure, not a landing-page feature) — do not inject it
-            // here too. Two owners of that script tag caused Google auth to
-            // depend on landing-fetch succeeding.
-            if (SS)
-                SS.markReady('landing', { file: 'pages/new_landing.html' });
-            window.dispatchEvent(new Event('ss-ready'));
-            console.log('✓ New landing page loaded');
-            // Re-run fade-in observer — scripts inside landing.html don't execute via innerHTML
-            const fadeObserver = new IntersectionObserver((entries) => {
-                entries.forEach((e) => {
-                    if (e.isIntersecting) {
-                        e.target.classList.add('visible');
-                        fadeObserver.unobserve(e.target);
-                    }
-                });
-            }, { threshold: 0.12 });
-            root.querySelectorAll('.fade-in').forEach((el) => {
-                fadeObserver.observe(el);
-            });
-            // Back-to-top button scroll handler (hover is handled by landing.css)
-            const backBtn = document.getElementById('backToTop');
-            if (backBtn) {
-                window.addEventListener('scroll', () => {
-                    backBtn.style.display = window.scrollY > 400 ? 'flex' : 'none';
-                });
-                backBtn.addEventListener('click', () => {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                });
-            }
-            // Apply saved language
-            applyLandingTranslation(_landingLang);
-            const landingLangBtn = document.getElementById('landingLangBtn');
-            if (landingLangBtn) {
-                landingLangBtn.addEventListener('click', () => {
-                    if (typeof window._toggleLandingLang === 'function')
-                        window._toggleLandingLang();
-                });
-            }
-            ['landingLoginBtn', 'landingHeroStartBtn', 'landingCtaBtn', 'landingFooterSignin'].forEach((id) => {
-                const el = document.getElementById(id);
-                if (!el)
-                    return;
-                el.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    if (typeof window._googleAuth === 'function')
-                        window._googleAuth();
-                });
-            });
-            const seeHowBtn = document.getElementById('landingSeeHowBtn');
-            if (seeHowBtn) {
-                seeHowBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    const section = document.querySelector('.section');
-                    if (section)
-                        section.scrollIntoView({ behavior: 'smooth' });
-                });
-            }
-        })
-            .catch((err) => {
-            console.error('✗ Could not load new_landing.html:', err);
-            root.innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:center;' +
-                    'height:100vh;font-family:Nunito,sans-serif;color:#3b82f6;font-size:1.1rem">' +
-                    'Minallo — ' +
-                    '<button id="landingFallbackGoogleBtn" ' +
-                    'style="margin-left:12px;padding:10px 24px;' +
-                    'background:linear-gradient(90deg,#b87bff,#ef79c4);' +
-                    'border:none;border-radius:999px;color:#fff;font-weight:800;cursor:pointer">' +
-                    'Sign in with Google</button></div>';
-            window.dispatchEvent(new Event('ss-ready'));
-        });
+        // loader.js only runs at /app/ now (the marketing page at / is static
+        // HTML and never loads this file — see frontend/index.html and
+        // frontend/js/pages/landing-static-init.ts). Reaching /app/ without a
+        // session means either a stale bookmark, a logged-out direct visit, or
+        // the /-page's own redirect shim raced us here incorrectly — in every
+        // case the right move is back to the real marketing page, not trying to
+        // render landing content at this URL. Preserve query/hash so an
+        // email-confirmation or OAuth callback link that still points at /app/
+        // keeps working once it lands back on / (auth-bootstrap.js there reads
+        // the same token/code params and re-forwards to /app/ if they resolve
+        // to a session).
+        window.location.replace('/' + window.location.search + window.location.hash);
         return; // ← do NOT load app sections below
     }
     // ── Full app (user is logged-in this session) ─────────────────────────────

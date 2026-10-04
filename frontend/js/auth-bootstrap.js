@@ -497,11 +497,18 @@ window._googleAuth = function () {
 
   // Full app shell (auth modal + landShowAuth) isn't loaded yet — lazily
   // load it, same as clicking sign-in normally does pre-hydration.
+  // The app shell lives at /app/ (the marketing page at / is static and
+  // never boots it), so this must navigate there, not reload in place —
+  // a bare reload would just reload the static marketing page forever.
   try {
     sessionStorage.setItem('ss_force_app', 'true');
     sessionStorage.setItem('ss_show_auth', 'true');
   } catch (e) {}
-  window.location.reload();
+  var _dest = '/app/';
+  try {
+    if (window.location.pathname.indexOf('/app') === 0) _dest = window.location.pathname + window.location.search;
+  } catch (e) {}
+  window.location.href = _dest;
 };
 
 var _gsiTimer = setInterval(function () {

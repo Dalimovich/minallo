@@ -89,8 +89,13 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
         || event.headers['client-ip']))
       || '';
     if (sourceIp) params.append('metadata[consent_widerruf_verzicht_ip]', String(sourceIp).slice(0, 64));
-    params.append('success_url', allowedOrigin + '?payment=success&session_id={CHECKOUT_SESSION_ID}');
-    params.append('cancel_url', allowedOrigin + '?payment=cancelled');
+    // /app/ is the authenticated app shell — / is now a static marketing
+    // page with no code to read these query params. auth-bootstrap.js's
+    // boot check also doesn't special-case ?payment=..., so the user needs
+    // an active session already for this to land cleanly; that's the
+    // expected case here since checkout is only reachable from inside the app.
+    params.append('success_url', allowedOrigin + '/app/?payment=success&session_id={CHECKOUT_SESSION_ID}');
+    params.append('cancel_url', allowedOrigin + '/app/?payment=cancelled');
     params.append('metadata[user_id]', user.id);
     if (user.email) params.append('customer_email', user.email);
 

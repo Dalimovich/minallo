@@ -52,6 +52,23 @@ function clean(dir) {
 
 clean(OUT);
 
+// Splice the real landing-page markup into index.html's content marker.
+// frontend/pages/new_landing.html stays the single source of truth for the
+// landing markup; this is the only place it gets duplicated, and it happens
+// here (build time) rather than at runtime (client-side fetch+innerHTML) so
+// the server's actual HTTP response already contains the full content —
+// no JS execution required to see it. Verify with:
+//   curl -s https://minallo.de/ | grep 'nl-hero__title'
+const LANDING_MARKER = '<!-- MINALLO_LANDING_CONTENT -->';
+const indexPath = join(OUT, 'index.html');
+const landingFragmentPath = join(OUT, 'pages', 'new_landing.html');
+const indexHtmlRaw = readFileSync(indexPath, 'utf8');
+if (!indexHtmlRaw.includes(LANDING_MARKER)) {
+  throw new Error(`index.html is missing the ${LANDING_MARKER} marker — cannot splice landing content.`);
+}
+const landingFragment = readFileSync(landingFragmentPath, 'utf8');
+writeFileSync(indexPath, indexHtmlRaw.replace(LANDING_MARKER, landingFragment));
+
 // This URL is public: browsers connect to it directly for streaming. Generate
 // it at build time so a host cutover does not require editing application code.
 const DEFAULT_AI_SERVICE_URL = 'https://python-ai.fly.dev';
@@ -90,7 +107,9 @@ if (!commit) {
   }
 }
 const config = readFileSync(join(OUT, 'js/config.js'), 'utf8');
-const index = readFileSync(join(OUT, 'index.html'), 'utf8');
+// loader.js is only referenced from the app shell now (/app/), not the
+// static marketing index.html.
+const appShellHtml = readFileSync(join(OUT, 'app', 'index.html'), 'utf8');
 const assetPaths = [
   'js/loader.js',
   'js/features/chatbot-new/shell.js',
@@ -107,7 +126,7 @@ writeFileSync(
     {
       commit,
       assetVersion: config.match(/assetVersion:\s*'([^']+)'/)?.[1] || null,
-      loaderVersion: index.match(/loader\.js\?v=([^"']+)/)?.[1] || null,
+      loaderVersion: appShellHtml.match(/loader\.js\?v=([^"']+)/)?.[1] || null,
       assets: Object.fromEntries(
         assetPaths.map((file) => [
           file,

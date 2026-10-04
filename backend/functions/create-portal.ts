@@ -34,7 +34,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   try {
     const params = new URLSearchParams();
     params.append('customer', customerId);
-    params.append('return_url', allowedOrigin + '?section=subscription');
+    // /app/ is the authenticated app shell; / is now a static marketing
+    // page with no router to read ?section=. Billing portal is only
+    // reachable from inside the app, so the user already has a session.
+    params.append('return_url', allowedOrigin + '/app/?section=subscription');
     const result = await stripePost<StripeResponse>('/v1/billing_portal/sessions', params);
     if (result.status !== 200) return fail(result.status, result.body.error?.message || 'Stripe error');
     return jsonResponse(200, { url: result.body.url });

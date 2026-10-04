@@ -2,6 +2,40 @@
 <html lang="en">
  <head>
   <meta charset="UTF-8" />
+
+  <!-- Returning-session shim: must be the very first thing in <head>, before
+       any stylesheet or other script, so a logged-in visitor never paints
+       the marketing page at all. Synchronous/local only (no network), same
+       checks auth-bootstrap.js uses, so stale/old links (email confirm,
+       OAuth callback, Stripe/PayPal return) that still target / keep
+       working by forwarding straight to /app/ with the query/hash intact. -->
+  <script>
+  (function () {
+    try {
+      var loggedIn = false;
+      try { loggedIn = sessionStorage.getItem('ss_logged_in') === 'true'; } catch (e) {}
+      if (!loggedIn && location.hash && location.hash.indexOf('access_token') !== -1) loggedIn = true;
+      if (!loggedIn) {
+        try {
+          var qp = new URLSearchParams(location.search);
+          if (qp.get('token') || qp.get('token_hash') || qp.get('confirmation_token') || qp.get('code')) loggedIn = true;
+        } catch (e) {}
+      }
+      if (!loggedIn) {
+        try { if (sessionStorage.getItem('ss_force_app') === 'true') loggedIn = true; } catch (e) {}
+      }
+      if (!loggedIn) {
+        try {
+          if (localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token') || localStorage.getItem('sb_sess_refresh')) loggedIn = true;
+        } catch (e) {}
+      }
+      if (loggedIn) {
+        location.replace('/app/' + location.search + location.hash);
+      }
+    } catch (e) {}
+  })();
+  </script>
+
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
   <title>Minallo - AI Exam Prep From Your Real Course Material</title>
@@ -75,145 +109,40 @@
   <!-- Manrope served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
        GDPR-friendly drop-in replacement for Google Fonts that does not log
        IPs — the privacy-conscious workaround for LG Muenchen I
-       (3 O 17493/20). One narrow domain in the CSP.
-       Landing uses weights 400/600/700/800; 500 and jetbrains-mono dropped
-       (jetbrains is only needed inside the dashboard chat for code blocks
-       and is injected after auth). -->
+       (3 O 17493/20). One narrow domain in the CSP. -->
   <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
     rel="stylesheet"
     href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
   />
-  <!-- Preload the two woff2 weights the hero/LCP element actually uses.
-       Starts the font fetch in parallel with the Bunny CSS parse instead
-       of waiting for it. Bunny .woff2 URLs are content-addressed and
-       stable; if Bunny ever rotates them the preload becomes a no-op
-       (browser falls back to fetching from the CSS rule). -->
   <link rel="preload" as="font" type="font/woff2" crossorigin
         href="https://fonts.bunny.net/manrope/files/manrope-latin-400-normal.woff2" />
   <link rel="preload" as="font" type="font/woff2" crossorigin
         href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2" />
 
-  <!-- Google Identity Services must load independently of the landing
-       renderer — auth is infrastructure, not a landing-page feature.
-       Previously this was injected by loader.js only after the landing
-       partial finished loading, which made Google sign-in depend on
-       landing-fetch succeeding. async+defer keeps it off the critical
-       render path without gating it on anything else. -->
+  <!-- Google Identity Services loads independently of the landing content —
+       auth is infrastructure, not a landing-page feature. -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <!-- Keep the logged-out first paint lean. typography.css + new-landing.css
-       are the only render-blocking stylesheets here. auth.css is dynamically
-       injected by loader.js (it's only needed once the landing renders),
-       and dashboard CSS is injected post-auth. -->
   <link rel="stylesheet" href="/css/typography.css?v=2" />
   <link rel="stylesheet" href="/css/new-landing.css?v=23" />
   <link rel="stylesheet" href="/css/performance.css?v=4" />
-  <style>
-    /* Visually hide the static SEO hero (still in the DOM for crawlers
-       that don't execute JS) so logged-in / human users see the splash
-       or landing instead of unstyled raw HTML. */
-    .ss-seo-hero {
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      padding: 0 !important;
-      margin: -1px !important;
-      overflow: hidden !important;
-      clip: rect(0, 0, 0, 0) !important;
-      white-space: nowrap !important;
-      border: 0 !important;
-    }
-    /* Critical safety: these partials are injected before their feature CSS.
-       Keep modal markup hidden even if a stylesheet is delayed or lazy. */
-    /* Boot cover: the only thing painted before the final interface. It is
-       in the raw HTML so it is the first frame; js/boot-cover.js owns its
-       removal (html.mn-boot-done). Logo only — no text, no spinner. */
-    #minalloBootCover {
-      position: fixed;
-      inset: 0;
-      z-index: 2147483000;
-      display: grid;
-      place-items: center;
-      background: #031323;
-    }
-    #minalloBootCover img { width: 88px; height: 88px; display: block; }
-    #minalloBootCover .mn-boot-stack { display: grid; justify-items: center; gap: 22px; }
-    #minalloBootRecovery {
-      display: grid; justify-items: center; gap: 12px;
-      color: #9fb3c8; font: 500 14px/1.4 system-ui, sans-serif; text-align: center;
-    }
-    #minalloBootRecovery[hidden] { display: none; }
-    #minalloBootRecovery button {
-      font: inherit; color: #e2e8f0; background: rgba(148, 163, 184, 0.14);
-      border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px; padding: 8px 16px; cursor: pointer;
-    }
-    html.mn-boot-done #minalloBootCover { display: none; }
-    #onboardModal {
-      display: none;
-    }
-    #multiSumModal:not(.show),
-    #lnModal:not(.show) {
-      display: none !important;
-    }
-  </style>
   </head>
-  <body class="night">
-    <div id="minalloBootCover" aria-label="Minallo">
-      <div class="mn-boot-stack">
-        <img src="/assets/favicon.png" alt="Minallo" width="88" height="88" decoding="sync" fetchpriority="high" />
-        <div id="minalloBootRecovery" hidden>
-          <span data-boot-msg></span>
-          <span><button type="button" data-boot-retry></button> <button type="button" data-boot-out></button></span>
-        </div>
-      </div>
-    </div>
-    <!-- SECTIONS ARE INJECTED HERE BY loader.js.
-         The static SEO hero below ships in the raw HTML so Googlebot
-         (and crawlers that don't execute JS) can read the H1, the
-         product description, and the "Minallo AI study platform"
-         phrasing without waiting for the SPA to hydrate. loader.js
-         replaces this block with the rendered landing/app sections. -->
-    <div id="ss-sections-root">
-      <main class="ss-seo-hero" role="main">
-        <h1>Upload Your Course. Let Minallo Build Your Exam Prep.</h1>
-        <p>
-          Minallo helps students turn lecture PDFs, scripts, formula sheets,
-          and exercise sheets into AI summaries, quizzes, flashcards,
-          cheatsheets, step-by-step explanations, and exam-style practice
-          based on their real course material.
-        </p>
-        <nav aria-label="AI study tools">
-          <a href="/flashcards-from-pdf.html">Generate flashcards from lecture PDFs</a>
-          <a href="/lecture-summary-generator.html">AI lecture summary generator</a>
-          <a href="/ai-quiz-generator-from-notes.html">AI quiz generator from notes</a>
-          <a href="/ai-tutor-for-engineering-students.html">AI tutor for engineering students</a>
-          <a href="/course-based-ai-learning-tool.html">Course-based AI learning tool</a>
-          <a href="/exam-study-guide-generator.html">Exam study guide generator</a>
-        </nav>
-      </main>
-    </div>
+  <body class="nl-body">
+    <!-- MINALLO_LANDING_CONTENT: scripts/build-production.mjs splices the
+         real content of frontend/pages/new_landing.html in here at build
+         time (dist/index.html only — this source file keeps the marker so
+         there is exactly one copy of the landing markup to maintain).
+         The server therefore always sends the full marketing content in
+         the initial HTML response; nothing here depends on client-side JS
+         fetching or injecting it. -->
+    <!-- MINALLO_LANDING_CONTENT -->
 
-    <!-- All boot scripts are deferred: they download in parallel with the
-         HTML body parse and execute in document order once parsing is done.
-         Module scripts (loader.js, ai-typing-config.js) are deferred by
-         default; classic scripts need the `defer` attribute explicitly.
-         Order preserved: ss-ready-marker → minallo → config → ai-typing →
-         auth-bootstrap → supabase → loader.
-         The runtime contract (auth-bootstrap before supabase before loader)
-         relies on the in-order execution `defer` guarantees. -->
-    <script src="js/boot-cover.js?v=2" defer></script>
-    <script src="js/ss-ready-marker.js?v=1" defer></script>
-    <script src="js/minallo.js?v=2" defer></script>
-    <script src="js/runtime-config.js" defer></script>
-    <script src="js/config.js?v=20260919-sb-weak-profile-1" defer></script>
-    <!-- AI chat typing config — only read inside the dashboard chat
-         features, never on the public landing. `async` removes it from
-         the critical-request chain so it loads in parallel without
-         sequencing against loader.js. -->
-    <script type="module" async src="js/features/ai-chat/ai-typing-config.js?v=5"></script>
-    <script src="js/auth-bootstrap.js?v=13" defer></script>
-    <script src="js/supabase.js?v=10" defer></script>
-    <script type="module" src="js/loader.js?v=70"></script>
+    <script src="/js/minallo.js?v=2" defer></script>
+    <script src="/js/runtime-config.js" defer></script>
+    <script src="/js/config.js?v=20260919-sb-weak-profile-1" defer></script>
+    <script src="/js/auth-bootstrap.js?v=13" defer></script>
+    <script src="/js/supabase.js?v=10" defer></script>
+    <script src="/js/pages/new-landing.js?v=22" defer></script>
   </body>
 </html>

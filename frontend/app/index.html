@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+ <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Minallo</title>
+  <!-- Authenticated app shell: never indexed, never a search/share target.
+       If you're not logged in, auth-bootstrap.js's loggedIn check runs
+       before loader.js, and loader.js bounces you to / (see loader.ts). -->
+  <meta name="robots" content="noindex, nofollow">
+
+  <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
+  <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
+  <meta name="theme-color" content="#0b1220" />
+
+  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
+  />
+
+  <!-- Google Identity Services must load independently of app boot — auth is
+       infrastructure. async+defer keeps it off the critical render path. -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <link rel="stylesheet" href="/css/typography.css?v=2" />
+  <link rel="stylesheet" href="/css/performance.css?v=4" />
+  <style>
+    /* Critical safety: these partials are injected before their feature CSS.
+       Keep modal markup hidden even if a stylesheet is delayed or lazy. */
+    /* Boot cover: the only thing painted before the final interface. It is
+       in the raw HTML so it is the first frame; js/boot-cover.js owns its
+       removal (html.mn-boot-done). Logo only — no text, no spinner. */
+    #minalloBootCover {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483000;
+      display: grid;
+      place-items: center;
+      background: #031323;
+    }
+    #minalloBootCover img { width: 88px; height: 88px; display: block; }
+    #minalloBootCover .mn-boot-stack { display: grid; justify-items: center; gap: 22px; }
+    #minalloBootRecovery {
+      display: grid; justify-items: center; gap: 12px;
+      color: #9fb3c8; font: 500 14px/1.4 system-ui, sans-serif; text-align: center;
+    }
+    #minalloBootRecovery[hidden] { display: none; }
+    #minalloBootRecovery button {
+      font: inherit; color: #e2e8f0; background: rgba(148, 163, 184, 0.14);
+      border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px; padding: 8px 16px; cursor: pointer;
+    }
+    html.mn-boot-done #minalloBootCover { display: none; }
+    #onboardModal {
+      display: none;
+    }
+    #multiSumModal:not(.show),
+    #lnModal:not(.show) {
+      display: none !important;
+    }
+  </style>
+  </head>
+  <body class="night">
+    <div id="minalloBootCover" aria-label="Minallo">
+      <div class="mn-boot-stack">
+        <img src="/assets/favicon.png" alt="Minallo" width="88" height="88" decoding="sync" fetchpriority="high" />
+        <div id="minalloBootRecovery" hidden>
+          <span data-boot-msg></span>
+          <span><button type="button" data-boot-retry></button> <button type="button" data-boot-out></button></span>
+        </div>
+      </div>
+    </div>
+    <!-- SECTIONS ARE INJECTED HERE BY loader.js (auth/signup/portal/modals). -->
+    <div id="ss-sections-root"></div>
+
+    <!-- All boot scripts are deferred: they download in parallel with the
+         HTML body parse and execute in document order once parsing is done.
+         Order preserved: ss-ready-marker → minallo → config → ai-typing →
+         auth-bootstrap → supabase → loader.
+         The runtime contract (auth-bootstrap before supabase before loader)
+         relies on the in-order execution `defer` guarantees. -->
+    <script src="/js/boot-cover.js?v=2" defer></script>
+    <script src="/js/ss-ready-marker.js?v=1" defer></script>
+    <script src="/js/minallo.js?v=2" defer></script>
+    <script src="/js/runtime-config.js" defer></script>
+    <script src="/js/config.js?v=20260919-sb-weak-profile-1" defer></script>
+    <script type="module" async src="/js/features/ai-chat/ai-typing-config.js?v=5"></script>
+    <script src="/js/auth-bootstrap.js?v=13" defer></script>
+    <script src="/js/supabase.js?v=10" defer></script>
+    <script type="module" src="/js/loader.js?v=70"></script>
+  </body>
+</html>
