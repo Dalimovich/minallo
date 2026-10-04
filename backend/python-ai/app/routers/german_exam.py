@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import logging
 import json
+import random
+import uuid
+from fractions import Fraction
 from typing import Literal
 from typing import Any
 
@@ -28,10 +31,13 @@ from ..services.german_exam_generator import generate_task
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
+from ..services.german_exams.dsh_content_model import DshContentError
 from ..services.german_exam_productive import validate_productive
 from ..services.german_exam_writing_grading import gradable_writing_task_types, grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
 from ..services import german_exam_testdaf_speaking as testdaf_speaking
+from ..services import german_exam_dsh_grading as dsh_grading
+from ..services.german_exam_dsh_generators import DshGenerationError, generate_dsh_hv_part, generate_dsh_lv_part
 from ..services.german_exam_validator import hard_issues, validate_content
 
 log = logging.getLogger(__name__)
@@ -364,3 +370,115 @@ def speaking_practice_endpoint(payload: SpeakingPracticeRequest) -> dict[str, An
     except Exception as exc:
         log.exception("Speaking practice failed")
         raise HTTPException(status_code=502, detail="Speaking request failed. Please retry.") from exc
+
+
+# ---- DSH LV/HV practice / content-evaluation path -----------------------------------------
+# Deliberately NOT /german-exam/generate + /german-exam/results: every DSH PartBlueprint stays
+# available=False (dsh.py), so generate_task()'s _require_available() gate correctly refuses DSH
+# forever through that path, and the normal exam-workspace navigation keeps DSH's buttons
+# disabled (manifest-driven, task_types.py says every DSH task type is unimplemented). That gate
+# is intentional and is NOT bypassed here: this is a separate, explicitly non-production sandbox
+# for exercising the generation (german_exam_dsh_generators.py) + raw semantic grading
+# (german_exam_dsh_grading.py) pipeline this session built, reachable over HTTP the same way the
+# existing unit tests already call those functions directly in-process. No DSH availability flag
+# is read or written by either endpoint below, and neither ever returns an official DSH score,
+# a DSH-1/2/3 level, or anything scaled onto dsh.WRITTEN_MAX_POINTS — see
+# german_exam_dsh_grading.py's own module docstring for why that conversion is not established.
+
+_DSH_LV_HV_PART_SPECS: dict[str, tuple[str, str, Any]] = {
+    "lv": ("reading", "lv_1", generate_dsh_lv_part),
+    "hv": ("listening", "hv_1", generate_dsh_hv_part),
+}
+
+
+def _as_number(value: Fraction) -> int | float:
+    return int(value) if value.denominator == 1 else float(value)
+
+
+class DshLvHvGenerateRequest(BaseModel):
+    part: Literal["lv", "hv"]
+    topic: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/german-exam/dsh/lv-hv/generate")
+def dsh_lv_hv_generate_endpoint(payload: DshLvHvGenerateRequest) -> dict[str, Any]:
+    """Generates one DSH LV or HV practice task. Returns a learner-safe `content` (every
+    answer-key field — requiredPoints, optionalPoints, referenceAnswer, errorfulVariant,
+    gradingNotes — stripped by dsh_grading.strip_answer_key_for_learner) for rendering, plus an
+    opaque `gradingContent` (the full generated content) the caller must hold without rendering or
+    displaying it and resend, unmodified, to /german-exam/dsh/lv-hv/grade. No server-side storage
+    of generated content exists (no new persistence was introduced for this phase), so
+    gradingContent is this request/response cycle's only carrier of the answer key between the two
+    calls — see german_exam_dsh_grading.py's module docstring for the precise, honest limits of
+    this mitigation (it removes the answer key from the rendered/operative learner payload; it
+    does not make the raw HTTP response itself inaccessible to a learner inspecting network
+    traffic, which would need server-side storage to fully close)."""
+    module, part_id, generator = _DSH_LV_HV_PART_SPECS[payload.part]
+    profile = get_profile("dsh")
+    part = get_part("dsh", module, part_id)
+    candidates = (profile.topic_banks or {}).get(module) or ()
+    topic = (
+        {"topicId": "custom", "label": payload.topic} if payload.topic
+        else dict(random.choice(candidates)) if candidates
+        else {"topicId": "default", "label": part.title}
+    )
+    try:
+        content, _validation_meta = generator(profile, part, [], topic)
+    except DshGenerationError as exc:
+        log.exception("dsh %s practice generation failed", payload.part)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Generation failed. Please retry.") from exc
+    return {
+        "kind": "dsh_lv_hv_practice_task",
+        "part": payload.part,
+        "generationId": uuid.uuid4().hex,
+        "content": dsh_grading.strip_answer_key_for_learner(content),
+        "gradingContent": content,
+    }
+
+
+class DshLvHvGradeRequest(BaseModel):
+    part: Literal["lv", "hv"]
+    generationId: str = Field(min_length=1, max_length=80)
+    gradingContent: dict[str, Any]
+    answers: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def validated_answers(self) -> dict[str, str]:
+        return {str(k): str(v) for k, v in self.answers.items() if isinstance(k, str)}
+
+
+@router.post("/german-exam/dsh/lv-hv/grade")
+def dsh_lv_hv_grade_endpoint(payload: DshLvHvGradeRequest) -> dict[str, Any]:
+    """Grades a practice LV/HV submission via the existing, already-tested raw content-point
+    grader (german_exam_dsh_grading.grade_dsh_open_answer_part) — score_content_item remains the
+    one authoritative item-scoring function; nothing here duplicates its logic. Returns a RAW,
+    explicitly non-official result only: no DSH points, no percentage of any official DSH scale,
+    no DSH-1/2/3 level. matchedContentPointIds are computed server-side for scoring but are
+    deliberately not included in this response (they would reveal, item by item, exactly which
+    required content points the learner's answer did or did not satisfy)."""
+    try:
+        result = dsh_grading.grade_dsh_open_answer_part(payload.gradingContent, payload.validated_answers)
+    except DshContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid task content: {exc}") from exc
+    except dsh_grading.DshGradingError as exc:
+        log.warning("dsh %s practice grading: semantic matcher failed: %s", payload.part, exc)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                             detail="Content evaluation unavailable. Your answer was not scored.") from exc
+    except Exception as exc:  # noqa: BLE001
+        log.exception("dsh %s practice grading failed", payload.part)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                             detail="Content evaluation unavailable. Your answer was not scored.") from exc
+    return {
+        "kind": "dsh_lv_hv_practice_result",
+        "part": payload.part,
+        "generationId": payload.generationId,
+        "rawPoints": _as_number(result["rawPoints"]),
+        "rawMaxPoints": _as_number(result["rawMaxPoints"]),
+        "percent": result["percent"],
+        "items": [
+            {"itemId": item["itemId"], "points": _as_number(item["points"]), "maxPoints": _as_number(item["maxPoints"])}
+            for item in result["items"]
+        ],
+        "officialDshScore": None,
+        "officialScoreAvailable": False,
+    }

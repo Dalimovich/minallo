@@ -167,3 +167,39 @@ def grade_dsh_open_answer_part(
         # Deliberately not dsh.WRITTEN_MAX_POINTS-scaled — see module docstring.
         "officialScale": None,
     }
+
+
+# ---- Answer-key protection (what a learner-facing payload may contain) -----------------------
+_LEARNER_SAFE_ITEM_KEYS = ("itemId", "question")
+
+
+def strip_answer_key_for_learner(content: Mapping[str, Any]) -> dict[str, Any]:
+    """Returns a copy of generated HV/LV content (german_exam_dsh_generators.py's own output
+    shape) with every answer-key field removed from every item: requiredPoints, optionalPoints,
+    referenceAnswer, errorfulVariant, gradingNotes. Only itemId/question survive per item; the
+    lecture/source text is kept as-is (it is the task's source material, not an answer key).
+
+    Why this exists: generate_dsh_lv_part/generate_dsh_hv_part's raw output — the exact dict
+    german_exam_generator.py's _envelope() would otherwise embed verbatim into a learner-facing
+    response — carries requiredPoints[].description and referenceAnswer on every item, i.e. the
+    literal graded answer. Nothing before this function ever stripped that. This is the local,
+    unambiguous fix: the object a renderer receives and operates on to build the UI no longer
+    carries that material.
+
+    What this does NOT do: make the full content unreachable. Grading still needs the complete,
+    original content (requiredPoints and all) to call the content_matcher against — with no
+    server-side storage of generated content in this phase (see app/routers/german_exam.py's
+    dsh/lv-hv endpoints), the only place that full content can come from at grading time is a
+    second round-trip through the caller, carried in a field the renderer never touches. A
+    learner who inspects raw network traffic rather than the rendered page could still read it
+    there; fully preventing that needs server-side generation storage, which this phase
+    deliberately does not add (see german_exam_dsh_grading.py's own module docstring on scope)."""
+    stripped_tasks = []
+    for task in content.get("tasks") or ():
+        stripped_items = [
+            {key: item[key] for key in _LEARNER_SAFE_ITEM_KEYS if key in item}
+            for item in task.get("items") or ()
+            if isinstance(item, Mapping)
+        ]
+        stripped_tasks.append({**{k: v for k, v in task.items() if k != "items"}, "items": stripped_items})
+    return {**{k: v for k, v in content.items() if k != "tasks"}, "tasks": stripped_tasks}
