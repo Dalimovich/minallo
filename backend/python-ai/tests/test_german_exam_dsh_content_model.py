@@ -15,13 +15,14 @@ from app.services.german_exams.dsh_content_model import (
     GRADING_CONTENT, GRADING_CONTENT_AND_LANGUAGE, GRADING_LANGUAGE, GRADING_ORAL, AnswerFamily, ContentPoint,
     DshContentError, DshSourceMismatch, OpenAnswerItem, StructureItem, grading_mode_for_module, match_answer_family,
     score_content_item, score_structure_item, source_fingerprint, validate_dsh_task_content, validate_hv_content,
-    validate_lv_content, validate_lv_ws_bundle, validate_tp_content,
+    validate_lv_content, validate_lv_ws_bundle, validate_oral_content, validate_tp_content,
 )
 
 LV_PART = get_part("dsh", "reading", "lv_1")
 HV_PART = get_part("dsh", "listening", "hv_1")
 TP_PART = get_part("dsh", "writing", "tp_1")
 WS_PART = get_part("dsh", "scientific_structures", "ws_1")
+ORAL_PART = get_part("dsh", "speaking", "sprechen_1")
 
 SENTENCE = "Die Untersuchung wurde von den Forschenden durchgeführt, weil die Datenlage unklar war."
 LV_TEXT = (SENTENCE + " ") * 60  # ~5,300 chars: inside 4,500..6,000
@@ -190,6 +191,24 @@ def _tp(**over) -> dict:
     return tp
 
 
+def _oral(**over) -> dict:
+    oral = {"inputs": [{"kind": "short_text"}, {"kind": "graphic"}], "languageActs": ["describe", "take_position"],
+            "instructions": "Beschreiben Sie die Grafik und nehmen Sie zum Text Stellung.", "inputRefs": ["i1"]}
+    oral.update(over)
+    return oral
+
+
+def test_oral_kurzvortrag_must_be_input_bound_and_not_a_free_talk() -> None:
+    """The Kurzvortrag's stimulus material (the only pre-generated content the DSH oral exam
+    has — the conversation that follows is live and unscripted) is validated exactly like TP's:
+    official input kinds, official language acts, instructions present, every input referenced."""
+    validate_oral_content(_oral(), ORAL_PART)
+    for bad in (_oral(inputs=[]), _oral(inputs=[{"kind": "video"}]), _oral(languageActs=["narrate"]),
+                _oral(languageActs=[]), _oral(instructions=" "), _oral(inputRefs=[])):
+        with pytest.raises(DshContentError):
+            validate_oral_content(bad, ORAL_PART)
+
+
 def test_tp_must_be_input_bound_and_not_a_free_essay() -> None:
     validate_tp_content(_tp(), TP_PART)
     for bad in (_tp(inputs=[]), _tp(inputs=[{"kind": "essay_topic"}]), _tp(languageActs=["narrate"]), _tp(languageActs=[]),
@@ -206,8 +225,9 @@ def test_dispatcher_routes_by_task_type_and_refuses_the_rest() -> None:
         validate_dsh_task_content("cloze_mc4_language_elements", {}, TP_PART)  # another exam's type
     with pytest.raises(DshContentError):
         validate_dsh_task_content(LV_PART.task_type, _lv(), TP_PART)  # part/type mismatch
-    with pytest.raises(NotImplementedError):
-        validate_dsh_task_content("dsh_oral_presentation_conversation", {}, get_part("dsh", "speaking", "sprechen_1"))
+    validate_dsh_task_content("dsh_oral_presentation_conversation", _oral(), ORAL_PART)
+    with pytest.raises(DshContentError):
+        validate_dsh_task_content("dsh_oral_presentation_conversation", {}, ORAL_PART)
 
 
 def test_errors_are_engine_errors() -> None:

@@ -288,12 +288,39 @@ def validate_tp_content(content: Mapping[str, Any], part: PartBlueprint) -> None
         raise DshContentError("TP must reference its inputs (it may not be a free essay)")
 
 
+def validate_oral_content(content: Mapping[str, Any], part: PartBlueprint) -> None:
+    """Validates the Kurzvortrag's stimulus material (the short text/graphic input the learner
+    presents on, describes/summarises/compares/justifies/evaluates/takes a position on —
+    constraints["inputKinds"]/["languageActs"], both OFFICIAL per §11a,b) — structurally identical
+    to validate_tp_content's shape, since both are "an official input the learner must address,
+    never a free-standing essay/talk". This is the ONLY part of the DSH oral exam that is
+    pre-generated content at all: the ~15-minute conversation that follows is a live, unscripted
+    exchange (constraints["interactive"] is True), exactly like TestDaF's/Goethe's own interactive
+    speaking parts — there is no script for it to validate here. Grading (any mode), the
+    conversation's interaction architecture, and an examiner-dialogue simulation all remain FUTURE
+    work (see audit/dsh/IMPLEMENTATION_AUDIT.md section 5) and are NOT touched by this function."""
+    c = part.constraints
+    inputs = content.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        raise DshContentError("Oral needs at least one input (short text or graphic) for the Kurzvortrag")
+    for entry in inputs:
+        if entry.get("kind") not in c["inputKinds"]:
+            raise DshContentError(f"Oral input kind {entry.get('kind')!r} is not an official input")
+    acts = content.get("languageActs")
+    if not isinstance(acts, list) or not acts or any(a not in c["languageActs"] for a in acts):
+        raise DshContentError("Oral needs official language acts")
+    _text(content.get("instructions"), "instructions")
+    refs = content.get("inputRefs")
+    if not isinstance(refs, list) or not refs:
+        raise DshContentError("Oral task must reference its inputs (the Kurzvortrag is not a free talk)")
+
+
 def validate_dsh_task_content(task_type: str, content: Mapping[str, Any], part: PartBlueprint) -> None:
     """Deterministic structural validation. WS is validated with its LV via validate_lv_ws_bundle."""
     if task_type not in DSH_TASK_TYPES:
         raise DshContentError(f"{task_type!r} is not a DSH task type")
     if part.task_type != task_type:
-        raise DshContentError("part and task type do not match")
+        raise DshContentError("part and type do not match")
     if task_type == TASK_TYPE_HV:
         validate_hv_content(content, part)
     elif task_type == TASK_TYPE_LV:
@@ -303,7 +330,7 @@ def validate_dsh_task_content(task_type: str, content: Mapping[str, Any], part: 
     elif task_type == TASK_TYPE_WS:
         raise DshContentError("WS content is validated together with its LV: use validate_lv_ws_bundle")
     elif task_type == TASK_TYPE_ORAL:
-        raise NotImplementedError("DSH oral content validation is not implemented")
+        validate_oral_content(content, part)
 
 
 def grading_mode_for_module(module: str) -> str:
