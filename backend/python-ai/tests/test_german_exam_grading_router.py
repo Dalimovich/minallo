@@ -305,6 +305,18 @@ def test_grade_speaking_recording_telc_rejected_wrong_architecture(client: TestC
     assert r.status_code == 501
 
 
+def test_grade_speaking_recording_goethe_rejected_not_the_recording_shape(client: TestClient) -> None:
+    """Goethe's sprechen_1 (presentation_with_followup) is architecturally closer to TELC's
+    interactive model than to TestDaF's independent recordings (see GRADING_AUDIT.md's
+    2026-10-04 follow-up) and has no official per-criterion weights either way — must 501 here,
+    never silently graded as if it were a TestDaF-shaped single recording."""
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("goethe_c1", "sprechen_1"),
+    )
+    assert r.status_code == 501
+
+
 def test_grade_speaking_recording_dsh_rejected_not_in_allowlist(client: TestClient) -> None:
     """DSH's sprechen_1 is its own oral task type (TASK_TYPE_ORAL), not a
     SPEAKING_TYPES productive task — stays 501 until DSH has a real grader."""
