@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/assets/favicon.png" alt="Minallo logo" width="96" height="96">
+</p>
+
 # Minallo
 
 Minallo is an AI study workspace for students. It combines course PDFs, grounded AI tutoring, page-level citations, PDF tools, notes, flashcards, quizzes, exam prep, cheatsheets, deep-learn mode, German level tracking and tutoring, a writing coach, focus tools, music, study games, and student chat in one authenticated app.
