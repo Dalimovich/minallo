@@ -8,6 +8,8 @@ import { fetchSegmentClips } from './media-task-audio.js';
 import { mountSelection, gradeSelection, SELECTION_TYPES, type SelectionPart, type SelectionContent } from './source-selection.js';
 import { mountOrdering, gradeOrdering, type OrderingPart, type OrderingContent } from './ordering-task.js';
 import { mountSummaryError, type SummaryErrorPart, type SummaryErrorContent } from './summary-error-task.js';
+import { mountDshOpenAnswer, type DshOpenAnswerContent } from './dsh-open-answer-task.js';
+import { mountDshWritingStimulus, mountDshOralStimulus, type DshStimulusContent } from './dsh-stimulus-task.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
 export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
@@ -24,6 +26,15 @@ for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summ
   TASK_RENDERERS[type]=(root,part,content,_identity,envelope)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent,
     {submitRecording:createSpeakingRecordingGrader(envelope,content as ProductiveContent)});
 for (const type of Object.keys(MEDIA_TASKS)) TASK_RENDERERS[type] = (root,part,content) => mountMediaTask(root,part as unknown as MediaPart,content as MediaContent,{fetchClips:fetchSegmentClips});
+// DSH: own content shape (german_exam_dsh_generators.py), own renderers — not forced through
+// media-task.ts/productive-task.ts (see dsh-open-answer-task.ts/dsh-stimulus-task.ts's own
+// header comments for why). WS (scientific_structures) has no entry here: its generator is not
+// wired into generate_task() at all yet (a documented, pre-existing engine gap), so no content
+// for it can ever reach this dispatcher.
+TASK_RENDERERS['dsh_hv_lecture_tasks']=(root,_part,content)=>mountDshOpenAnswer(root,content as DshOpenAnswerContent,'hv');
+TASK_RENDERERS['dsh_lv_text_tasks']=(root,_part,content)=>mountDshOpenAnswer(root,content as DshOpenAnswerContent,'lv');
+TASK_RENDERERS['dsh_tp_chart_based_argumentation']=(root,_part,content,identity)=>mountDshWritingStimulus(root,content as DshStimulusContent,identity);
+TASK_RENDERERS['dsh_oral_presentation_conversation']=(root,part,content)=>mountDshOralStimulus(root,content as DshStimulusContent,part.constraints?.preparationSeconds as number|undefined);
 for (const type of SELECTION_TYPES) TASK_RENDERERS[type] = (root,part,content) => {
   const source=document.createElement('div'); const questions=document.createElement('div'); root.append(source,questions);
   const answers: Record<string,string|null>={}; const c=content as SelectionContent;
