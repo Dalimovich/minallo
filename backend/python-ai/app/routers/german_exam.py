@@ -31,6 +31,7 @@ from ..services.german_exams import GermanExamProfileError, get_part, get_profil
 from ..services.german_exam_productive import validate_productive
 from ..services.german_exam_writing_grading import gradable_writing_task_types, grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
+from ..services import german_exam_testdaf_speaking as testdaf_speaking
 from ..services.german_exam_validator import hard_issues, validate_content
 
 log = logging.getLogger(__name__)
@@ -239,6 +240,48 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         log.exception("german-exam writing grading failed")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Grading failed") from exc
+
+
+class GradeSpeakingRecordingRequest(BaseModel):
+    userId: str
+    profileId: str
+    partId: str
+    task: dict[str, Any]
+    audioBase64: str = Field(min_length=1, max_length=8 * 1024 * 1024)
+    mimeType: str = Field(default="audio/webm", max_length=100)
+    durationSeconds: float
+
+
+@router.post("/german-exam/grade-speaking-recording")
+def grade_speaking_recording_endpoint(payload: GradeSpeakingRecordingRequest) -> dict[str, Any]:
+    """Grades a TestDaF-style independent single-recording Sprechen submission through the
+    generic grade_productive()/validate_feedback() contract (SPEAKING_TYPES) — profile/task-driven
+    like /grade-writing, NOT the TELC-only interactive /german-exam/speaking endpoint above, whose
+    request shape (tasks/selectedTopicId/turns) is a different, incompatible protocol (see
+    german_exam_testdaf_speaking.py's module docstring for why these stay two separate endpoints).
+    No recording is ever stored server-side: the audio is transcribed and graded within this one
+    request, then discarded."""
+    try:
+        part = get_part(payload.profileId, "speaking", payload.partId)
+    except GermanExamProfileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if part.task_type not in testdaf_speaking.gradable_speaking_recording_task_types():
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                            detail=f"speaking-recording grading for task type {part.task_type!r} is not available yet")
+    try:
+        validate_productive(part, payload.task)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid task: {exc}") from exc
+    try:
+        return testdaf_speaking.grade_testdaf_speaking_recording(
+            part, payload.task, payload.audioBase64, payload.mimeType, payload.durationSeconds,
+            user_id=payload.userId,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        log.exception("testdaf speaking-recording grading failed")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Grading failed") from exc
 
 

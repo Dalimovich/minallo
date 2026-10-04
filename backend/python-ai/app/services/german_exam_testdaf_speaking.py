@@ -20,43 +20,60 @@ fluency or pronunciation." validate_feedback() (german_exam_productive.py) separ
 structurally forbids this module from ever returning a numeric official score
 (scaledScore/tdn/pass/officialScore/rawScore) regardless of what it's asked for.
 
-transcribe_testdaf_speaking_recording() below supplies the one piece that's storage-agnostic by
-construction: already-obtained audio bytes -> timestamped segments, via whisper-1's
-verbose_json (NOT telc's gpt-4o-mini-transcribe/`response_format="json"`, which returns no
-segment timestamps at all — this module's evidence.startSeconds needs real ones). It never
-fetches, uploads, or persists a recording itself.
+transcribe_testdaf_speaking_recording() supplies the storage-agnostic transport: already-obtained
+audio bytes -> timestamped segments, via whisper-1's verbose_json (NOT telc's gpt-4o-mini-
+transcribe/`response_format="json"`, which returns no segment timestamps at all — this module's
+evidence.startSeconds needs real ones).
 
-OPEN INTEGRATION QUESTION (still deliberately NOT resolved here — see the backlog report, not a
-code TODO): speaking-task.ts's mountSpeaking() already has a two-phase UI (upload() ->
-{recordingId}, then grader({recordingId, durationSeconds})) with upload() currently stubbed
-'Upload is not connected'. Wiring a real `upload` needs a genuine architectural decision this
-module does not make: (a) persist the recording in a private bucket (mirrors storage.py's
-existing upload_exam_video/signed_video_url pattern) and delete it immediately after
-transcription succeeds — keeps the existing two-phase UI exactly as built, but needs a new
-bucket + migration + retention policy for voice data; or (b) redesign mountSpeaking() into a
-single combined upload-and-grade call so no recording is ever persisted server-side at all,
-matching telc's own german_exam_speaking_practice.transcribe() precedent exactly (audio arrives
-base64-encoded in the request, is transcribed synchronously, and is never written to storage at
-all) — at the cost of changing an already-built, tested UI flow. Both are legitimate; this is a
-product decision about handling a learner's voice recording, not an engineering one this module
-should make unilaterally.
+INTEGRATION DECISION (resolved): between (a) persisting the recording in a new private bucket
+(mirrors storage.py's upload_exam_video/signed_video_url pattern), and (b) one combined
+upload-and-grade call with no server-side recording storage at all, matching telc's own
+german_exam_speaking_practice.transcribe() precedent exactly (audio arrives base64-encoded in
+the request, is transcribed synchronously, and is never written to storage) — (b) was chosen.
+grade_testdaf_speaking_recording() below is the full round-trip: decode + transcribe + grade,
+all within one request, nothing persisted. See speaking-grader.ts (frontend) and
+POST /german-exam/grade-speaking-recording (router) for the two ends of this call.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from typing import Any
 
 from ..config import get_settings
-from .german_exam_productive import SPEAKING_TYPES
+from .german_exam_productive import SPEAKING_TYPES, grade_productive
 from .german_exam_speaking_practice import MIME_EXTENSIONS
+from .german_exams import GERMAN_EXAM_PROFILES
 from .llm_json import chat_json
 from .openai_client import get_openai_client
 from .usage_meter import record_usage
 
 # Mirrors german_exam_speaking_practice.transcribe()'s own bound — not re-derived per task type.
 _MAX_RECORDING_BYTES = 6 * 1024 * 1024
+
+# Profiles whose `speaking` module parts use the generic grade_productive()/SPEAKING_TYPES
+# contract (independent single-recording tasks) rather than telc's interactive partner-dialogue
+# dispatch (german_exam_speaking_practice.py, GRADABLE_SPEAKING_PROFILE_IDS). Grows the same way
+# GRADABLE_WRITING_PROFILE_IDS did — one profile at a time, only once its own grader is actually
+# verified, never by assuming every SPEAKING_TYPES profile is ready just because the type check
+# passes (e.g. Goethe's speaking parts use the TELC-style interactive shape, not this one).
+GRADABLE_SPEAKING_RECORDING_PROFILE_IDS: frozenset[str] = frozenset({"testdaf_digital"})
+
+
+def gradable_speaking_recording_task_types() -> frozenset[str]:
+    """SPEAKING_TYPES `task_type` values the generic recording grader actually supports, derived
+    from the real profile registry — mirrors gradable_writing_task_types()'s own pattern."""
+    task_types: set[str] = set()
+    for profile_id in GRADABLE_SPEAKING_RECORDING_PROFILE_IDS:
+        profile = GERMAN_EXAM_PROFILES.get(profile_id)
+        if profile is None:
+            continue
+        for part in profile.modules.get("speaking") or ():
+            if part.task_type in SPEAKING_TYPES and part.grading_dimensions:
+                task_types.add(part.task_type)
+    return frozenset(task_types)
 
 # Zero signal survives transcription to text — never scored, regardless of what the model returns.
 _PRONUNCIATION_ONLY_DIMENSION = "pronunciation"
@@ -186,3 +203,22 @@ def grade_testdaf_speaking_transcript(
         out_dimensions.append({"id": dim_id, "feedback": feedback.strip(), "evidence": evidence[:3]})
 
     return {"kind": "practice_feedback", "dimensions": out_dimensions}
+
+
+def grade_testdaf_speaking_recording(
+    part: Any, content: dict[str, Any], audio_base64: str, mime_type: str, duration_seconds: float,
+    *, user_id: str | None = None,
+) -> dict[str, Any]:
+    """Full round-trip for one TestDaF speaking recording: transcribe, then grade through the
+    real generic grade_productive()/validate_feedback() contract — all within this one call.
+    No recording is ever stored; the decoded bytes and their transcript live only for this
+    function's duration (see the module docstring's now-resolved INTEGRATION DECISION).
+
+    recordingId (required by the generic contract's schema as a submission identifier) is a
+    content hash of the actual submitted audio, not a storage handle — a real, stable property
+    of this recording, never a fabricated or random placeholder."""
+    segments = transcribe_testdaf_speaking_recording(audio_base64, mime_type, user_id=user_id)
+    recording_id = hashlib.sha256(audio_base64.encode()).hexdigest()
+    submission = {"recordingId": recording_id, "durationSeconds": duration_seconds}
+    grader = lambda request: grade_testdaf_speaking_transcript(request, segments)  # noqa: E731
+    return grade_productive(part, content, submission, grader=grader)

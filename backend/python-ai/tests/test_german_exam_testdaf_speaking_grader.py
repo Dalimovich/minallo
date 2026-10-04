@@ -236,6 +236,89 @@ def test_transcribe_output_feeds_the_grader_directly_with_no_adapter(monkeypatch
     assert tf["evidence"] == [{"quote": "mit deinem Chef zu sprechen", "startSeconds": 0.0}]
 
 
+# ── gradable_speaking_recording_task_types() ──────────────────────────────
+
+
+def test_gradable_speaking_recording_task_types_covers_all_seven_testdaf_parts() -> None:
+    from app.services.german_exam_testdaf_speaking import SPEAKING_TYPES, gradable_speaking_recording_task_types
+
+    assert gradable_speaking_recording_task_types() == SPEAKING_TYPES
+
+
+def test_gradable_speaking_recording_profile_ids_is_testdaf_only() -> None:
+    from app.services.german_exam_testdaf_speaking import GRADABLE_SPEAKING_RECORDING_PROFILE_IDS
+
+    assert GRADABLE_SPEAKING_RECORDING_PROFILE_IDS == frozenset({"testdaf_digital"})
+
+
+# ── grade_testdaf_speaking_recording(): full round-trip, nothing stored ───
+
+
+def test_grade_testdaf_speaking_recording_transcribes_then_grades(monkeypatch) -> None:
+    from app.services import german_exam_testdaf_speaking as mod
+    from app.services.german_exams import get_part
+
+    def create(**kwargs):
+        return SimpleNamespace(segments=[_segment(0.0, 3.2, "mit deinem Chef zu sprechen")], usage=None)
+
+    monkeypatch.setattr(mod, "get_openai_client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(mod, "record_usage", lambda **kwargs: None)
+    monkeypatch.setattr(
+        mod, "chat_json",
+        lambda **kwargs: _FakeResult({"dimensions": {"task_fulfilment": {"feedback": "Gut.", "quotes": ["mit deinem Chef zu sprechen"]}}}),
+    )
+    part = get_part("testdaf_digital", "speaking", "sprechen_1")
+    content = {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "Geben Sie Ihrem Freund einen Rat.", "sources": []}
+    feedback = mod.grade_testdaf_speaking_recording(
+        part, content, base64.b64encode(b"x" * 1000).decode(), "audio/webm", 42.0, user_id="u1",
+    )
+    assert feedback["kind"] == "practice_feedback"
+    assert {d["id"] for d in feedback["dimensions"]} == set(part.grading_dimensions)
+    tf = next(d for d in feedback["dimensions"] if d["id"] == "task_fulfilment")
+    assert tf["evidence"] == [{"quote": "mit deinem Chef zu sprechen", "startSeconds": 0.0}]
+
+
+def test_grade_testdaf_speaking_recording_id_is_a_real_content_hash_not_a_placeholder(monkeypatch) -> None:
+    """recordingId must be a deterministic property of the actual submitted audio (so retrying
+    with the same bytes is idempotent/traceable), never a random or fixed stand-in for a
+    storage handle that no longer exists in this no-storage design."""
+    import hashlib
+
+    from app.services import german_exam_testdaf_speaking as mod
+    from app.services.german_exams import get_part
+
+    def create(**kwargs):
+        return SimpleNamespace(segments=[_segment(0.0, 3.2, "x")], usage=None)
+
+    monkeypatch.setattr(mod, "get_openai_client", lambda: SimpleNamespace(audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))))
+    monkeypatch.setattr(mod, "record_usage", lambda **kwargs: None)
+    seen: dict = {}
+    monkeypatch.setattr(mod, "grade_productive", lambda part, content, submission, *, grader: seen.update(submission) or {"kind": "practice_feedback", "dimensions": []})
+    part = get_part("testdaf_digital", "speaking", "sprechen_1")
+    content = {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "x", "sources": []}
+    audio_b64 = base64.b64encode(b"some fixed bytes" * 10).decode()
+    mod.grade_testdaf_speaking_recording(part, content, audio_b64, "audio/webm", 10.0)
+    assert seen["recordingId"] == hashlib.sha256(audio_b64.encode()).hexdigest()
+    assert seen["durationSeconds"] == 10.0
+
+
+def test_grade_testdaf_speaking_recording_never_touches_storage() -> None:
+    """Confirms the no-storage design decision stuck: this module must not import storage.py
+    or any upload/signed-URL helper — only prose explaining why is allowed to mention storage."""
+    import ast
+    import inspect
+
+    from app.services import german_exam_testdaf_speaking as mod
+
+    tree = ast.parse(inspect.getsource(mod))
+    imported = {
+        alias.asname or alias.name
+        for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in node.names
+    }
+    assert not any("storage" in name.lower() for name in imported)
+
+
 # ── full round-trip through the real generic contract ────────────────────
 
 
