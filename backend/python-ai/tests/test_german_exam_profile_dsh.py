@@ -138,6 +138,68 @@ def test_oral_facts() -> None:  # §11
     assert PROFILE.module_specs["speaking"].preparation_seconds == 1200
 
 
+# ---- oral assessment-contract regression (fixes the §11c / grading_dimensions mismatch) -------
+_OFFICIAL_ORAL_CRITERIA = (  # §11c, quoted verbatim from the MPO — the ONLY authoritative list
+    "content_appropriateness", "comprehensibility", "independence_of_statements",
+    "conversational_behaviour", "linguistic_correctness", "lexical_differentiation",
+    "pronunciation_and_intonation",
+)
+
+
+def test_oral_grading_dimensions_are_exactly_the_seven_official_sect11c_criteria() -> None:
+    """Pins the fix: grading_dimensions used to be six names borrowed from the generic
+    cross-exam speaking skill-tag vocabulary (_ORAL_TAGS-shaped), not DSH's own official
+    criteria. Every other exam's grading_dimensions IS that exam's own official rubric
+    (telc's sprechen_1/2, Goethe's Sprechen Handbuch Abb. 34 names, TestDaF's own seven
+    criteria) — DSH must follow the same pattern, not an invented or borrowed one."""
+    part = get_part("dsh", "speaking", "sprechen_1")
+    assert part.grading_dimensions == _OFFICIAL_ORAL_CRITERIA
+    assert len(part.grading_dimensions) == 7 and len(set(part.grading_dimensions)) == 7
+
+
+def test_oral_constraints_assessment_criteria_and_grading_dimensions_are_one_source() -> None:
+    """The descriptive constraints.assessmentCriteria citation and the operational
+    grading_dimensions the rubric machinery keys off must never be allowed to drift apart
+    again — they are the same tuple (dsh.ORAL_ASSESSMENT_CRITERIA), not two independently
+    maintained lists."""
+    part = get_part("dsh", "speaking", "sprechen_1")
+    assert part.constraints["assessmentCriteria"] == part.grading_dimensions
+    assert dsh_mod.ORAL_ASSESSMENT_CRITERIA == _OFFICIAL_ORAL_CRITERIA
+    assert part.constraints["assessmentCriteria"] is dsh_mod.ORAL_ASSESSMENT_CRITERIA
+    assert part.grading_dimensions is dsh_mod.ORAL_ASSESSMENT_CRITERIA
+
+
+def test_oral_grading_dimensions_never_silently_become_testdaf_or_generic_speaking_semantics() -> None:
+    """Guards specifically against the failure mode this phase fixed: a future edit that
+    re-introduces TestDaF's speaking dimension SET wholesale (or the generic _ORAL_TAGS/
+    telc-style adaptation vocabulary) into DSH's grading_dimensions without that being an
+    explicit, deliberate, evidenced change. A single shared concept name is not itself a
+    leak — "comprehensibility" is independently an OFFICIAL criterion in both DSH's §11c
+    and TestDaF's own speaking rubric, so exact set equality (not disjointness) is the
+    right invariant here."""
+    from app.services.german_exams import testdaf_digital as testdaf_mod
+
+    testdaf_speaking_dimensions = set(testdaf_mod._GRADING_DIMENSIONS["speaking"])
+    dsh_oral_dimensions = set(get_part("dsh", "speaking", "sprechen_1").grading_dimensions)
+    assert dsh_oral_dimensions != testdaf_speaking_dimensions
+    generic_six_that_used_to_be_there = {
+        "task_fulfilment", "fluency", "interaction", "grammar_accuracy", "vocabulary_range", "pronunciation",
+    }
+    assert dsh_oral_dimensions != generic_six_that_used_to_be_there, (
+        "the previously-wrong generic speaking-tag-derived dimension set must not reappear"
+    )
+
+
+def test_oral_criteria_carry_no_invented_numeric_weight() -> None:
+    """§11c names the seven criteria but the verified source establishes no per-criterion
+    numeric weight for any of them — mirrors TP_RUBRIC's own 'numericWeights: None' rule
+    (test_tp_facts above). None may be invented; equal weighting is not assumed either."""
+    part = get_part("dsh", "speaking", "sprechen_1")
+    assert part.scoring is not None
+    assert part.scoring.criteria_max_points is None
+    assert part.scoring.band_fractions is None
+
+
 def test_written_module_timings() -> None:  # §10(1)
     specs = PROFILE.module_specs
     assert specs["listening"].duration_seconds == 50 * 60
