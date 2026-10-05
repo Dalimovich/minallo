@@ -1450,7 +1450,7 @@ _bindIf('pcStudip', 'click', () => {
       // Bug 3 fix: guard against duplicate history entries when the hash is
       // already #portal=courses (e.g. clicking the sidebar item twice).
       if (location.hash !== '#portal=courses') {
-        history.pushState({ view: 'portal', section: 'studip' }, '', '#portal=courses');
+        history.pushState({ view: 'portal', section: 'studip' }, '', location.pathname + '#portal=courses');
       }
     } catch { /* ignore */ }
   }
