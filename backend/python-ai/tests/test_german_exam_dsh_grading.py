@@ -16,6 +16,7 @@ from app.services.german_exam_dsh_grading import (
     grade_dsh_open_answer_item,
     grade_dsh_open_answer_part,
     llm_content_matcher,
+    minimal_grading_content,
     strip_answer_key_for_learner,
 )
 from app.services.german_exams.dsh_content_model import ContentPoint, DshContentError, OpenAnswerItem
@@ -266,3 +267,59 @@ def test_strip_answer_key_for_learner_handles_multiple_tasks_and_items() -> None
     all_items = [item for task in stripped["tasks"] for item in task["items"]]
     assert {item["itemId"] for item in all_items} == {"a1", "b1", "b2"}
     assert "secret" not in str(stripped)
+
+
+# ---- minimal_grading_content: the server-side-only counterpart to strip_answer_key_for_learner
+def test_minimal_grading_content_keeps_everything_open_answer_item_from_generated_needs() -> None:
+    content = {
+        "sourceId": "src-1", "source": {"text": "ein Text, nicht für die Bewertung nötig"},
+        "tasks": [{"form": "questions", "items": [
+            {
+                "itemId": "q1", "question": "Frage?",
+                "requiredPoints": [{"pointId": "p1", "description": "x", "points": 1}],
+                "optionalPoints": [{"pointId": "p2", "description": "y", "points": 1}],
+                "maxPoints": 2, "gradingNotes": "a real grading hint", "assessLanguage": False,
+                "referenceAnswer": "not needed by grading", "errorfulVariant": "also not needed",
+            },
+        ]}],
+    }
+    minimal = minimal_grading_content(content)
+    item = minimal["tasks"][0]["items"][0]
+    assert item["requiredPoints"] == content["tasks"][0]["items"][0]["requiredPoints"]
+    assert item["optionalPoints"] == content["tasks"][0]["items"][0]["optionalPoints"]
+    assert item["maxPoints"] == 2
+    assert item["gradingNotes"] == "a real grading hint"
+    # Reconstructs cleanly through the exact function the real grader uses.
+    from app.services.german_exams.dsh_content_model import open_answer_item_from_generated
+
+    rebuilt = open_answer_item_from_generated("q1", "questions", item)
+    assert rebuilt.max_points == 2 and len(rebuilt.required_points) == 1
+
+
+def test_minimal_grading_content_drops_generation_quality_only_fields_and_ui_metadata() -> None:
+    content = {
+        "sourceId": "src-1", "source": {"text": "SECRET_SOURCE_TEXT_NOT_NEEDED_FOR_GRADING"},
+        "tasks": [{"form": "questions", "items": [
+            {
+                "itemId": "q1", "question": "Frage?",
+                "requiredPoints": [{"pointId": "p1", "description": "x", "points": 1}],
+                "referenceAnswer": "SECRET_REFERENCE_ANSWER", "errorfulVariant": "SECRET_ERRORFUL_VARIANT",
+            },
+        ]}],
+    }
+    minimal = minimal_grading_content(content)
+    assert set(minimal) == {"tasks"}
+    item = minimal["tasks"][0]["items"][0]
+    assert "referenceAnswer" not in item and "errorfulVariant" not in item
+    serialized = str(minimal)
+    assert "SECRET_SOURCE_TEXT_NOT_NEEDED_FOR_GRADING" not in serialized
+    assert "SECRET_REFERENCE_ANSWER" not in serialized
+    assert "SECRET_ERRORFUL_VARIANT" not in serialized
+
+
+def test_minimal_grading_content_output_is_sufficient_to_actually_grade() -> None:
+    content = _content(item_count=1)
+    minimal = minimal_grading_content(content)
+    matcher = lambda question, answer, points: {p.point_id for p in points}  # noqa: E731
+    result = grade_dsh_open_answer_part(minimal, {"q1": "Antwort."}, matcher=matcher)
+    assert result["rawPoints"] == result["rawMaxPoints"] == Fraction(1)

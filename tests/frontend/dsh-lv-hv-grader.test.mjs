@@ -47,46 +47,50 @@ test('dshLvHvRequest throws with the backend detail message on a non-ok response
   );
 });
 
-test('generateDshLvHvPracticeTask calls the generate path with the part and topic (null when omitted)', async () => {
+test('generateDshLvHvPracticeTask calls the generate path with the part and topic (null when omitted), and never sends userId', async () => {
   const calls = [];
-  const request = async (path, body, signal) => { calls.push({ path, body, signal }); return { part: 'lv', generationId: 'g1', content: {}, gradingContent: {} }; };
+  const request = async (path, body, signal) => { calls.push({ path, body, signal }); return { part: 'lv', generationId: 'g1', content: {} }; };
   const { generateDshLvHvPracticeTask } = loadGrader(okFetch({}));
   const result = await generateDshLvHvPracticeTask('lv', undefined, request);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, 'generate');
   assert.equal(calls[0].body.part, 'lv');
   assert.equal(calls[0].body.topic, null);
+  assert.equal('userId' in calls[0].body, false);
   assert.equal(result.generationId, 'g1');
+  assert.equal('gradingContent' in result, false);
 });
 
 test('generateDshLvHvPracticeTask forwards an explicit topic label', async () => {
   const calls = [];
-  const request = async (path, body) => { calls.push(body); return { part: 'hv', generationId: 'g2', content: {}, gradingContent: {} }; };
+  const request = async (path, body) => { calls.push(body); return { part: 'hv', generationId: 'g2', content: {} }; };
   const { generateDshLvHvPracticeTask } = loadGrader(okFetch({}));
   await generateDshLvHvPracticeTask('hv', 'Klimawandel', request);
   assert.equal(calls[0].topic, 'Klimawandel');
 });
 
-test('createDshLvHvGrader holds generationId/gradingContent in closure and posts them with the answers at grade time', async () => {
+test('createDshLvHvGrader holds only generationId in closure (no gradingContent parameter exists) and sends answers as an itemId/answer array', async () => {
   const calls = [];
   const request = async (path, body, signal) => { calls.push({ path, body, signal }); return {
     part: 'lv', generationId: 'g1', rawPoints: 1, rawMaxPoints: 2, percent: 50,
     items: [], officialDshScore: null, officialScoreAvailable: false,
   }; };
   const { createDshLvHvGrader } = loadGrader(okFetch({}));
-  const gradingContent = { sourceId: 'src-1', source: { text: 'x' }, tasks: [] };
-  const grader = createDshLvHvGrader('lv', 'g1', gradingContent, request);
+  const grader = createDshLvHvGrader('lv', 'g1', request);
 
   const signal = new AbortController().signal;
-  const answers = { q1: 'Antwort.' };
-  const result = await grader(answers, signal);
+  const result = await grader({ q1: 'Antwort.', q2: 'Antwort 2.' }, signal);
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, 'grade');
   assert.equal(calls[0].body.part, 'lv');
   assert.equal(calls[0].body.generationId, 'g1');
-  assert.deepEqual(calls[0].body.gradingContent, gradingContent);
-  assert.deepEqual(calls[0].body.answers, answers);
+  assert.equal('gradingContent' in calls[0].body, false);
+  assert.equal('userId' in calls[0].body, false);
+  // JSON-round-tripped comparison: the body was built inside a vm sandbox realm, so its plain
+  // objects have a different Object prototype than this file's literals — deepEqual's strict
+  // prototype check would fail on structurally-identical-but-cross-realm objects otherwise.
+  assert.equal(JSON.stringify(calls[0].body.answers), JSON.stringify([{ itemId: 'q1', answer: 'Antwort.' }, { itemId: 'q2', answer: 'Antwort 2.' }]));
   assert.equal(calls[0].signal, signal);
   assert.equal(result.officialDshScore, null);
   assert.equal(result.officialScoreAvailable, false);

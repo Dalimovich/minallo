@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 import json
 import random
-import uuid
 from fractions import Fraction
 from typing import Literal
 from typing import Any
@@ -31,12 +30,12 @@ from ..services.german_exam_generator import generate_task
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
-from ..services.german_exams.dsh_content_model import DshContentError
 from ..services.german_exam_productive import validate_productive
 from ..services.german_exam_writing_grading import gradable_writing_task_types, grade_writing_submission
 from ..services import german_exam_speaking_practice as speaking_practice
 from ..services import german_exam_testdaf_speaking as testdaf_speaking
 from ..services import german_exam_dsh_grading as dsh_grading
+from ..services import german_exam_dsh_practice_state as dsh_practice_state
 from ..services.german_exam_dsh_generators import DshGenerationError, generate_dsh_hv_part, generate_dsh_lv_part
 from ..services.german_exam_validator import hard_issues, validate_content
 
@@ -385,18 +384,19 @@ def speaking_practice_endpoint(payload: SpeakingPracticeRequest) -> dict[str, An
 # a DSH-1/2/3 level, or anything scaled onto dsh.WRITTEN_MAX_POINTS — see
 # german_exam_dsh_grading.py's own module docstring for why that conversion is not established.
 #
-# KNOWN, UNRESOLVED LIMITATION (audited 2026-10-05, not fixed this phase — see
-# german_exam_dsh_grading.py's module docstring and dsh_lv_hv_generate_endpoint's own docstring
-# below for the full accounting): dsh_lv_hv_generate_endpoint's response contains BOTH `content`
-# (stripped) AND `gradingContent` (the full, unstripped generated content, answer key included)
-# in the SAME HTTP response body. The browser DOES receive the answer key the moment generation
-# completes — strip_answer_key_for_learner only guarantees the RENDERER never sees or uses it; it
-# is not a network-level protection and must never be described as one. generationId is a fresh
-# uuid4 minted here and immediately forgotten server-side — it identifies nothing server-held; the
-# client is the only thing holding gradingContent between the two calls. Closing this needs
-# server-side generation storage (so the client only ever receives/holds an opaque reference, and
-# grade() looks the real content up by it) — deliberately not built in this phase (no new
-# persistence/DB schema was introduced), per repeated instruction across this session.
+# SECURE AS OF 336cc2c2's audit being resolved here: the earlier version of this comment recorded
+# that the generate response exposed the full answer key via a `gradingContent` field. That is no
+# longer true. Generation now writes german_exam_dsh_grading.minimal_grading_content()'s output to
+# public.dsh_lv_hv_practice_generations (german_exam_dsh_practice_state.create_generation) and
+# returns only the row's id as `generationId`; grading claims that row back
+# (claim_generation_for_grading) by id+trusted userId, atomically, exactly once, only before
+# expiry. The browser never receives requiredPoints, referenceAnswer, errorfulVariant, or
+# gradingNotes for this flow — see each endpoint's own docstring below. userId on both request
+# models is TRUSTED, never re-verified here: this router sits behind require_internal_token,
+# reachable only from the Cloudflare Functions that already verified the caller's Supabase JWT
+# (see ai-german-exam-grade-writing.ts's own pattern) — exactly the same trust boundary every
+# other endpoint in this file already relies on (GenerateExamTaskRequest.userId,
+# GradeWritingRequest.userId, ...), not a new one invented for DSH.
 
 _DSH_LV_HV_PART_SPECS: dict[str, tuple[str, str, Any]] = {
     "lv": ("reading", "lv_1", generate_dsh_lv_part),
@@ -409,35 +409,22 @@ def _as_number(value: Fraction) -> int | float:
 
 
 class DshLvHvGenerateRequest(BaseModel):
+    userId: str
     part: Literal["lv", "hv"]
     topic: str | None = Field(default=None, max_length=200)
 
 
 @router.post("/german-exam/dsh/lv-hv/generate")
 def dsh_lv_hv_generate_endpoint(payload: DshLvHvGenerateRequest) -> dict[str, Any]:
-    """Generates one DSH LV or HV practice task. Returns a learner-safe `content` (every
+    """Generates one DSH LV or HV practice task. Returns ONLY a learner-safe `content` (every
     answer-key field — requiredPoints, optionalPoints, referenceAnswer, errorfulVariant,
-    gradingNotes — stripped by dsh_grading.strip_answer_key_for_learner) for rendering, plus
-    `gradingContent` (the FULL generated content, answer key included).
-
-    AUDITED FACT, not a hedge: this response's `gradingContent` field IS the complete answer key
-    and IS sent to the browser in this same response, the moment generation completes — a learner
-    reading raw network traffic (DevTools, a proxy) can read requiredPoints[].description,
-    referenceAnswer, errorfulVariant, and gradingNotes for every item right here, before any
-    submission ever happens. strip_answer_key_for_learner's guarantee is narrower and must not be
-    overstated: the object the RENDERER (mountDshOpenAnswer) receives and builds the UI from is
-    clean — `content`, never `gradingContent`, is what reaches that function, so nothing answer-
-    key-shaped enters the DOM. That is a real, tested property. "The browser never receives the
-    answer key" is NOT true and this docstring does not claim it. generationId is a fresh uuid4
-    minted here and immediately forgotten — no server-held state exists behind it; it is a
-    client-visible correlation label only, not a security boundary.
-
-    Closing the network-level exposure needs server-side generation storage (client receives only
-    an opaque reference; POST .../grade looks the real content up by it instead of trusting a
-    client-supplied payload) — not built in this phase: no new persistence/DB schema was
-    introduced, per repeated instruction. Until then this endpoint is a practice/sandbox tool
-    only, not a security boundary, exactly like every other unauthenticated-by-design aspect of
-    this DSH work staying behind available=False."""
+    gradingNotes — stripped by dsh_grading.strip_answer_key_for_learner) plus `generationId`.
+    There is no `gradingContent` in this response: the full content (minimal_grading_content's
+    output — grading-essential fields only) is written server-side to
+    public.dsh_lv_hv_practice_generations, owned by payload.userId, and `generationId` is that
+    row's id. The browser holds an opaque reference it cannot read anything out of and cannot use
+    to grade a different generation — ownership and expiry are enforced at claim time in
+    dsh_lv_hv_grade_endpoint, not here."""
     module, part_id, generator = _DSH_LV_HV_PART_SPECS[payload.part]
     profile = get_profile("dsh")
     part = get_part("dsh", module, part_id)
@@ -452,44 +439,62 @@ def dsh_lv_hv_generate_endpoint(payload: DshLvHvGenerateRequest) -> dict[str, An
     except DshGenerationError as exc:
         log.exception("dsh %s practice generation failed", payload.part)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Generation failed. Please retry.") from exc
+    generation_id = dsh_practice_state.create_generation(
+        payload.userId, payload.part, dsh_grading.minimal_grading_content(content),
+    )
     return {
         "kind": "dsh_lv_hv_practice_task",
         "part": payload.part,
-        "generationId": uuid.uuid4().hex,
+        "generationId": generation_id,
         "content": dsh_grading.strip_answer_key_for_learner(content),
-        "gradingContent": content,
     }
 
 
+class DshLvHvAnswer(BaseModel):
+    itemId: str = Field(min_length=1, max_length=80)
+    answer: str = Field(default="", max_length=8000)
+
+
 class DshLvHvGradeRequest(BaseModel):
+    userId: str
     part: Literal["lv", "hv"]
     generationId: str = Field(min_length=1, max_length=80)
-    gradingContent: dict[str, Any]
-    answers: dict[str, str] = Field(default_factory=dict)
-
-    @property
-    def validated_answers(self) -> dict[str, str]:
-        return {str(k): str(v) for k, v in self.answers.items() if isinstance(k, str)}
+    answers: list[DshLvHvAnswer] = Field(default_factory=list, max_length=100)
+    # Deliberately no gradingContent/referenceAnswer/requiredPoints field exists on this model.
+    # Pydantic's default extra="ignore" means any such key a client sends anyway is dropped
+    # before this object even exists — it is never read, stored, or able to influence grading.
+    # The only content grading ever uses is claimed server-side below, by generationId+userId.
 
 
 @router.post("/german-exam/dsh/lv-hv/grade")
 def dsh_lv_hv_grade_endpoint(payload: DshLvHvGradeRequest) -> dict[str, Any]:
-    """Grades a practice LV/HV submission via the existing, already-tested raw content-point
-    grader (german_exam_dsh_grading.grade_dsh_open_answer_part) — score_content_item remains the
-    one authoritative item-scoring function; nothing here duplicates its logic. Returns a RAW,
-    explicitly non-official result only: no DSH points, no percentage of any official DSH scale,
-    no DSH-1/2/3 level. matchedContentPointIds are computed server-side for scoring but are
-    deliberately not included in this response (they would reveal, item by item, exactly which
-    required content points the learner's answer did or did not satisfy)."""
+    """Grades a practice LV/HV submission against SERVER-HELD grading state only — the request
+    cannot supply or replace it. Claims public.dsh_lv_hv_practice_generations's row atomically
+    (german_exam_dsh_practice_state.claim_generation_for_grading: ownership, expiry and one-time-
+    use all enforced by a single UPDATE ... WHERE id=... AND user_id=... AND graded_at IS NULL
+    AND expires_at > now() RETURNING grading_content); an unknown id, a different owner, an
+    expired row, and an already-graded row are all indistinguishable 404s. The claimed content
+    then reaches the existing, unchanged grader (german_exam_dsh_grading.
+    grade_dsh_open_answer_part -> ContentMatcher -> score_content_item — the one authoritative
+    item-scoring function; nothing here duplicates its logic). Returns a RAW, explicitly non-
+    official result only: no DSH points, no percentage of any official DSH scale, no DSH-1/2/3
+    level. matchedContentPointIds are computed server-side for scoring but are deliberately not
+    included in this response (they would reveal, item by item, exactly which required content
+    points the learner's answer did or did not satisfy)."""
+    grading_content = dsh_practice_state.claim_generation_for_grading(payload.userId, payload.generationId)
+    if grading_content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                             detail="Generation not found, expired, or already graded.")
+    answers = {a.itemId: a.answer for a in payload.answers}
     try:
-        result = dsh_grading.grade_dsh_open_answer_part(payload.gradingContent, payload.validated_answers)
-    except DshContentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"invalid task content: {exc}") from exc
+        result = dsh_grading.grade_dsh_open_answer_part(grading_content, answers)
     except dsh_grading.DshGradingError as exc:
         log.warning("dsh %s practice grading: semantic matcher failed: %s", payload.part, exc)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
                              detail="Content evaluation unavailable. Your answer was not scored.") from exc
     except Exception as exc:  # noqa: BLE001
+        # Includes DshContentError: the stored grading_content should always be well-formed
+        # (we wrote it), so this means a server-side data problem, never a client input problem.
         log.exception("dsh %s practice grading failed", payload.part)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
                              detail="Content evaluation unavailable. Your answer was not scored.") from exc

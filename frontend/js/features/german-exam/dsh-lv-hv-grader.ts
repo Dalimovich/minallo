@@ -8,7 +8,20 @@
  * `generate` path): every DSH PartBlueprint stays available=False, so that path raises/501s for
  * DSH forever by design. These two calls hit the separate, explicitly non-production
  * /german-exam/dsh/lv-hv/{generate,grade} endpoints instead — a sandbox for exercising the
- * generation+grading pipeline, not the officially-supported exam flow. */
+ * generation+grading pipeline, not the officially-supported exam flow.
+ *
+ * SECURE as of the generationId/gradingContent audit being resolved: there is no `gradingContent`
+ * anywhere in this module or in either backend response/request. Generation now writes the full
+ * grading-essential content server-side (public.dsh_lv_hv_practice_generations via
+ * german_exam_dsh_practice_state.py) and returns only an opaque `generationId`; grading sends
+ * that id plus the learner's answers and nothing else — the backend claims its own stored state
+ * by id, atomically, enforcing ownership/expiry/one-time-use (see german_exam.py's
+ * dsh_lv_hv_grade_endpoint). This module cannot send the answer key even if it wanted to: nothing
+ * here ever holds it. userId is intentionally ABSENT from every request body below — exactly
+ * like writing-exam.ts's writingExamRequest/createWritingGrader, the authenticated user identity
+ * comes from the Cloudflare Function's own verified Supabase session (ai-german-exam-dsh-lv-hv-
+ * generate.ts / -grade.ts, following ai-german-exam-grade-writing.ts's pattern) and is injected
+ * there before forwarding to Python — a browser-supplied userId would not be trusted anyway. */
 
 import { authenticatedFetch } from '../../services/authenticated-fetch.js';
 import type { DshGradeResult, DshOpenAnswerContent } from './dsh-open-answer-task.js';
@@ -26,20 +39,11 @@ export async function dshLvHvRequest<T>(path: string, body: unknown, signal?: Ab
 
 export interface DshLvHvGenerateResponse {
   part: 'lv' | 'hv';
-  // A fresh id minted per generate call with no server-held state behind it — a client-visible
-  // correlation label only, never a pointer to anything the server remembers. Do not treat it as
-  // a security boundary or as proof the server can look grading state up by it; it cannot.
+  // Opaque reference to server-held grading state (public.dsh_lv_hv_practice_generations), owned
+  // by the authenticated learner, expiring in 30 minutes, usable for exactly one grade() call.
+  // Carries no information on its own — nothing can be decoded or read out of it.
   generationId: string;
   content: DshOpenAnswerContent;
-  // AUDITED FACT: this field carries the FULL answer key (requiredPoints[].description,
-  // referenceAnswer, errorfulVariant, gradingNotes) that `content` above has had stripped, and it
-  // arrived in the browser in this very same response — reading raw network traffic for this
-  // call already exposes it, independent of anything below. The only guarantee callers get is
-  // that nothing in this codebase ever passes `gradingContent` to mountDshOpenAnswer or otherwise
-  // renders it — hold it in a closure (see createDshLvHvGrader) and nowhere else. Do not describe
-  // this as "the answer key never reaches the browser"; it does. Fully preventing that needs
-  // server-side generation storage, not built in this phase.
-  gradingContent: unknown;
 }
 
 /** Generates one DSH LV or HV practice task. `topic` is an optional free-text label; omit it to
@@ -50,11 +54,14 @@ export async function generateDshLvHvPracticeTask(
   return request<DshLvHvGenerateResponse>('generate', { part, topic: topic ?? null }, signal);
 }
 
-/** Builds the real `grade` callback dsh-open-answer-task.ts's mountDshOpenAnswer expects: holds
- * `gradingContent` in closure (never passed to the renderer, never put in the DOM) and resends it
- * unmodified alongside the learner's answers. */
+/** Builds the real `grade` callback dsh-open-answer-task.ts's mountDshOpenAnswer expects. Sends
+ * only `generationId` + the learner's answers — the backend looks up its OWN stored content by
+ * that id; this function has no grading content to send even if it wanted to. */
 export function createDshLvHvGrader(
-  part: 'lv' | 'hv', generationId: string, gradingContent: unknown, request: typeof dshLvHvRequest = dshLvHvRequest,
+  part: 'lv' | 'hv', generationId: string, request: typeof dshLvHvRequest = dshLvHvRequest,
 ): (answers: Record<string, string>, signal: AbortSignal) => Promise<DshGradeResult> {
-  return (answers, signal) => request<DshGradeResult>('grade', { part, generationId, gradingContent, answers }, signal);
+  return (answers, signal) => {
+    const payload = Object.entries(answers).map(([itemId, answer]) => ({ itemId, answer }));
+    return request<DshGradeResult>('grade', { part, generationId, answers: payload }, signal);
+  };
 }

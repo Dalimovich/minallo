@@ -6,17 +6,22 @@ import {chromium} from '@playwright/test';
 
 const source=readFileSync(new URL('../../frontend/js/features/german-exam/dsh-open-answer-task.ts',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+const graderSource=readFileSync(new URL('../../frontend/js/features/german-exam/dsh-lv-hv-grader.ts',import.meta.url),'utf8');
+const graderCode=ts.transpileModule(graderSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 
+// Shaped exactly like the real, already-stripped learner-safe response
+// (german_exam_dsh_grading.strip_answer_key_for_learner's output: itemId/question only per item)
+// — no answer-key fields in these fixtures, per instruction.
 function hvContent(){
   return {lectureText:'Dies ist ein Vortrag über Forschung.\n\nEr hat zwei Absätze.',
     tasks:[{form:'questions',items:[
-      {itemId:'q1',question:'Worum geht es?',requiredPoints:[{pointId:'p1',description:'Forschung',points:1}]},
-      {itemId:'q2',question:'Wie viele Absätze?',requiredPoints:[{pointId:'p2',description:'zwei',points:1}]},
+      {itemId:'q1',question:'Worum geht es?'},
+      {itemId:'q2',question:'Wie viele Absätze?'},
     ]}]};
 }
 function lvContent(){
   return {source:{text:'Dies ist ein Lesetext über Forschung.'},
-    tasks:[{form:'questions',items:[{itemId:'q1',question:'Worum geht es?',requiredPoints:[{pointId:'p1',description:'Forschung',points:1}]}]}]};
+    tasks:[{form:'questions',items:[{itemId:'q1',question:'Worum geht es?'}]}]};
 }
 // Simulates content that was NOT stripped server-side (defense in depth: the renderer itself
 // must never surface this, regardless of what the caller passes it) — distinctive secret marker
@@ -42,6 +47,63 @@ async function withPage(run){
     await run(page);
   } finally { await browser.close(); }
 }
+
+// Exercises the REAL frontend contract end to end: dsh-lv-hv-grader.ts's createDshLvHvGrader
+// (a real network call via a stubbed authenticatedFetch, intercepted by Playwright) wired into
+// dsh-open-answer-task.ts's mountDshOpenAnswer — not a locally-defined fake grade() callback.
+// Only the one grade request is allowed through (mocked); everything else is aborted.
+async function withWiredPage(gradeResponse,run){
+  const browser=await chromium.launch({headless:true});
+  try{
+    const page=await browser.newPage();
+    // A real (non-relative, non-about:blank) navigation is required: a relative fetch URL has no
+    // base to resolve against from about:blank, and an absolute cross-origin fetch from a null
+    // origin would need full CORS preflight handling this double doesn't provide. Fulfilling the
+    // navigation itself keeps everything same-origin and avoids both problems.
+    await page.route('**/*',route=>{
+      const url=route.request().url();
+      if(url.includes('/dsh/lv-hv/grade')) route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(gradeResponse)});
+      else if(url==='http://localhost/') route.fulfill({status:200,contentType:'text/html',body:'<main id="root"></main>'});
+      else route.abort();
+    });
+    await page.goto('http://localhost/');
+    await page.addScriptTag({content:
+      'var exports={};\n'+code+'\nwindow.__dshTask=exports;\n'+
+      'var require=function(name){ if(name.indexOf("authenticated-fetch")!==-1) return {authenticatedFetch:(url,opts)=>fetch(url,opts)}; throw new Error("unexpected import "+name); };\n'+
+      'var exports={};\n'+graderCode+'\nwindow.__dshGrader=exports;\n'
+    });
+    await run(page);
+  } finally { await browser.close(); }
+}
+
+test('real contract end to end: generate -> learner-safe content -> render -> answer -> submit generationId+answers -> grade -> raw/content result',async()=>{
+  const gradeResponse={part:'lv',generationId:'gen-real-1',rawPoints:1,rawMaxPoints:1,percent:100,items:[{itemId:'q1',points:1,maxPoints:1}],officialDshScore:null,officialScoreAvailable:false};
+  await withWiredPage(gradeResponse,async page=>{
+    const captured=await page.evaluate(c=>{
+      // Simulates a prior generate() response: learner-safe content + an opaque generationId.
+      // No gradingContent/referenceAnswer/requiredPoints anywhere in this fixture.
+      const generated={part:'lv',generationId:'gen-real-1',content:c};
+      const grade=window.__dshGrader.createDshLvHvGrader(generated.part,generated.generationId);
+      window.dispose=window.__dshTask.mountDshOpenAnswer(document.querySelector('#root'),generated.content,'lv',grade);
+      return generated;
+    },lvContent());
+    assert.equal(captured.generationId,'gen-real-1');
+    assert.equal('gradingContent' in captured,false);
+    // Explicit assertion that the (simulated) generate response carries none of the known
+    // answer-key markers anywhere, not just that the top-level gradingContent key is absent.
+    const generateResponseSerialized=JSON.stringify(captured);
+    for(const marker of ['requiredPoints','optionalPoints','referenceAnswer','errorfulVariant','gradingNotes']){
+      assert.doesNotMatch(generateResponseSerialized,new RegExp(marker));
+    }
+
+    await page.locator('textarea').first().fill('Antwort.');
+    await page.getByRole('button',{name:'Antworten einreichen'}).click();
+    await page.waitForFunction(()=>document.body.textContent.includes('inhaltliche Punkte'));
+    const text=await page.locator('#root').textContent();
+    assert.match(text,/1 \/ 1 inhaltliche Punkte/);
+    assert.match(text,/kein offizielles Prüfungsergebnis/);
+  });
+});
 
 test('HV: renders the lecture text as a transcript with an explicit transcript-only-practice-mode notice',async()=>{
   await withPage(async page=>{

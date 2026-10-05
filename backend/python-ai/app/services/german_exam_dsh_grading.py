@@ -182,23 +182,18 @@ def strip_answer_key_for_learner(content: Mapping[str, Any]) -> dict[str, Any]:
     Why this exists: generate_dsh_lv_part/generate_dsh_hv_part's raw output — the exact dict
     german_exam_generator.py's _envelope() would otherwise embed verbatim into a learner-facing
     response — carries requiredPoints[].description and referenceAnswer on every item, i.e. the
-    literal graded answer. Nothing before this function ever stripped that. This is the local,
-    unambiguous fix: the object a renderer receives and operates on to build the UI no longer
-    carries that material.
+    literal graded answer. This is what app/routers/german_exam.py's dsh_lv_hv_generate_endpoint
+    returns as `content`.
 
-    What this does NOT do, stated plainly rather than hedged: it does NOT make the answer key
-    unreachable over the network. app/routers/german_exam.py's dsh_lv_hv_generate_endpoint
-    returns this stripped `content` AND the full, unstripped original as `gradingContent` in the
-    very same HTTP response (grading needs that full content again later, and no server-side
-    storage of generated content exists in this phase to hold it instead). The browser DOES
-    receive the complete answer key, in that response, the moment generation completes — a
-    learner reading raw network traffic sees it regardless of what this function strips. The
-    property this function actually guarantees is narrower and real: the RENDERER
-    (dsh-open-answer-task.ts's mountDshOpenAnswer) only ever receives `content`, never
-    `gradingContent`, so nothing answer-key-shaped reaches the DOM or the rendered UI. Fully
-    closing the network-level exposure needs server-side generation storage (client holds only an
-    opaque reference; grading looks the real content up by it) — deliberately not added this
-    phase, per repeated instruction not to invent new persistence."""
+    RESOLVED (as of app/services/german_exam_dsh_practice_state.py): the earlier version of this
+    docstring recorded that the full answer key still reached the browser via a `gradingContent`
+    field in the same response, because nothing held it server-side between generate and grade.
+    That gap is closed — the full content (via minimal_grading_content() below) is now written to
+    public.dsh_lv_hv_practice_generations at generate time and claimed back server-side at grade
+    time (german_exam_dsh_practice_state.claim_generation_for_grading); the browser receives only
+    this function's output, under `content`, plus an opaque `generationId` it cannot forge its way
+    around (ownership + expiry + one-time-use are enforced by that module's atomic claim). Nothing
+    answer-key-shaped is ever sent to or held by the browser for this flow now."""
     stripped_tasks = []
     for task in content.get("tasks") or ():
         stripped_items = [
@@ -208,3 +203,32 @@ def strip_answer_key_for_learner(content: Mapping[str, Any]) -> dict[str, Any]:
         ]
         stripped_tasks.append({**{k: v for k, v in task.items() if k != "items"}, "items": stripped_items})
     return {**{k: v for k, v in content.items() if k != "tasks"}, "tasks": stripped_tasks}
+
+
+# ---- Server-side grading state (what gets stored, never sent to the browser) ------------------
+_GRADING_ESSENTIAL_ITEM_KEYS = ("itemId", "question", "maxPoints", "requiredPoints", "optionalPoints", "gradingNotes", "assessLanguage")
+
+
+def minimal_grading_content(content: Mapping[str, Any]) -> dict[str, Any]:
+    """Returns a copy of generated HV/LV content holding ONLY what grading actually consumes —
+    the inverse selection to strip_answer_key_for_learner: per item, question/maxPoints/
+    requiredPoints/optionalPoints/gradingNotes/assessLanguage survive (exactly the keys
+    open_answer_item_from_generated reads); referenceAnswer and errorfulVariant do NOT (confirmed
+    by reading open_answer_item_from_generated/grade_dsh_open_answer_item: neither is ever read
+    during grading — they exist only for generate_dsh_lv_part/generate_dsh_hv_part's own
+    generation-quality audit, qualify_open_tasks). The lecture/source text and sourceId are also
+    dropped: grade_dsh_open_answer_part never reads content['source']/['lectureText']/['sourceId']
+    either — the ContentMatcher is given question+answer+points, never the source text.
+
+    This, not the full generated content, is what app/services/german_exam_dsh_practice_state.
+    create_generation() persists — the smallest payload that can still reach score_content_item
+    with everything it needs and nothing it doesn't."""
+    tasks = []
+    for task in content.get("tasks") or ():
+        items = [
+            {key: item[key] for key in _GRADING_ESSENTIAL_ITEM_KEYS if key in item}
+            for item in task.get("items") or ()
+            if isinstance(item, Mapping)
+        ]
+        tasks.append({"form": task.get("form"), "items": items})
+    return {"tasks": tasks}
