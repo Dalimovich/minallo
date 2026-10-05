@@ -427,6 +427,10 @@ function applyChatPanelLinks(state: ExamWorkspaceState): void {
 
 function applyDom(state: ExamWorkspaceState): void {
   latestState = state;
+  // Applied BEFORE the Practice-DOM early return below: the chatbot German panel has no
+  // #glExamGroup/#glExamOverview at all (that DOM only exists on the dedicated Practice view),
+  // so it must not depend on Practice's own markup being present to receive its DSH link state.
+  applyChatPanelLinks(state);
   disposeTaskWorkspace?.();
   disposeTaskWorkspace = undefined;
   const root = document.getElementById('glExamGroup');
@@ -440,7 +444,6 @@ function applyDom(state: ExamWorkspaceState): void {
     card.hidden = visibility.hidden;
     card.classList.toggle('gl-skill-card-soon', visibility.soon);
   });
-  applyChatPanelLinks(state);
   ensureExamStructureStyles();
   if (overview) {
     if (state.status === 'ready' && state.manifest) {
@@ -482,12 +485,32 @@ declare global {
   }
 }
 
+// Singleton: the exam workspace must initialize as soon as the chatbot's German panel is
+// available, independent of whether the dedicated Practice section was ever opened — but there
+// must still be exactly one controller, one manifest-fetch cycle, and one MutationObserver no
+// matter how many call sites ask for one (currently: a minimal bootstrap from app.ts, and
+// Practice's own, richer call from practice.js). A second (or later) call upgrades the SAME
+// controller's hooks in place instead of creating another one.
+let singletonController: ExamWorkspaceController | undefined;
+let singletonHooks: ExamWorkspaceHooks | undefined;
+
 export function initExamWorkspace(hooks: ExamWorkspaceHooks): ExamWorkspaceController {
-  workspaceBase = hooks.base || '';
-  const ctl = createExamWorkspace(hooks, {
-    fetchManifest: (signal) => fetchManifest(undefined, hooks.base || '', signal),
+  workspaceBase = hooks.base || workspaceBase;
+  if (singletonController && singletonHooks) {
+    // Object.assign mutates the SAME object createExamWorkspace's closures already read
+    // hooks.* from on every call — this is what makes the upgrade visible without re-creating
+    // the controller, re-fetching the manifest, or re-registering the MutationObserver.
+    Object.assign(singletonHooks, hooks);
+    void singletonController.refresh();
+    return singletonController;
+  }
+  const ownHooks: ExamWorkspaceHooks = { ...hooks };
+  singletonHooks = ownHooks;
+  const ctl = createExamWorkspace(ownHooks, {
+    fetchManifest: (signal) => fetchManifest(undefined, ownHooks.base || '', signal),
     render: applyDom,
   });
+  singletonController = ctl;
   window._glExamState = () => ctl.state;
   window._glExamSkillBlocked = (skill) => skillBlockReason(ctl.state, skill);
   window._glExamPartAvailability = (moduleId, partId) => partAvailability(ctl.state, moduleId, partId);

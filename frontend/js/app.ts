@@ -1478,6 +1478,38 @@ initSettingsBridge();
 
 initLandingAuthBridge({ authBridge: _authBridge });
 
+// German exam workspace — bootstrapped here, unconditionally and profile-independent, so the
+// chatbot's German panel gets its DSH-specific links even if the learner never opens the
+// dedicated Practice section (Practice's own, richer initExamWorkspace() call still runs from
+// practice.js; initExamWorkspace() is itself singleton-safe — a second call upgrades this same
+// controller's hooks in place rather than creating a second one, see exam-workspace.ts).
+import('./features/german-exam/exam-workspace.js').then((mod) => {
+  mod.initExamWorkspace({
+    base: typeof window.BACKEND_URL === 'string' ? window.BACKEND_URL : '',
+    profileReady: () => {
+      const p = window.getGermanLearnerProfile?.();
+      return !!p && p.state === 'ready';
+    },
+    resolveProfileId: () => {
+      const p = window.getGermanLearnerProfile?.();
+      return (p && p.examProfileId) || null;
+    },
+    savedProfileKey: () => {
+      const p = window.getGermanLearnerProfile?.();
+      return p && p.state === 'ready' && p.userType === 'learner' && p.testFamily && p.targetLevel
+        ? p.testFamily + '|' + p.targetLevel
+        : '';
+    },
+    // No Practice-specific UI/state exists from this minimal bootstrap's perspective — Practice's
+    // own call (if/when it happens) upgrades these to its real reset/skill-block behaviour.
+    onProfileChange: () => {},
+    activeSkill: () => '',
+    onActiveSkillBlocked: () => {},
+  });
+}).catch((err) => {
+  console.warn('[German exam] workspace bootstrap failed to load.', err);
+});
+
 // ── Subscription service ─────────────────────────────────────────────────
 (window as unknown as { _subService: Record<string, unknown> })._subService = {
   createCheckoutSession: _createCheckoutSession,
