@@ -65,6 +65,12 @@
   function interfaceState() {
     if (!appReady) return false;
     if (!window._ssIsLoggedIn) return true;
+    // A brand-new user has no profile row yet by design — the onboarding
+    // modal (already shown) IS the interface, not a loading state to wait
+    // out. Without this, the cover never hides (profile resolution never
+    // reaches 'ready' until onboarding is submitted) and traps the user
+    // behind the splash / eventual fatal recovery screen.
+    if (window._awaitingOnboarding) return true;
     if (window._profileResolutionState !== 'ready') return false;
     var t = window._userType;
     if (t !== 'learner' && t !== 'enrolled') return false;
@@ -116,7 +122,12 @@
   window.addEventListener('ss-ready', function () { mark('ssReady'); appReady = true; check(); });
   window.addEventListener('ss-profile-updated', check);
   window.addEventListener('ss-experience-applied', check);
-  window.addEventListener('ss-profile-failed', function () { recovery('profile'); });
+  window.addEventListener('ss-profile-failed', function () {
+    // Expected "no row yet" for a user mid-onboarding, not a real failure —
+    // see the _awaitingOnboarding comment above and in globals.d.ts.
+    if (window._awaitingOnboarding) return;
+    recovery('profile');
+  });
 
   window.MinalloBoot = {
     isReady: function () { return done; },

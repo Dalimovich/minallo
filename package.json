@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint frontend/js",
+    "lint": "eslint frontend/js && node scripts/lint-history-api.mjs",
     "lint:fix": "eslint --fix frontend/js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

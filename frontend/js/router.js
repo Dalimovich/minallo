@@ -23,13 +23,16 @@ function _ssPushHistory(state, hash) {
     ) {
       return;
     }
-    history.pushState(state, '', hash || window.location.pathname);
+    // hash-only args resolve against <base href="/"> (app/index.html), not
+    // the current /app/ URL — prefix with the actual pathname so pushState
+    // doesn't silently rewrite the address bar back to "/".
+    history.pushState(state, '', window.location.pathname + (hash || ''));
   } catch (e) {}
 }
 
 function _ssReplaceHistory(state, hash) {
   try {
-    history.replaceState(state, '', hash || window.location.pathname);
+    history.replaceState(state, '', window.location.pathname + (hash || ''));
   } catch (e) {}
 }
 
@@ -169,7 +172,7 @@ function _finalizeNav(section) {
     if (cur.view === 'portal' && cur.section === section && window.location.hash === nextHash) {
       return;
     }
-    history.pushState({ view: 'portal', section: section }, '', nextHash);
+    history.pushState({ view: 'portal', section: section }, '', window.location.pathname + nextHash);
   } catch (e) {}
 }
 
@@ -489,7 +492,7 @@ function _ssSeedCourseStack(courseId, courseShort, section, fileName) {
     history.pushState(
       { view: 'course', courseId: cid, courseShort: courseShort || null, section: sec },
       '',
-      courseHash
+      window.location.pathname + courseHash
     );
   } catch (e) {}
   if (fileName) {
@@ -503,7 +506,7 @@ function _ssSeedCourseStack(courseId, courseShort, section, fileName) {
           section: sec
         },
         '',
-        courseHash + '&file=' + encodeURIComponent(fileName)
+        window.location.pathname + courseHash + '&file=' + encodeURIComponent(fileName)
       );
     } catch (e) {}
   }
@@ -606,7 +609,7 @@ window.addEventListener('popstate', function (e) {
     if (_ps && _ps.view === 'portal' && _ps.section) {
       var _canon = _ssPortalHash(_ps.section);
       if (window.location.hash !== _canon) {
-        history.replaceState(_ps, '', _canon);
+        history.replaceState(_ps, '', window.location.pathname + _canon);
       }
     }
   } catch (err) {}

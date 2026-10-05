@@ -333,6 +333,17 @@ declare global {
     // belong to — lets a stale async response (fetch resolves after the
     // account already changed) be detected and ignored.
     _currentProfileUid?: string | null;
+    // Set by _enterApp's onboarding check (supabase.js) when it has
+    // authoritatively confirmed — via its own array-based query, which
+    // distinguishes "no row" from "fetch error" — that this user has no
+    // profile row yet and the onboarding form is being shown. While true,
+    // loadUserData's .single()-based retry chain racing the SAME "does a
+    // profile exist" question must not be allowed to treat the expected
+    // "no row" answer as a boot failure: boot-cover.js must reveal the
+    // onboarding modal instead of trapping the user behind the fatal
+    // "Couldn't load your account" recovery screen. Cleared by
+    // applySavedProfile() once onboarding actually completes.
+    _awaitingOnboarding?: boolean;
     _beginProfileResolution?: (uid: string) => void;
     _resetProfileResolution?: () => void;
     _ensureUserProfile?: (opts?: { force?: boolean }) => Promise<void>;

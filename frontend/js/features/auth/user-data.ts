@@ -453,6 +453,7 @@ export function applySavedProfile(row: ProfileRow): void {
   _resolvedProfileUid = uid;
   window._currentProfileUid = uid;
   window._profileResolutionState = 'ready';
+  window._awaitingOnboarding = false;
   _profileRetryAttempt = 0;
   if (_profileRetryTimer) {
     clearTimeout(_profileRetryTimer);

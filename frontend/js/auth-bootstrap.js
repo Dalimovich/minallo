@@ -207,7 +207,7 @@ function _ssForceSplashOff(reason) {
       localStorage.removeItem('ss_state');
       var _isOAuthCallback = window.location.hash && window.location.hash.indexOf('access_token') !== -1;
       if (!_isOAuthCallback && window.location.hash !== '#portal=aipage') {
-        history.replaceState({ view: 'portal', section: 'aipage' }, '', '#portal=aipage');
+        history.replaceState({ view: 'portal', section: 'aipage' }, '', window.location.pathname + '#portal=aipage');
       }
     } catch (e) {}
   }

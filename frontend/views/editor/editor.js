@@ -61,7 +61,7 @@
       if (pdfMg) pdfMg.style.display = 'none';
       try {
         localStorage.removeItem('ss_editor_sub');
-        history.replaceState({ view: 'portal', section: 'editor' }, '', '#portal=editor');
+        history.replaceState({ view: 'portal', section: 'editor' }, '', location.pathname + '#portal=editor');
       } catch (e) {}
     }
     window._edHubShow = _edHubShow;
@@ -80,7 +80,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'writer' },
           '',
-          '#portal=editor&mode=writer'
+          location.pathname + '#portal=editor&mode=writer'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'writer');
@@ -97,7 +97,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'pdf' },
           '',
-          '#portal=editor&mode=pdf'
+          location.pathname + '#portal=editor&mode=pdf'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'pdf');
@@ -114,7 +114,7 @@
         history.replaceState(
           { view: 'portal', section: 'editor', sub: 'merger' },
           '',
-          '#portal=editor&mode=merger'
+          location.pathname + '#portal=editor&mode=merger'
         );
         localStorage.setItem('ss_last_section', 'editor');
         localStorage.setItem('ss_editor_sub', 'merger');

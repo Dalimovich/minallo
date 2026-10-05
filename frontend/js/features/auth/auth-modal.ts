@@ -350,7 +350,7 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
   function pushAuthHistory(): void {
     const state = history.state as { ssAuthModal?: boolean } | null;
     if (state && state.ssAuthModal) return;
-    history.pushState({ ssAuthModal: true }, '', '#auth');
+    history.pushState({ ssAuthModal: true }, '', location.pathname + '#auth');
   }
   function closeAuthFromHistory(): void {
     if (!authModal || authModal.style.display === 'none') return;
