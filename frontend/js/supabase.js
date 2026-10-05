@@ -841,6 +841,11 @@ function _enterApp(user) {
         if (hasProfile) {
           localStorage.setItem('ob_done_' + user.id, '1');
         } else {
+          // Confirmed (not a fetch error) — no profile row yet. loadUserData's
+          // .single() query for this same uid will see the same "no row" and,
+          // not knowing onboarding is expected, would otherwise retry-then-fail
+          // into boot-cover's fatal recovery screen on top of this modal.
+          window._awaitingOnboarding = true;
           _showOb();
         }
       })
