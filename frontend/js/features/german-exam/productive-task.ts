@@ -21,6 +21,16 @@ export function validateProductive(part:ProductivePart,c:ProductiveContent):void
   }
   if(part.constraints.requiredSourceKinds?.some(kind=>!c.sources.some(s=>s.kind===kind)))throw new Error('Missing required source');
 }
+/** Shared with any other task needing a data-graphic source (e.g. summary-error-task.ts's
+ * reading_summary_error_detection) — one rendering, never a second copy of this table layout. */
+export function renderGraphic(container:HTMLElement,g:Graphic):void {
+  const table=document.createElement('table');const caption=table.createCaption();caption.textContent=g.title+' ('+g.unit+')';
+  const heading=table.createTHead().insertRow();heading.append(document.createElement('th'));
+  for(const col of g.columns){const th=document.createElement('th');th.scope='col';th.textContent=col.label;heading.append(th);}
+  const body=table.createTBody();for(const row of g.rows){const tr=body.insertRow();const label=document.createElement('th');label.scope='row';label.textContent=row.label;tr.append(label);
+    for(const col of g.columns){const cell=tr.insertCell();cell.textContent=String(row.values[col.id]);}}
+  container.append(table);
+}
 export function renderProductiveSources(root:HTMLElement,part:ProductivePart,c:ProductiveContent):HTMLElement {
   validateProductive(part,c);const prompt=document.createElement('p');prompt.textContent=c.prompt;root.append(prompt);
   const sources=document.createElement('section');root.append(sources);
@@ -30,12 +40,7 @@ export function renderProductiveSources(root:HTMLElement,part:ProductivePart,c:P
       else{const unavailable=document.createElement('p');unavailable.textContent='Source audio unavailable';sources.append(unavailable);}
       sources.append(audio);continue;}
     if(s.kind!=='graphic'){const text=document.createElement('p');text.textContent=s.text||'';sources.append(text);continue;}
-    const g=s.graphic!;const table=document.createElement('table');const caption=table.createCaption();caption.textContent=g.title+' ('+g.unit+')';
-    const heading=table.createTHead().insertRow();heading.append(document.createElement('th'));
-    for(const col of g.columns){const th=document.createElement('th');th.scope='col';th.textContent=col.label;heading.append(th);}
-    const body=table.createTBody();for(const row of g.rows){const tr=body.insertRow();const label=document.createElement('th');label.scope='row';label.textContent=row.label;tr.append(label);
-      for(const col of g.columns){const cell=tr.insertCell();cell.textContent=String(row.values[col.id]);}}
-    sources.append(table);
+    renderGraphic(sources,s.graphic!);
   }return sources;
 }
 export function renderFeedback(root:HTMLElement,part:ProductivePart,result:Feedback,text?:string):void {

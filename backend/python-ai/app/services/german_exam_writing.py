@@ -333,7 +333,15 @@ def generate_writing_part(
     content once the regeneration budget is exhausted. Content has NO answer
     key — nothing here is ever graded against this generated content; see
     german_exam_writing_grading.py for how a learner's own submission is
-    actually graded."""
+    actually graded.
+
+    DSH's dsh_tp_chart_based_argumentation is routed to its own generator
+    (german_exam_dsh_generators.py) for the same reason LV/HV/WS are — see
+    that module's docstring."""
+    from .german_exams.dsh import TASK_TYPE_TP as DSH_TASK_TYPE_TP
+    if part.task_type == DSH_TASK_TYPE_TP:
+        from .german_exam_dsh_generators import generate_dsh_tp_part
+        return generate_dsh_tp_part(profile, part, plan, topic)
     from .german_exam_productive import WRITING_TYPES, generate_productive
     if part.task_type in WRITING_TYPES:
         return generate_productive(profile, part, plan, topic)

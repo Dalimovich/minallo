@@ -198,3 +198,43 @@ a content-design matter for the semantic/manual review phase.
 `chore/zero-cost-correctness` (not merged, 3 commits ahead of main: TestDaF writing-grading shape fix, QA-harness reachability, an
 availability-allowlist freeze test) was **not** used as a base. If it lands first, the freeze test will need DSH's five parts to stay `False`
 (they do) and `GRADABLE_WRITING_PROFILE_IDS` must still exclude `dsh`.
+
+## 11. 2026-10-04 follow-up — oral content-validation NotImplementedError resolved; everything else re-confirmed still FUTURE
+
+Re-audited this document against current `main` before touching any code, per that session's own
+instruction not to treat "structure exists" as "DSH exists." Findings:
+
+**Still true, unchanged:** no DSH generator exists for any of the 5 task types (`task_types.py`:
+all `False`); no grading implementation for any module; no frontend renderer wired for any DSH
+task type; `GRADABLE_WRITING_PROFILE_IDS`/`GRADABLE_SPEAKING_*_PROFILE_IDS` still exclude `dsh`;
+every DSH part stays `available=False`. Section 5's "Deliberately not implemented" list is still
+accurate for content generation, all grading, and oral examiner dialogue/interaction.
+
+**One item resolved:** `dsh_content_model.validate_dsh_task_content`'s oral branch raised
+`NotImplementedError` with no comment explaining why. Audited and determined this was category
+(1), not (2) — a genuinely missing implementation completable from source material already in
+this repo, not a case of the oral interaction/scoring spec being absent. Reasoning: the function
+validates *generated task content structure*, not grading and not interaction — and the ONLY
+thing that is pre-generated content for the oral exam at all is the Kurzvortrag's stimulus
+material (the short text/graphic the learner presents on; the ~15-minute conversation that
+follows is explicitly `interactive: True`, i.e. live and unscripted, with nothing to validate).
+That stimulus material's structure (`inputKinds`, `languageActs`) is already OFFICIAL (§11a,b,
+R26/R27 above, both "yes"/verified) and structurally identical to TP's own already-implemented
+shape (an official input the learner must address, never a free-standing talk/essay). Added
+`validate_oral_content()`, a direct mirror of `validate_tp_content()`, and wired it into the
+dispatcher. This does **not** implement oral grading, the conversation's interaction
+architecture, or an examiner-dialogue simulation — all three remain exactly as FUTURE as section
+5 already said, and are not conflated with this fix. 1 new test
+(`test_german_exam_dsh_content_model.py::test_oral_kurzvortrag_must_be_input_bound_and_not_a_free_talk`);
+the dispatcher test's `NotImplementedError` assertion was replaced with a real pass/fail check.
+
+**Generators deliberately not attempted this session:** writing the HV/LV/WS/TP/oral-stimulus
+generators was considered and explicitly deferred, not for a missing official source (the content
+model — `OpenAnswerItem`, `StructureItem`, `TP_RUBRIC` — is already fully designed and officially
+sourced) but because: (a) a generator's correctness can't actually be confirmed without live model
+calls to generate and then check output against these validators — exactly the "cannot be
+completed without live model calls" dependency section 2.6 already named; (b) this is a
+substantially larger, separable body of work (5 generators × prompts × repair loops × live
+qualification) that deserves its own dedicated pass rather than being rushed alongside an audit,
+matching the explicit caution against "fake generators that produce generic German exercises and
+label them as DSH tasks." No generator code was written for any DSH task type in this pass.

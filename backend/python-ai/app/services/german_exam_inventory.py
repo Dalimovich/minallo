@@ -70,8 +70,28 @@ def batch_per_trigger() -> int:
 # works, but a low-stock take must NOT start paid background generation for
 # them (a learner would otherwise cause a background AND a live generation,
 # both failing). Comma-separated part ids; an explicitly EMPTY env value
-# disables the guard. Remove sprachbausteine_1 from the default once approved
-# stock exists and the generator passes its acceptance run.
+# disables the guard.
+#
+# sprachbausteine_1 root cause (confirmed by two live diagnostic runs, one
+# against the single-call verifier and one against the current chunked
+# verifier — german_exam_semantic_chunked.py — both 0 approved of 10 and 5
+# respectively): the semantic verifier's hidden reasoning for this task type
+# (22 items / 88 options, gpt-5 reasoning_effort="medium") intermittently
+# consumes its entire completion-token budget before emitting any JSON, even
+# after Stage A/B decomposition (german_exam_language_elements.py), targeted
+# duplicate-gap/word-count/per-item repair, and 8/7/7 chunking with a bounded
+# one-time fallback split — chunking confirmed reasoning use does not scale
+# down with chunk size (measured 2,000-4,700+ reasoning tokens even for 3-4
+# item chunks). This is a live-model reliability question, not a known code
+# defect: every deterministic layer (generator structure, validator, repair,
+# inventory refill guard, frontend renderer) already has dedicated passing
+# tests (test_german_exam_language_elements.py, test_german_exam_semantic_chunked.py,
+# this file's test_refill_kill_switch_blocks_only_the_listed_part). Remove
+# sprachbausteine_1 from the default only after a live acceptance run (needs
+# OpenAI credit) shows the verifier reliably returns usable JSON for this part
+# — e.g. a lower/no reasoning_effort retry on an empty primary response, or a
+# non-reasoning model for this call — and the generator passes its
+# acceptance run (several consecutive approved stock items, not just one).
 _DEFAULT_REFILL_DISABLED_PARTS = "sprachbausteine_1"
 
 

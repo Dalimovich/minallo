@@ -520,7 +520,15 @@ def generate_listening_part(
     semantically support the part) falls back to a full regeneration, bounded
     by _MAX_FULL_REGENERATIONS shared across both stages. Raises
     ListeningGenerationError rather than ever returning known-invalid
-    content once that budget is exhausted."""
+    content once that budget is exhausted.
+
+    DSH's dsh_hv_lecture_tasks is routed to its own generator
+    (german_exam_dsh_generators.py) for the same reason LV is — see that
+    module's docstring."""
+    from .german_exams.dsh import TASK_TYPE_HV as DSH_TASK_TYPE_HV
+    if part.task_type == DSH_TASK_TYPE_HV:
+        from .german_exam_dsh_generators import generate_dsh_hv_part
+        return generate_dsh_hv_part(profile, part, plan, topic)
     from .german_exam_media_tasks import MEDIA_TASKS, generate_media_task
     if part.task_type in MEDIA_TASKS:
         return generate_media_task(profile, part, plan, topic)

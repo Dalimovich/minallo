@@ -600,6 +600,103 @@ def _generate_mc_article_then_items(profile: ExamProfile, part: PartBlueprint, t
     return {"text": article, "questions": questions}
 
 
+# ── Lesen 2 (Digital TestDaF): paragraph_ordering ────────────────────────────
+# Official source: testdaf.de demo PDF p.6 ("Lesen – Aufgabentyp 2 (Textabschnitte
+# ordnen)") — 5 standalone paragraphs, no distractor paragraph, exactly one correct
+# reading order; the printed solution key (p.35) confirms all 5 are used. Unlike
+# lesen_1's gap-in-a-frame-text model, there is no surrounding text and nothing is
+# left unused — the backend only needs the model to write naturally in one coherent
+# order (word counts are NOT officially specified for this task; the demo's own
+# paragraphs run roughly 25-40 words each, used here only as prompt guidance, not a
+# structural constraint).
+
+
+def _prompt_paragraph_ordering(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 5)
+    system = (
+        f"You generate ORIGINAL German reading-exam practice content for {profile.family} "
+        f"{profile.variant or ''} ({part.title}), matching the official paragraph_ordering task format "
+        "(TestDaF Lesen – Aufgabentyp 2, 'Textabschnitte ordnen'). You must NOT copy any real exam "
+        "content — generate an entirely new, coherent academic or study-relevant text with the same "
+        "structure and difficulty. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Write a short expository text on the topic '{topic['label']}' as EXACTLY {item_count} short "
+        "paragraphs, each about 25-40 words, in the ONE correct logical reading order (the first "
+        "paragraph opens the topic; every following paragraph must connect to the one immediately "
+        "before it through an explicit connector, pronoun, or reference that only makes sense right "
+        "after that specific paragraph — so a reader given the paragraphs out of order can reconstruct "
+        "exactly one correct sequence, with no two paragraphs interchangeable). Do not number the "
+        "paragraphs yourself and do not include a heading."
+        + _adaptation_guidance(plan)
+        + "\n\nOutput JSON shape exactly: {\"paragraphs\": [\"paragraph 1 text\", \"paragraph 2 text\", "
+        f"...]}} — a flat array of exactly {item_count} strings, in the correct reading order, no other keys."
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+# ── Lesen 7 (Digital TestDaF): reading_summary_error_detection ───────────────
+# Official source: testdaf.de demo PDF p.14 ("Lesen – Aufgabentyp 7 (Fehler in
+# Zusammenfassung erkennen)") + solution key p.36. Mechanics confirmed from the
+# primary source: a source text (+ a graphic per requiredSourceKinds), and a
+# summary of several sentences in an order that does NOT follow the source text
+# ("Die Items folgen nicht dem Textverlauf"); exactly itemCount (officially 3)
+# of the summary's sentences are content-wise wrong, the rest genuinely accurate
+# restatements — the demo's own summary ran 9 sentences for 3 wrong ones, used
+# here only as prompt guidance (no official sentence-count is published).
+
+
+def _prompt_reading_summary_error_detection(profile: ExamProfile, part: PartBlueprint, plan: list[AdaptationInstruction], topic: dict[str, str]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 3)
+    required = part.constraints.get("requiredSourceKinds", ())
+    needs_graphic = "graphic" in required
+    system = (
+        f"You generate ORIGINAL German reading-exam practice content for {profile.family} "
+        f"{profile.variant or ''} ({part.title}), matching the official reading_summary_error_detection "
+        "task format (TestDaF Lesen – Aufgabentyp 7, 'Fehler in Zusammenfassung erkennen'). You must NOT "
+        "copy any real exam content — generate entirely new, original material. Reply with ONLY valid "
+        "JSON, no markdown fences, no commentary.\n\n"
+        f"Write: (1) a source reading text of 250-350 words on the topic '{topic['label']}', academic or "
+        "study-relevant register"
+        + (("; (2) a simple data graphic (a small table, 2-4 columns and 2-5 rows, with a title and unit) "
+            "presenting information CONSISTENT with and complementary to the text — it must add genuinely "
+            "checkable facts (numbers/trends) of its own, not just restate the text as a table")
+           if needs_graphic else "")
+        + f"; ({3 if needs_graphic else 2}) a SUMMARY of the source as a flat list of 8-10 short, "
+        "independent sentences (each one its own item/questionId). The summary sentences must NOT follow "
+        f"the source text's own order. EXACTLY {item_count} of the summary sentences must be content-wise "
+        "WRONG — each one clearly contradicts or misstates one specific, checkable fact from the text"
+        + (" or graphic" if needs_graphic else "")
+        + " (never a vague or merely-debatable claim). Every other sentence must be a genuinely accurate "
+        "restatement of the source, confirmable with certainty by checking it against the source — not "
+        "just plausible-sounding."
+        + _adaptation_guidance(plan)
+        + "\n\nOutput JSON shape exactly: {\"sources\": [{\"id\": \"s1\", \"kind\": \"text\", \"text\": "
+        "\"...\"}"
+        + (", {\"id\": \"s2\", \"kind\": \"graphic\", \"graphic\": {\"title\": \"...\", \"unit\": \"...\", "
+           "\"columns\": [{\"id\": \"c1\", \"label\": \"...\"}], \"rows\": [{\"id\": \"r1\", \"label\": "
+           "\"...\", \"values\": {\"c1\": 0}}]}}" if needs_graphic else "")
+        + "], \"questions\": [{\"questionId\": \"sent1\", \"text\": \"...\"}, ...], \"correctIds\": "
+        f"[\"...\"]}} — questions lists every summary sentence in DISPLAY order (not source order), "
+        f"correctIds names exactly {item_count} of their questionIds (the wrong ones), no other keys."
+    )
+    user = json.dumps({"topic": topic}, ensure_ascii=False)
+    return system, user
+
+
+def _postprocess_reading_summary_error_detection(content: dict[str, Any]) -> dict[str, Any]:
+    """skillTags are backend-assigned (uniform for this task — identifying a content error is always
+    detail_comprehension), never asked of the model, matching _postprocess_paragraph_ordering above."""
+    questions = content.get("questions")
+    if not isinstance(questions, list):
+        return content
+    out = dict(content)
+    out["questions"] = [
+        {**q, "skillTags": ["detail_comprehension"]} if isinstance(q, dict) else q
+        for q in questions
+    ]
+    return out
+
+
 _PROMPT_BUILDERS = {
     "reading_detail_mc3": _prompt_reading_detail_mc3,
     "reading_multiple_choice": _prompt_reading_multiple_choice,
@@ -608,6 +705,8 @@ _PROMPT_BUILDERS = {
     "text_reconstruction_sentence_matching": _prompt_lesen1,
     "section_statement_matching": _prompt_lesen2,
     "detail_tristate_with_global_heading": _prompt_lesen3,
+    "paragraph_ordering": _prompt_paragraph_ordering,
+    "reading_summary_error_detection": _prompt_reading_summary_error_detection,
 }
 
 
@@ -937,7 +1036,33 @@ def _repair_items(part: PartBlueprint, content: dict[str, Any], issues: list[Val
     return content
 
 
+def _postprocess_paragraph_ordering(content: dict[str, Any]) -> dict[str, Any]:
+    """The model writes the paragraphs in the one correct reading order (the only thing it can do that
+    a computer can't); the backend assigns stable ids, records that order as correctOrder, then
+    shuffles the DISPLAY order — same 'model never manages indices/shuffling' split as Sprachbausteine
+    (german_exam_language_elements.py) and shuffle_candidates() above."""
+    paragraphs = content.get("paragraphs")
+    if not isinstance(paragraphs, list) or not all(isinstance(p, str) and p.strip() for p in paragraphs):
+        return content  # malformed — let the validator report this precisely
+    questions = [
+        {"questionId": f"p{i + 1}", "text": p.strip(), "skillTags": ["text_structure"]}
+        for i, p in enumerate(paragraphs)
+    ]
+    correct_order = [q["questionId"] for q in questions]
+    import hashlib
+    import random
+
+    seed = hashlib.sha256(json.dumps(questions, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    shuffled = list(questions)
+    random.Random(seed).shuffle(shuffled)
+    return {"questions": shuffled, "correctOrder": correct_order}
+
+
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
+    if part.task_type == "paragraph_ordering":
+        content = _postprocess_paragraph_ordering(content)
+    elif part.task_type == "reading_summary_error_detection":
+        content = _postprocess_reading_summary_error_detection(content)
     if "presentation" in part.constraints:
         from copy import deepcopy
         content["presentation"] = deepcopy(part.constraints["presentation"])
@@ -1253,7 +1378,16 @@ def generate_reading_part(
     (+ targeted repair, except lesen_1 which always regenerates on semantic
     item errors) -> deterministic re-validation -> semantic re-verification
     -> accept. Raises ReadingGenerationError rather than ever returning
-    known-invalid content once the regeneration budget is exhausted."""
+    known-invalid content once the regeneration budget is exhausted.
+
+    DSH's dsh_lv_text_tasks is routed to its own generator (german_exam_dsh_generators.py): DSH's
+    content shape (open-answer content points, raise-based validation) is a different, already-
+    established contract this file's own validate_content()/hard_issues() pipeline does not speak
+    — see that module's docstring for why."""
+    from .german_exams.dsh import TASK_TYPE_LV as DSH_TASK_TYPE_LV
+    if part.task_type == DSH_TASK_TYPE_LV:
+        from .german_exam_dsh_generators import generate_dsh_lv_part
+        return generate_dsh_lv_part(profile, part, plan, topic)
     from .german_exam_objective import SELECTION_TYPES, generate_selection
     if part.task_type in SELECTION_TYPES:
         return generate_selection(profile, part, plan, topic)

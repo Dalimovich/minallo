@@ -1,12 +1,13 @@
-"""Router-level regression tests for POST /german-exam/grade-writing and
-POST /german-exam/speaking.
+"""Router-level regression tests for POST /german-exam/grade-writing,
+POST /german-exam/speaking, and POST /german-exam/grade-speaking-recording.
 
 Covers the profile/task-driven gates that replaced the old TELC-only
 hardcodes (part.task_type != "choice_long_form_writing" for writing;
 profileId: Literal["telc_c1_hochschule"] for speaking): TELC keeps behaving
-exactly as before, TestDaF's writing task types are now admitted through to
-the shared grading adapter, and every unsupported profile/task combination
-still comes back as a clean 4xx/501 — never a crash, never silent success.
+exactly as before, TestDaF's and Goethe's writing task types are now admitted
+through to the shared grading adapter, and every unsupported profile/task
+combination still comes back as a clean 4xx/501 — never a crash, never
+silent success.
 
 TestDaF SPEAKING is intentionally NOT tested as "accepted": the shared
 speaking dispatch (german_exam_speaking_practice.py) is still hardcoded to
@@ -99,16 +100,39 @@ def test_grade_writing_telc_accepted(client: TestClient) -> None:
     assert r.json()["scoreValue"] == 40
 
 
+def _testdaf_task() -> dict:
+    return {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "Schreiben Sie einen Text.", "sources": []}
+
+
 def test_grade_writing_testdaf_accepted(client: TestClient) -> None:
-    """The core regression: testdaf_digital's argumentative_essay Schreiben
-    part used to hit the hardcoded `!= "choice_long_form_writing"` gate and
-    always 501. It must now resolve through to the shared grading adapter."""
-    r = client.post(
-        "/german-exam/grade-writing", headers=AUTH,
-        json=_writing_payload("testdaf_digital", "schreiben_1"),
-    )
+    """A real TestDaF writing task is a productive-task-v1 object, not a TELC
+    two-statement topic. The route must accept exactly that shape."""
+    payload = _writing_payload("testdaf_digital", "schreiben_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 200
     assert r.json()["scoreValue"] == 40
+
+
+def test_grade_writing_testdaf_requires_task(client: TestClient) -> None:
+    payload = _writing_payload("testdaf_digital", "schreiben_1")
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_testdaf_rejects_model_answer_task(client: TestClient) -> None:
+    payload = _writing_payload("testdaf_digital", "schreiben_1", task={**_testdaf_task(), "modelAnswer": "x"})
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_telc_still_requires_matching_topic(client: TestClient) -> None:
+    payload = _writing_payload("telc_c1_hochschule", "schreiben_1")
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
 
 
 def test_grade_writing_unsupported_profile_rejected(client: TestClient) -> None:
@@ -119,14 +143,33 @@ def test_grade_writing_unsupported_profile_rejected(client: TestClient) -> None:
     assert r.status_code == 400
 
 
+def test_grade_writing_goethe_schreiben1_accepted(client: TestClient) -> None:
+    """Goethe's schreiben_1 (forum_discussion_post) is a productive-task-v1
+    shape, exactly like TestDaF — not TELC's topic-choice shape."""
+    payload = _writing_payload("goethe_c1", "schreiben_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 200
+    assert r.json()["scoreValue"] == 40
+
+
+def test_grade_writing_goethe_schreiben2_accepted(client: TestClient) -> None:
+    payload = _writing_payload("goethe_c1", "schreiben_2", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 200
+    assert r.json()["scoreValue"] == 40
+
+
 def test_grade_writing_unsupported_task_type_rejected(client: TestClient) -> None:
-    """goethe_c1's schreiben_1 (forum_discussion_post) is a real, registered
-    part — but its task type is deliberately not in the gradable set yet, so
-    it must still 501, exactly like before this change."""
-    r = client.post(
-        "/german-exam/grade-writing", headers=AUTH,
-        json=_writing_payload("goethe_c1", "schreiben_1"),
-    )
+    """DSH's tp_1 (dsh_tp_chart_based_argumentation) is a real, registered
+    writing-module part that already declares grading_dimensions — but DSH is
+    deliberately excluded from GRADABLE_WRITING_PROFILE_IDS (no DSH content/
+    grading pipeline exists yet), so it must still 501, never silently grade
+    against another exam's rubric."""
+    payload = _writing_payload("dsh", "tp_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 501
 
 
@@ -193,4 +236,100 @@ def test_speaking_unsupported_profile_rejected(client: TestClient) -> None:
 
 def test_speaking_requires_token(client: TestClient) -> None:
     r = client.post("/german-exam/speaking", json=_speaking_payload("telc_c1_hochschule"))
+    assert r.status_code == 401
+
+
+# ── /german-exam/grade-speaking-recording ─────────────────────────────────
+# A separate endpoint from /german-exam/speaking above: TestDaF's 7 independent
+# single-recording tasks go through the generic grade_productive()/SPEAKING_TYPES
+# contract (german_exam_testdaf_speaking.py), never telc's interactive partner-
+# dialogue dispatch — the two request shapes are incompatible (see that module's
+# docstring). grade_testdaf_speaking_recording itself is monkeypatched here (it
+# has its own full unit coverage in test_german_exam_testdaf_speaking_grader.py);
+# this file only proves the router's gates.
+
+
+def _speaking_recording_payload(profile_id: str, part_id: str, **overrides) -> dict:
+    payload = {
+        "userId": USER,
+        "profileId": profile_id,
+        "partId": part_id,
+        "task": {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "Geben Sie Ihrem Freund einen Rat.", "sources": []},
+        "audioBase64": "eA==",
+        "mimeType": "audio/webm",
+        "durationSeconds": 10.0,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_grade_speaking_recording_testdaf_sprechen1_accepted(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.routers import german_exam as router_mod
+
+    monkeypatch.setattr(router_mod.testdaf_speaking, "grade_testdaf_speaking_recording", lambda *a, **kw: {
+        "kind": "practice_feedback", "dimensions": [{"id": "task_fulfilment", "feedback": "Gut.", "evidence": []}],
+    })
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("testdaf_digital", "sprechen_1"),
+    )
+    assert r.status_code == 200
+    assert r.json()["kind"] == "practice_feedback"
+
+
+def test_grade_speaking_recording_rejects_model_answer_task(client: TestClient) -> None:
+    payload = _speaking_recording_payload(
+        "testdaf_digital", "sprechen_1",
+        task={"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "x", "sources": [], "modelAnswer": "leaked"},
+    )
+    r = client.post("/german-exam/grade-speaking-recording", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_speaking_recording_unsupported_profile_rejected(client: TestClient) -> None:
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("not_a_real_profile", "sprechen_1"),
+    )
+    assert r.status_code == 400
+
+
+def test_grade_speaking_recording_telc_rejected_wrong_architecture(client: TestClient) -> None:
+    """TELC's sprechen_1 is presentation_summary_followup — the interactive
+    partner-dialogue shape handled by /german-exam/speaking above, not SPEAKING_TYPES.
+    It must 501 here, never silently grade through the wrong pipeline."""
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("telc_c1_hochschule", "sprechen_1"),
+    )
+    assert r.status_code == 501
+
+
+def test_grade_speaking_recording_goethe_rejected_not_the_recording_shape(client: TestClient) -> None:
+    """Goethe's sprechen_1 (presentation_with_followup) is architecturally closer to TELC's
+    interactive model than to TestDaF's independent recordings (see GRADING_AUDIT.md's
+    2026-10-04 follow-up) and has no official per-criterion weights either way — must 501 here,
+    never silently graded as if it were a TestDaF-shaped single recording."""
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("goethe_c1", "sprechen_1"),
+    )
+    assert r.status_code == 501
+
+
+def test_grade_speaking_recording_dsh_rejected_not_in_allowlist(client: TestClient) -> None:
+    """DSH's sprechen_1 is its own oral task type (TASK_TYPE_ORAL), not a
+    SPEAKING_TYPES productive task — stays 501 until DSH has a real grader."""
+    r = client.post(
+        "/german-exam/grade-speaking-recording", headers=AUTH,
+        json=_speaking_recording_payload("dsh", "sprechen_1"),
+    )
+    assert r.status_code == 501
+
+
+def test_grade_speaking_recording_requires_token(client: TestClient) -> None:
+    r = client.post(
+        "/german-exam/grade-speaking-recording",
+        json=_speaking_recording_payload("testdaf_digital", "sprechen_1"),
+    )
     assert r.status_code == 401

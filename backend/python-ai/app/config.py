@@ -31,6 +31,19 @@ class Settings(BaseSettings):
     # gpt-4o got all 22 placeholders right on 5/5 trials — reuses the
     # existing generic "strong" tier rather than inventing a new one.
     german_exam_model_stage_a: str = Field("gpt-4o", alias="GERMAN_EXAM_MODEL_STAGE_A")
+    # Sprachbausteine's 22-item cloze semantic verification intermittently exhausts its
+    # entire completion-token budget on hidden reasoning before emitting any JSON — confirmed
+    # by two live diagnostic runs (0/10 and 0/5 approved); chunking (german_exam_semantic_chunked.py)
+    # alone does not fix this since measured reasoning use doesn't scale down with chunk size
+    # (see german_exam_inventory.py's refill-exclusion comment for the full root cause). Unset
+    # (default None): behavior is completely unchanged. Set to a lower effort (e.g. "low") to make
+    # the chunked verifier retry a structurally-failed chunk once at this reduced effort, in the
+    # SAME token budget, before falling back to its existing split-in-half behavior. This trades
+    # some verification rigor for reliability — do not set this in production until a live-credentialed
+    # run confirms it reliably yields usable JSON without missing defects the current effort catches.
+    sprachbausteine_verifier_degraded_reasoning_effort: str | None = Field(
+        None, alias="SPRACHBAUSTEINE_VERIFIER_DEGRADED_REASONING_EFFORT"
+    )
     # Reasoning effort for o-series strong models (low | medium | high).
     # "low" is faster/cheaper; "medium" is the safe default that solves the
     # multi-phase kinematics correctly. Ignored for non-reasoning models.
@@ -136,6 +149,10 @@ class Settings(BaseSettings):
     qwen_tts_model_version: str = Field("qwen3-tts-12hz-0.6b-base-v1", alias="QWEN_TTS_MODEL_VERSION")
     qwen_tts_voice: str = Field("minallo-de-1", alias="QWEN_TTS_VOICE")
     tts_audio_bucket: str = Field("generated-audio", alias="TTS_AUDIO_BUCKET")
+    # Private bucket for exam video assets (e.g. TestDaF Hören video tasks). Infrastructure
+    # only: nothing in this codebase produces video; assets are supplied by a separate,
+    # human-approved acquisition step before any video part can be enabled.
+    exam_video_bucket: str = Field("generated-video", alias="EXAM_VIDEO_BUCKET")
     # How many segments this service generates against Qwen at once for one
     # /tts/generate-batch call. This is a SEPARATE, tighter backstop than
     # qwen-tts's own QWEN_TTS_MAX_CONCURRENCY (which caps true model-level

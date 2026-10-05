@@ -131,6 +131,21 @@ TP_RUBRIC = {
 # OFFICIAL §10(2): only a monolingual dictionary in paper form; no other aids.
 _WRITTEN_AIDS = "monolingual_dictionary_paper_only"
 
+# OFFICIAL §11c: the seven criteria the MPO itself names for the oral exam. Single source of truth
+# for BOTH the descriptive constraints.assessmentCriteria citation and the operational
+# grading_dimensions the generic rubric machinery keys off (german_exam_productive.py,
+# german_exam_writing_grading.py, german_exam_testdaf_speaking.py) — one tuple, used twice, mirrors
+# TP_CONTENT_DIMENSIONS/TP_LANGUAGE_DIMENSIONS's own pattern above, so the two can never drift apart
+# the way they previously did (grading_dimensions had been set to six names borrowed from the
+# generic cross-exam speaking skill-tag vocabulary — _ORAL_TAGS/telc's _SPEAKING_TAGS — instead of
+# from this exam's own official criteria). The MPO publishes no per-criterion numeric weights here;
+# none are invented (ScoringSpec.criteria_max_points stays unset on _ORAL below).
+ORAL_ASSESSMENT_CRITERIA = (
+    "content_appropriateness", "comprehensibility", "independence_of_statements",
+    "conversational_behaviour", "linguistic_correctness", "lexical_differentiation",
+    "pronunciation_and_intonation",
+)
+
 _HV = PartBlueprint(
     part_id="hv_1", module="listening", title="Hörverstehen: Vortrag verstehen und verarbeiten",
     task_type=TASK_TYPE_HV,
@@ -233,14 +248,11 @@ _ORAL = PartBlueprint(
         "deliveryModes": ("in_person", "online_remote"),
         "preparationAids": _WRITTEN_AIDS,
         # OFFICIAL §11c
-        "assessmentCriteria": ("content_appropriateness", "comprehensibility", "independence_of_statements",
-                               "conversational_behaviour", "linguistic_correctness", "lexical_differentiation",
-                               "pronunciation_and_intonation"),
+        "assessmentCriteria": ORAL_ASSESSMENT_CRITERIA,
         "assessment": ASSESSMENT["speaking"],
     },
     allowed_skill_tags=_ORAL_TAGS, allowed_adaptations=(),
-    grading_dimensions=("task_fulfilment", "fluency", "interaction", "grammar_accuracy", "vocabulary_range",
-                        "pronunciation"),
+    grading_dimensions=ORAL_ASSESSMENT_CRITERIA,
     scoring=ScoringSpec(max_points=ORAL_MAX_POINTS, mode=SCORING_RUBRIC), available=False,
 )
 

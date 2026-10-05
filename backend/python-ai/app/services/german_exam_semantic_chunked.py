@@ -24,6 +24,14 @@ chunk triggers a single split of that chunk (8 -> 4+4, 7 -> 4+3), with the
 same fixed cap for each half. A legitimate semantic rejection is a
 successful verifier call and is never retried here. Depth is one; a failing
 half fails the verification (no partial success).
+
+Optional degraded-effort retry: if settings.sprachbausteine_verifier_degraded_reasoning_effort
+is set, a structurally-failed chunk is first retried ONCE, unsplit, at that reduced
+reasoning_effort in the SAME token cap, on the theory that less hidden reasoning leaves more
+of the budget for the actual JSON. Only if that retry ALSO fails structurally does the chunk
+proceed to the existing split fallback (at the default effort). Unset (the default), this
+stage never runs and behavior is exactly as before. This is a lever for a future
+live-credentialed run to evaluate, not a decision this module makes on its own.
 """
 
 from __future__ import annotations
@@ -33,6 +41,7 @@ import time
 from concurrent.futures import Future, wait
 from typing import Any, Callable
 
+from ..config import get_settings
 from . import gen_timing
 from .german_exams import PartBlueprint
 from .german_exam_semantic_verify import ItemSemanticResult, SemanticIssue, SemanticVerificationResult
@@ -80,11 +89,19 @@ class _Run:
         self.verify_fn = verify_fn
         self.timer = gen_timing.current()
 
-    def call(self, questions: list[dict[str, Any]], cap: int, label: dict[str, Any]) -> tuple[SemanticVerificationResult, str | None]:
-        """One existing-verifier call over a subset of the questions."""
+    def call(
+        self, questions: list[dict[str, Any]], cap: int, label: dict[str, Any],
+        reasoning_effort: str | None = None,
+    ) -> tuple[SemanticVerificationResult, str | None]:
+        """One existing-verifier call over a subset of the questions. reasoning_effort is
+        omitted entirely (not passed as None) unless a caller explicitly overrides it, so a
+        test double with the old two-argument call signature keeps working untouched."""
         ids = [q["questionId"] for q in questions]
         started = time.perf_counter()
-        result = self.verify_fn(self.part, {**self.content, "questions": questions}, max_tokens=cap)
+        kwargs: dict[str, Any] = {"max_tokens": cap}
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
+        result = self.verify_fn(self.part, {**self.content, "questions": questions}, **kwargs)
         reason = _structural_failure_reason(result, ids)
         usage = getattr(result, "usage", None) or {}
         entry = {
@@ -192,6 +209,38 @@ def verify_semantic_chunked(
                 outcomes[i] = [result]
             else:
                 failed.append(i)
+
+        # Optional, OFF by default: one unsplit retry of each failed chunk at a reduced
+        # reasoning effort, in the SAME token cap, before falling back to splitting. See the
+        # module docstring and config.py's sprachbausteine_verifier_degraded_reasoning_effort.
+        degraded_effort = get_settings().sprachbausteine_verifier_degraded_reasoning_effort
+        if degraded_effort and failed:
+            if run.timer is not None and run.timer.remaining_s() <= 1:
+                raise gen_timing.GenerationBudgetExceeded(
+                    "generation time budget exhausted before verifier degraded-effort retry")
+            degraded: dict[int, Future] = {
+                i: pool.submit(
+                    run.call, chunks[i], cap,
+                    {"chunkIndex": i, "fallback": False, "degradedRetry": True}, degraded_effort,
+                )
+                for i in failed
+            }
+            _wait_all(run, list(degraded.values()))
+            still_failed: list[int] = []
+            for i in failed:
+                try:
+                    result, reason = degraded[i].result()
+                except gen_timing.GenerationBudgetExceeded:
+                    raise
+                except Exception:  # noqa: BLE001
+                    log.exception("semantic verifier degraded-effort retry chunk %s raised", i)
+                    still_failed.append(i)
+                    continue
+                if reason is None:
+                    outcomes[i] = [result]
+                else:
+                    still_failed.append(i)
+            failed = still_failed
 
         # ONE bounded fallback: split only the structurally failed chunk(s); the
         # successful chunks are never re-run.

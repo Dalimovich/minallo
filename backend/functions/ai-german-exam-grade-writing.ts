@@ -56,6 +56,33 @@ interface GradeWritingResponseBody {
   error?: string;
 }
 
+interface WritingShapeInput {
+  topicId: unknown;
+  selectedTopic: Record<string, unknown> | undefined;
+  task: Record<string, unknown> | undefined;
+}
+
+/** Request-shape check only; python-ai validates the task/topic against the resolved part. */
+export function validateGradeWritingShape({ topicId, selectedTopic, task }: WritingShapeInput): string | null {
+  // Productive-task shape (e.g. TestDaF): a single generated task instead of a TELC topic choice.
+  if (task !== undefined && task !== null) {
+    if (typeof task !== 'object' || Array.isArray(task) || JSON.stringify(task).length > 60000) {
+      return 'task must be an object';
+    }
+    return null;
+  }
+  if (!selectedTopic || typeof selectedTopic !== 'object' || Array.isArray(selectedTopic) ||
+      selectedTopic.questionId !== topicId ||
+      !Array.isArray(selectedTopic.statements) || selectedTopic.statements.length !== 2 ||
+      !selectedTopic.statements.every(s => typeof s === 'string' && s.trim() && s.length <= 2000) ||
+      !['title', 'communicativeSituation', 'taskInstructions'].every(key =>
+        typeof selectedTopic[key] === 'string' && (selectedTopic[key] as string).trim().length > 0 &&
+        (selectedTopic[key] as string).length <= 6000)) {
+    return 'selectedTopic with title, situation and instructions is required';
+  }
+  return null;
+}
+
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
   if (event.httpMethod !== 'POST') return fail(405, 'Method not allowed');
@@ -98,15 +125,10 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const writingCoachTaskTypeRaw = body.writingCoachTaskType;
   const text = body.text;
   const selectedTopic = body.selectedTopic as Record<string, unknown> | undefined;
-  if (!selectedTopic || typeof selectedTopic !== 'object' || Array.isArray(selectedTopic) ||
-      selectedTopic.questionId !== topicId ||
-      !Array.isArray(selectedTopic.statements) || selectedTopic.statements.length !== 2 ||
-      !selectedTopic.statements.every(s => typeof s === 'string' && s.trim() && s.length <= 2000) ||
-      !['title', 'communicativeSituation', 'taskInstructions'].every(key =>
-        typeof selectedTopic[key] === 'string' && (selectedTopic[key] as string).trim().length > 0 &&
-        (selectedTopic[key] as string).length <= 6000)) {
-    return fail(400, 'selectedTopic with title, situation and instructions is required');
-  }
+  const task = body.task as Record<string, unknown> | undefined;
+  const hasTask = task !== undefined && task !== null;
+  const shapeError = validateGradeWritingShape({ topicId, selectedTopic, task });
+  if (shapeError) return fail(400, shapeError);
 
   if (!isRegisteredExamProfileId(profileId)) {
     return fail(400, 'invalid or unsupported profileId');
@@ -146,7 +168,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       topicId,
       generationId: typeof generationId === 'string' ? generationId : null,
       writingCoachTaskType,
-      selectedTopic,
+      ...(hasTask ? { task } : { selectedTopic }),
       text
     },
     GRADE_UPSTREAM_TIMEOUT_MS

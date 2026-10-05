@@ -1,7 +1,12 @@
-import {renderProductiveSources,renderFeedback,type ProductivePart,type ProductiveContent,type ProductiveGrader} from './productive-task.js';
+import {renderProductiveSources,renderFeedback,type ProductivePart,type ProductiveContent,type Feedback} from './productive-task.js';
+// No recording is ever uploaded to a storage handle and graded in a second call — one combined
+// submitRecording(blob, durationSeconds) sends the audio directly (base64, matching telc's own
+// german_exam_speaking_practice.transcribe() precedent) and gets the final feedback back,
+// nothing persisted server-side. See speaking-grader.ts for the real implementation.
+export type RecordingSubmitter=(blob:Blob,durationSeconds:number,signal:AbortSignal)=>Promise<Feedback>;
 export interface RecordingDependencies {
   getMedia:()=>Promise<MediaStream>; recorder:(stream:MediaStream)=>MediaRecorder;
-  upload:(blob:Blob,signal:AbortSignal)=>Promise<{recordingId:string}>; grader:ProductiveGrader;
+  submitRecording:RecordingSubmitter;
   now:()=>number;
 }
 export function mountSpeaking(root:HTMLElement,part:ProductivePart,c:ProductiveContent,dependencies:Partial<RecordingDependencies>={}):()=>void {
@@ -9,7 +14,7 @@ export function mountSpeaking(root:HTMLElement,part:ProductivePart,c:ProductiveC
   const seconds=part.constraints.speakingSeconds;const policy=part.constraints.recordingPolicy;
   if(!seconds||!policy)throw new Error('Missing recording policy');
   const deps:RecordingDependencies={getMedia:()=>navigator.mediaDevices.getUserMedia({audio:true}),recorder:s=>new MediaRecorder(s),
-    upload:async()=>{throw new Error('Upload is not connected');},grader:async()=>{throw new Error('Grader is not connected');},now:Date.now,...dependencies};
+    submitRecording:async()=>{throw new Error('Grading is not connected yet');},now:Date.now,...dependencies};
   const controller=new AbortController();let disposed=false;let stream:MediaStream|undefined;let recorder:MediaRecorder|undefined;
   let phase='idle';let deadline=0;let started=0;let duration=0;let blob:Blob|undefined;let previewUrl:string|undefined;let chunks:Blob[]=[];
   const status=document.createElement('p');status.setAttribute('role','status');status.textContent='Microphone not requested';
@@ -38,9 +43,8 @@ export function mountSpeaking(root:HTMLElement,part:ProductivePart,c:ProductiveC
   };
   stop.onclick=()=>{if(policy.manualStopAllowed)finish();};
   retry.onclick=()=>{if(!policy.retryAllowed||!['preview','error'].includes(phase))return;clearPreview();phase='idle';start.disabled=false;submit.disabled=true;retry.disabled=true;sources.hidden=false;status.textContent='Ready for a new recording';};
-  submit.onclick=async()=>{if(disposed||!blob||!['preview','error'].includes(phase))return;phase='submitting';submit.disabled=true;retry.disabled=true;status.textContent='Uploading recording?';
-    try{const uploaded=await deps.upload(blob,controller.signal);if(disposed)return;if(!uploaded.recordingId)throw new Error('Missing recording id');status.textContent='Assessing recording?';
-      const result=await deps.grader({recordingId:uploaded.recordingId,durationSeconds:duration},controller.signal);if(disposed)return;
+  submit.onclick=async()=>{if(disposed||!blob||!['preview','error'].includes(phase))return;phase='submitting';submit.disabled=true;retry.disabled=true;status.textContent='Submitting recording for assessment?';
+    try{const result=await deps.submitRecording(blob,duration,controller.signal);if(disposed)return;
       if(result.dimensions.some(d=>d.evidence.some(e=>typeof e.startSeconds!=='number'||e.startSeconds<0||e.startSeconds>=duration)))throw new Error('Invalid audio evidence');
       renderFeedback(feedback,part,result);phase='submitted';status.textContent='Submitted';
     }catch{if(!disposed){phase='error';submit.disabled=false;retry.disabled=!policy.retryAllowed;status.textContent='Upload or grading failed. Your recording remains available to retry.';}}

@@ -74,3 +74,32 @@ def test_generate_speaking_part_dispatches_by_part_id_not_profile() -> None:
     import inspect
     source = inspect.getsource(generate_speaking_part)
     assert 'part.part_id == "sprechen_1"' in source
+
+
+# ── Grading stays blocked: per-criterion weights AND turn-structure are both unresolved ──
+# (see audit/exam-correctness/GRADING_AUDIT.md's 2026-10-04 follow-up). Neither existing speaking
+# grading path may silently absorb Goethe without a deliberate decision — these pin that exactly,
+# so generalizing either path makes ONE of these fail first, not production.
+
+
+def test_goethe_speaking_task_types_are_not_the_testdaf_independent_recording_shape() -> None:
+    from app.services.german_exam_productive import SPEAKING_TYPES
+
+    assert "presentation_with_followup" not in SPEAKING_TYPES
+    assert "guided_pair_discussion" not in SPEAKING_TYPES
+
+
+def test_goethe_not_in_either_speaking_gradable_allowlist() -> None:
+    from app.services.german_exam_speaking_practice import GRADABLE_SPEAKING_PROFILE_IDS
+    from app.services.german_exam_testdaf_speaking import GRADABLE_SPEAKING_RECORDING_PROFILE_IDS
+
+    assert "goethe_c1" not in GRADABLE_SPEAKING_PROFILE_IDS
+    assert "goethe_c1" not in GRADABLE_SPEAKING_RECORDING_PROFILE_IDS
+
+
+def test_goethe_sprechen_parts_declare_no_official_point_scale() -> None:
+    """Confirms the profile still deliberately omits per-criterion weights (Modellsatz
+    Prüferblätter not in this repo) — scoring=None, unlike Goethe's own Schreiben parts which do
+    have criteria_max_points once their rubric IS officially sourced."""
+    for part in (SPRECHEN_1, SPRECHEN_2):
+        assert part.scoring is None

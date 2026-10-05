@@ -36,21 +36,28 @@ def _invalid():
 
 
 class Fake:
-    """Records every call; per-call behavior chosen by a predicate on the chunk's ids."""
+    """Records every call; per-call behavior chosen by a predicate on the chunk's ids.
 
-    def __init__(self, behave=None, delays=None):
+    behave_effort, if given, decides the outcome of any call that received an explicit
+    reasoning_effort override (the degraded-effort retry) instead of behave; calls without
+    an override (primary calls, split-fallback halves) are unaffected and still use behave."""
+
+    def __init__(self, behave=None, delays=None, behave_effort=None):
         self.calls: list[tuple[list[str], int | None]] = []
+        self.efforts: list[str | None] = []
         self.lock = threading.Lock()
         self.behave = behave or (lambda ids, n: "ok")
+        self.behave_effort = behave_effort
         self.delays = delays or {}
 
-    def __call__(self, part, content, max_tokens=None):
+    def __call__(self, part, content, max_tokens=None, reasoning_effort=None):
         ids = [q["questionId"] for q in content["questions"]]
         with self.lock:
             self.calls.append((ids, max_tokens))
+            self.efforts.append(reasoning_effort)
             n = len(self.calls)
         time.sleep(self.delays.get(ids[0], 0))
-        mode = self.behave(ids, n)
+        mode = self.behave_effort(ids, reasoning_effort) if (reasoning_effort is not None and self.behave_effort) else self.behave(ids, n)
         if mode == "ok":
             return _ok(ids)
         if mode == "invalid":
@@ -132,6 +139,59 @@ def test_g_failed_fallback_half_fails_cleanly_with_no_further_split():
     assert result.passed is False and result.items == []
     assert result.part_wide_issues[0].code == "VERIFIER_RESPONSE_INVALID"
     assert result.terminal_verifier_failure is True
+
+
+def test_degraded_effort_retry_is_off_by_default(monkeypatch):
+    # Real settings (no env var set in the test environment): the retry stage must not run at all.
+    f = Fake(behave=lambda ids, n: "invalid" if len(ids) == 7 and ids[0] == "q9" and len(f.calls) <= 3 else "ok")
+    result = ch.verify_semantic_chunked(PART, _content(), f)
+    assert len(f.calls) == 5, "unconfigured: identical to test_f, straight to the split fallback"
+    assert all(effort is None for effort in f.efforts)
+    assert result.passed
+
+
+def test_degraded_effort_retry_fixes_a_structural_failure_without_splitting(monkeypatch):
+    monkeypatch.setattr(ch, "get_settings", lambda: SimpleNamespace(sprachbausteine_verifier_degraded_reasoning_effort="low"))
+    f = Fake(behave=lambda ids, n: "invalid", behave_effort=lambda ids, effort: "ok" if effort == "low" else "invalid")
+    result = ch.verify_semantic_chunked(PART, _content(), f)
+    assert len(f.calls) == 6, "3 primary (all fail) + 3 degraded retries (all succeed); no split"
+    assert f.efforts.count("low") == 3 and f.efforts.count(None) == 3
+    assert result.passed and [i.item_id for i in result.items] == IDS
+
+
+def test_degraded_effort_retry_still_failing_falls_through_to_the_existing_split(monkeypatch):
+    monkeypatch.setattr(ch, "get_settings", lambda: SimpleNamespace(sprachbausteine_verifier_degraded_reasoning_effort="low"))
+    f = Fake(
+        behave=lambda ids, n: "invalid" if len(ids) == 7 and ids[0] == "q9" else "ok",
+        behave_effort=lambda ids, effort: "invalid",
+    )
+    result = ch.verify_semantic_chunked(PART, _content(), f)
+    assert len(f.calls) == 6, "3 primary (one fails) + 1 degraded retry (fails) + 2 split halves (succeed)"
+    assert f.efforts.count("low") == 1, "only the one failed chunk's degraded retry runs, never the split halves"
+    assert result.passed and [i.item_id for i in result.items] == IDS
+
+
+def test_verify_semantic_accepts_an_explicit_reasoning_effort_override(monkeypatch):
+    from app.config import get_settings
+    from app.services import german_exam_semantic_verify as sv
+    from app.services.german_exams import get_part
+
+    part = get_part("telc_c1_hochschule", "language_elements", "sprachbausteine_1")
+    seen = {}
+
+    def fake_chat_json(**kw):
+        seen.update(kw)
+        return SimpleNamespace(data=None, completion_tokens=0, reasoning_tokens=0)
+
+    monkeypatch.setattr(sv, "chat_json", fake_chat_json)
+    questions = [{"questionId": f"q{i}", "gapId": f"g{i}", "options": ["a", "b", "c", "d"], "correctIndex": 0,
+                  "category": "grammar", "skillTags": ["grammar"], "difficulty": "c1"} for i in range(1, 9)]
+    content = {"text": {"title": "t", "paragraphs": ["p"], "gaps": []}, "questions": questions}
+    sv.verify_semantic(part, content, max_tokens=5382, reasoning_effort="low")
+    assert seen["reasoning_effort"] == "low"
+    sv.verify_semantic(part, content, max_tokens=5382)
+    model = get_settings().german_exam_model
+    assert seen["reasoning_effort"] == ("medium" if model.startswith("gpt-5") else None), "omitted: back to the default policy"
 
 
 @pytest.mark.parametrize("mode,reason", [("missing", "gap_id_mismatch"), ("duplicate", "duplicate_gap_id"), ("unexpected", "gap_id_mismatch")])

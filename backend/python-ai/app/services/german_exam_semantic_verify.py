@@ -420,6 +420,72 @@ def _verify_prompt_goethe_schreiben(part: PartBlueprint, content: dict[str, Any]
     return system, user
 
 
+def _verify_prompt_reading_summary_error_detection(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    item_count = part.constraints.get("itemCount", 3)
+    system = _base_verifier_preamble(part).replace("German listening exercise", "German reading exercise").replace(
+        "supplied transcript", "supplied source text/graphic"
+    ) + (
+        "\n\nThis is reading_summary_error_detection (TestDaF-style Lesen Teil 7, Fehler in "
+        "Zusammenfassung erkennen): a summary's sentences each restate a claim from the source, and "
+        f"exactly {item_count} of them (named in correctIds) are content-wise WRONG — they contradict or "
+        "misstate the source; every other sentence must be a genuinely accurate restatement. For each "
+        "sentence (item) judge independently from the supplied source ONLY: does it accurately reflect "
+        "what the source states (not erroneous), or does it contradict/distort it (erroneous)? Fill "
+        "audit.isErroneous with your own independent verdict — a mismatch against correctIds is reported "
+        "automatically as TRISTATE_VERDICT_MISMATCH. Use TRIVIAL_ITEM if a sentence's error is obvious "
+        "without checking the source at all, and OFF_LEVEL_CONTENT if the register isn't C1-appropriate. "
+        "Part-wide: INSUFFICIENT_SOURCE_CONTENT if the source doesn't give enough basis to judge every "
+        "sentence; PART_WIDE_INCOHERENCE if the source and summary don't form one coherent topic."
+    )
+    payload = {"sources": content.get("sources") or [], "questions": content.get("questions") or [], "correctIds": content.get("correctIds")}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
+def _verify_prompt_paragraph_ordering(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
+    """No elif branch in _verification_schema/_apply_audits for this task type — it uses the generic
+    duplicateItemIds audit fallback, same as _verify_prompt_goethe_schreiben, so (like that function)
+    this writes its own complete prompt rather than _base_verifier_preamble (whose example output
+    doesn't show the audit field a strict schema call actually requires)."""
+    item_count = part.constraints.get("itemCount", 5)
+    system = (
+        "You are an INDEPENDENT exam-item verifier for a GENERATED German reading exercise "
+        f"({part.task_type}, TestDaF-style Lesen Teil 2, Textabschnitte ordnen). You are given "
+        f"{item_count} paragraphs and correctOrder (a list of questionId stating the ONE intended "
+        "correct reading order). You must NOT improve, rewrite, or complete the exercise. Judge ONLY "
+        "whether correctOrder is genuinely the UNIQUE correct order. Do not request or output hidden "
+        "reasoning/chain-of-thought — give only a concise issue code, one-sentence message, and evidence "
+        "references. Reply with ONLY valid JSON, no markdown fences, no commentary.\n\n"
+        f"Allowed issue codes — you MUST only use codes from this exact list, never invent new ones: "
+        f"{sorted(SEMANTIC_ISSUE_CODES)}.\n\n"
+        "For each paragraph (item) verify it genuinely belongs at its exact position in correctOrder: "
+        "does it follow logically and cohesively — via an explicit connector, pronoun, or reference — "
+        "from the paragraph immediately before it, and lead naturally into the paragraph immediately "
+        "after it (the first paragraph only needs to open the topic; the last only needs to follow from "
+        "the one before it)? If a paragraph could equally well sit in a DIFFERENT position without "
+        "breaking any connector or reference — e.g. two paragraphs could be swapped, or a paragraph "
+        "would fit equally well elsewhere — use AMBIGUOUS_MAPPING with evidence.questionIds listing "
+        "every OTHER paragraph it could swap with. Use DUPLICATE_INFORMATION (via the item's own "
+        "audit.duplicateItemIds) if two paragraphs restate the same point. Part-wide: "
+        "PART_WIDE_INCOHERENCE if the paragraphs don't form one coherent, original, C1-level text when "
+        "read in correctOrder, or the register isn't C1-appropriate.\n\n"
+        "Output JSON shape exactly:\n"
+        "{\n"
+        '  "passed": true,\n'
+        '  "partWideIssues": [],\n'
+        '  "items": [{"questionId": "p1", "audit": {"duplicateItemIds": []}, "passed": true, "issues": []}]\n'
+        "}\n"
+        "Include EVERY paragraph's questionId from the supplied content in the items array, even ones "
+        'with no issues (passed: true, issues: []). severity is "error" (blocks acceptance) or "warning" '
+        "(informational, does not block acceptance). Set an item's passed to true exactly when it has no "
+        "error issues. Set overall passed to true exactly when all items pass and no part-wide error "
+        "exists. A warning alone must not set either passed flag to false."
+    )
+    payload = {"questions": content.get("questions") or [], "correctOrder": content.get("correctOrder")}
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
+
+
 def _verify_prompt_sprachbausteine(part: PartBlueprint, content: dict[str, Any]) -> tuple[str, str]:
     system = _base_verifier_preamble(part) + (
         "\n\nThis is cloze_mc4_language_elements (telc-style Sprachbausteine). You are given the full text "
@@ -587,6 +653,8 @@ _VERIFY_PROMPT_BUILDERS = {
     "sentence_completion_mc3": _verify_prompt_hv2,
     "structured_note_completion": _verify_prompt_hv3,
     "text_reconstruction_sentence_matching": _verify_prompt_lesen1,
+    "paragraph_ordering": _verify_prompt_paragraph_ordering,
+    "reading_summary_error_detection": _verify_prompt_reading_summary_error_detection,
     "section_statement_matching": _verify_prompt_lesen2,
     "multi_author_statement_matching_with_none": _verify_prompt_multi_author,
     "detail_tristate_with_global_heading": _verify_prompt_lesen3,
@@ -724,6 +792,8 @@ def _verification_schema(part: PartBlueprint, content: dict[str, Any]) -> dict[s
     elif part.task_type in _CLOZE_MC4_TASK_TYPES:
         audit = _object_schema({"optionVerdicts": {"type": "array", "items": {
             "type": "string", "enum": ["supported", "plausible_wrong", "implausible_wrong"]}}})
+    elif part.task_type == "reading_summary_error_detection":
+        audit = _object_schema({"isErroneous": {"type": "boolean"}})
     else:
         audit = _object_schema({"duplicateItemIds": strings})
     issues = {"type": "array", "items": issue}
@@ -844,6 +914,14 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
                     code = "AMBIGUOUS_MAPPING"
             else:
                 code = "VERIFIER_RESPONSE_INVALID"
+        elif part.task_type == "reading_summary_error_detection":
+            value = audit.get("isErroneous")
+            if type(value) is not bool:
+                code = "VERIFIER_RESPONSE_INVALID"
+            else:
+                expected = item.item_id in (content.get("correctIds") or [])
+                if value != expected:
+                    code = "TRISTATE_VERDICT_MISMATCH"
         else:
             values = audit.get("duplicateItemIds")
             if not isinstance(values, list) or any(not isinstance(v, str) or v not in questions or v == item.item_id for v in values):
@@ -857,7 +935,10 @@ def _apply_audits(result: SemanticVerificationResult, data: dict, part: PartBlue
     return result
 
 
-def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens: int | None = None) -> SemanticVerificationResult:
+def verify_semantic(
+    part: PartBlueprint, content: dict[str, Any], *,
+    max_tokens: int | None = None, reasoning_effort: str | None = None,
+) -> SemanticVerificationResult:
     """One batched call for the whole part. Deliberately does NOT receive the
     adaptation plan or topic-selection rationale — the verifier judges the
     frozen content on its own merits, not biased by why it was generated."""
@@ -974,9 +1055,13 @@ def verify_semantic(part: PartBlueprint, content: dict[str, Any], *, max_tokens:
         # unchanged (10000 floor) for every task type with <=15 items.
         item_count = len(content.get("questions") or [])
         verify_max_tokens = max_tokens if max_tokens is not None else max(10000, 6000 + item_count * 400)
+        # An explicit override (currently: the chunked verifier's bounded degraded-effort
+        # retry, see german_exam_semantic_chunked.py) replaces the default policy outright;
+        # unset, every caller keeps today's exact behavior.
+        effort = reasoning_effort if reasoning_effort is not None else ("medium" if model.startswith("gpt-5") else None)
         result = chat_json(system=system, user=user, max_tokens=verify_max_tokens,
                            model=model, json_schema=_verification_schema(part, content),
-                           reasoning_effort="medium" if model.startswith("gpt-5") else None)
+                           reasoning_effort=effort)
     except Exception:
         log.warning("Semantic verifier call failed", exc_info=True)
         return _parse_result(None, expected_ids)

@@ -295,12 +295,13 @@
             "presentationStyle": "preferably_descriptive"
           },
           "gradingDimensions": [
-            "task_fulfilment",
-            "fluency",
-            "interaction",
-            "grammar_accuracy",
-            "vocabulary_range",
-            "pronunciation"
+            "content_appropriateness",
+            "comprehensibility",
+            "independence_of_statements",
+            "conversational_behaviour",
+            "linguistic_correctness",
+            "lexical_differentiation",
+            "pronunciation_and_intonation"
           ],
           "id": "sprechen_1",
           "implemented": false,

@@ -233,6 +233,40 @@ def validate_lv_ws_bundle(lv: Mapping[str, Any], ws: Mapping[str, Any], lv_part:
             raise DshSourceMismatch(f"{item.get('itemId')}: quoted sentence is not the LV text at that span")
 
 
+# ---- Raw generated item -> validated domain object (shared by HV and LV generators) -----------
+def open_answer_item_from_generated(item_id: str, task_form: str, raw: Mapping[str, Any]) -> OpenAnswerItem:
+    """Converts one raw generated item (camelCase dict, the same shape _check_task_forms below
+    structurally checks) into a constructed OpenAnswerItem/ContentPoint. _check_task_forms only
+    confirms requiredPoints is non-empty and assessLanguage is not True — it deliberately does not
+    construct these dataclasses (data shapes only), so it never catches a duplicate point id, a
+    non-positive point value, or points that can't reach max_points. A GENERATOR must call this
+    too; it is not optional extra rigor, it is the actual per-item content-point validation."""
+    if not isinstance(raw, Mapping):
+        raise DshContentError(f"{item_id}: item must be an object")
+
+    def _point(p: Any) -> ContentPoint:
+        if not isinstance(p, Mapping):
+            raise DshContentError(f"{item_id}: content point must be an object")
+        return ContentPoint(
+            point_id=p.get("pointId"), description=p.get("description"),
+            points=p.get("points"), alternatives=tuple(p.get("alternatives") or ()),
+        )
+
+    required_raw = raw.get("requiredPoints")
+    if not isinstance(required_raw, list) or not required_raw:
+        raise DshContentError(f"{item_id}: requiredPoints must be a non-empty list")
+    required = tuple(_point(p) for p in required_raw)
+    optional = tuple(_point(p) for p in (raw.get("optionalPoints") or ()))
+    max_points = raw.get("maxPoints")
+    if max_points is None:
+        max_points = sum((p.points for p in required + optional), Fraction(0))
+    return OpenAnswerItem(
+        item_id=item_id, task_form=task_form, question=raw.get("question"), max_points=max_points,
+        required_points=required, optional_points=optional, grading_notes=raw.get("gradingNotes") or "",
+        assess_language=bool(raw.get("assessLanguage", False)),
+    )
+
+
 # ---- Structural validators per task type (content dicts a future generator must produce) ------
 def _check_task_forms(tasks: Any, allowed: tuple[str, ...], label: str) -> None:
     if not isinstance(tasks, list) or not tasks:
@@ -288,12 +322,39 @@ def validate_tp_content(content: Mapping[str, Any], part: PartBlueprint) -> None
         raise DshContentError("TP must reference its inputs (it may not be a free essay)")
 
 
+def validate_oral_content(content: Mapping[str, Any], part: PartBlueprint) -> None:
+    """Validates the Kurzvortrag's stimulus material (the short text/graphic input the learner
+    presents on, describes/summarises/compares/justifies/evaluates/takes a position on —
+    constraints["inputKinds"]/["languageActs"], both OFFICIAL per §11a,b) — structurally identical
+    to validate_tp_content's shape, since both are "an official input the learner must address,
+    never a free-standing essay/talk". This is the ONLY part of the DSH oral exam that is
+    pre-generated content at all: the ~15-minute conversation that follows is a live, unscripted
+    exchange (constraints["interactive"] is True), exactly like TestDaF's/Goethe's own interactive
+    speaking parts — there is no script for it to validate here. Grading (any mode), the
+    conversation's interaction architecture, and an examiner-dialogue simulation all remain FUTURE
+    work (see audit/dsh/IMPLEMENTATION_AUDIT.md section 5) and are NOT touched by this function."""
+    c = part.constraints
+    inputs = content.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        raise DshContentError("Oral needs at least one input (short text or graphic) for the Kurzvortrag")
+    for entry in inputs:
+        if entry.get("kind") not in c["inputKinds"]:
+            raise DshContentError(f"Oral input kind {entry.get('kind')!r} is not an official input")
+    acts = content.get("languageActs")
+    if not isinstance(acts, list) or not acts or any(a not in c["languageActs"] for a in acts):
+        raise DshContentError("Oral needs official language acts")
+    _text(content.get("instructions"), "instructions")
+    refs = content.get("inputRefs")
+    if not isinstance(refs, list) or not refs:
+        raise DshContentError("Oral task must reference its inputs (the Kurzvortrag is not a free talk)")
+
+
 def validate_dsh_task_content(task_type: str, content: Mapping[str, Any], part: PartBlueprint) -> None:
     """Deterministic structural validation. WS is validated with its LV via validate_lv_ws_bundle."""
     if task_type not in DSH_TASK_TYPES:
         raise DshContentError(f"{task_type!r} is not a DSH task type")
     if part.task_type != task_type:
-        raise DshContentError("part and task type do not match")
+        raise DshContentError("part and type do not match")
     if task_type == TASK_TYPE_HV:
         validate_hv_content(content, part)
     elif task_type == TASK_TYPE_LV:
@@ -303,7 +364,7 @@ def validate_dsh_task_content(task_type: str, content: Mapping[str, Any], part: 
     elif task_type == TASK_TYPE_WS:
         raise DshContentError("WS content is validated together with its LV: use validate_lv_ws_bundle")
     elif task_type == TASK_TYPE_ORAL:
-        raise NotImplementedError("DSH oral content validation is not implemented")
+        validate_oral_content(content, part)
 
 
 def grading_mode_for_module(module: str) -> str:

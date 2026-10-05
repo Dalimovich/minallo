@@ -13,12 +13,12 @@ from __future__ import annotations
 TASK_TYPES: dict[str, bool] = {
     # Reserved reusable interactions; generation/validation/rendering not implemented.
     "lexical_cloze": True,
-    "paragraph_ordering": False,
+    "paragraph_ordering": True,
     "reading_multiple_choice": True,
     "speech_act_matching": True,
     "statement_category_matching": True,
     "statement_concept_pair_matching": True,
-    "reading_summary_error_detection": False,
+    "reading_summary_error_detection": True,
     "listening_overview_completion": True,
     "listening_concept_pair_notes": True,
     "listening_summary_error_detection": True,
