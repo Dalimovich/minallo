@@ -384,6 +384,19 @@ def speaking_practice_endpoint(payload: SpeakingPracticeRequest) -> dict[str, An
 # is read or written by either endpoint below, and neither ever returns an official DSH score,
 # a DSH-1/2/3 level, or anything scaled onto dsh.WRITTEN_MAX_POINTS — see
 # german_exam_dsh_grading.py's own module docstring for why that conversion is not established.
+#
+# KNOWN, UNRESOLVED LIMITATION (audited 2026-10-05, not fixed this phase — see
+# german_exam_dsh_grading.py's module docstring and dsh_lv_hv_generate_endpoint's own docstring
+# below for the full accounting): dsh_lv_hv_generate_endpoint's response contains BOTH `content`
+# (stripped) AND `gradingContent` (the full, unstripped generated content, answer key included)
+# in the SAME HTTP response body. The browser DOES receive the answer key the moment generation
+# completes — strip_answer_key_for_learner only guarantees the RENDERER never sees or uses it; it
+# is not a network-level protection and must never be described as one. generationId is a fresh
+# uuid4 minted here and immediately forgotten server-side — it identifies nothing server-held; the
+# client is the only thing holding gradingContent between the two calls. Closing this needs
+# server-side generation storage (so the client only ever receives/holds an opaque reference, and
+# grade() looks the real content up by it) — deliberately not built in this phase (no new
+# persistence/DB schema was introduced), per repeated instruction across this session.
 
 _DSH_LV_HV_PART_SPECS: dict[str, tuple[str, str, Any]] = {
     "lv": ("reading", "lv_1", generate_dsh_lv_part),
@@ -404,15 +417,27 @@ class DshLvHvGenerateRequest(BaseModel):
 def dsh_lv_hv_generate_endpoint(payload: DshLvHvGenerateRequest) -> dict[str, Any]:
     """Generates one DSH LV or HV practice task. Returns a learner-safe `content` (every
     answer-key field — requiredPoints, optionalPoints, referenceAnswer, errorfulVariant,
-    gradingNotes — stripped by dsh_grading.strip_answer_key_for_learner) for rendering, plus an
-    opaque `gradingContent` (the full generated content) the caller must hold without rendering or
-    displaying it and resend, unmodified, to /german-exam/dsh/lv-hv/grade. No server-side storage
-    of generated content exists (no new persistence was introduced for this phase), so
-    gradingContent is this request/response cycle's only carrier of the answer key between the two
-    calls — see german_exam_dsh_grading.py's module docstring for the precise, honest limits of
-    this mitigation (it removes the answer key from the rendered/operative learner payload; it
-    does not make the raw HTTP response itself inaccessible to a learner inspecting network
-    traffic, which would need server-side storage to fully close)."""
+    gradingNotes — stripped by dsh_grading.strip_answer_key_for_learner) for rendering, plus
+    `gradingContent` (the FULL generated content, answer key included).
+
+    AUDITED FACT, not a hedge: this response's `gradingContent` field IS the complete answer key
+    and IS sent to the browser in this same response, the moment generation completes — a learner
+    reading raw network traffic (DevTools, a proxy) can read requiredPoints[].description,
+    referenceAnswer, errorfulVariant, and gradingNotes for every item right here, before any
+    submission ever happens. strip_answer_key_for_learner's guarantee is narrower and must not be
+    overstated: the object the RENDERER (mountDshOpenAnswer) receives and builds the UI from is
+    clean — `content`, never `gradingContent`, is what reaches that function, so nothing answer-
+    key-shaped enters the DOM. That is a real, tested property. "The browser never receives the
+    answer key" is NOT true and this docstring does not claim it. generationId is a fresh uuid4
+    minted here and immediately forgotten — no server-held state exists behind it; it is a
+    client-visible correlation label only, not a security boundary.
+
+    Closing the network-level exposure needs server-side generation storage (client receives only
+    an opaque reference; POST .../grade looks the real content up by it instead of trusting a
+    client-supplied payload) — not built in this phase: no new persistence/DB schema was
+    introduced, per repeated instruction. Until then this endpoint is a practice/sandbox tool
+    only, not a security boundary, exactly like every other unauthenticated-by-design aspect of
+    this DSH work staying behind available=False."""
     module, part_id, generator = _DSH_LV_HV_PART_SPECS[payload.part]
     profile = get_profile("dsh")
     part = get_part("dsh", module, part_id)

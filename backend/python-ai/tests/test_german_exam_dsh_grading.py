@@ -16,6 +16,7 @@ from app.services.german_exam_dsh_grading import (
     grade_dsh_open_answer_item,
     grade_dsh_open_answer_part,
     llm_content_matcher,
+    strip_answer_key_for_learner,
 )
 from app.services.german_exams.dsh_content_model import ContentPoint, DshContentError, OpenAnswerItem
 
@@ -216,3 +217,52 @@ def test_semantic_model_failure_during_part_grading_propagates_and_does_not_sile
 
     with pytest.raises(DshGradingError):
         grade_dsh_open_answer_part(content, {"q1": "x"}, matcher=failing_matcher)
+
+
+# ---- strip_answer_key_for_learner: regression for the audited, still-unresolved exposure ------
+# (the function's own guarantee is narrower than "no answer key reaches the browser" — see its
+# docstring and app/routers/german_exam.py's dsh_lv_hv_generate_endpoint docstring for exactly
+# what IS and is NOT protected. This pins the one thing it does guarantee.)
+_ANSWER_KEY_FIELDS = ("requiredPoints", "optionalPoints", "referenceAnswer", "errorfulVariant", "gradingNotes")
+
+
+def test_strip_answer_key_for_learner_removes_every_answer_key_field_from_every_item() -> None:
+    content = {
+        "sourceId": "src-1", "source": {"text": "ein Text"},
+        "tasks": [{"form": "questions", "items": [
+            {
+                "itemId": "q1", "question": "Frage?",
+                "requiredPoints": [{"pointId": "p1", "description": "secret content point", "points": 1}],
+                "optionalPoints": [{"pointId": "p2", "description": "another secret", "points": 1}],
+                "referenceAnswer": "the exact graded answer", "errorfulVariant": "the graded answer, misspelled",
+                "gradingNotes": "internal grading hint", "maxPoints": 1,
+            },
+        ]}],
+    }
+    stripped = strip_answer_key_for_learner(content)
+    item = stripped["tasks"][0]["items"][0]
+    assert set(item) == {"itemId", "question"}
+    for field in _ANSWER_KEY_FIELDS:
+        assert field not in item
+    serialized = str(stripped)
+    for secret in ("secret content point", "another secret", "the exact graded answer", "misspelled", "internal grading hint"):
+        assert secret not in serialized
+    # The source/lecture text is not an answer key and must survive.
+    assert stripped["source"]["text"] == "ein Text"
+
+
+def test_strip_answer_key_for_learner_handles_multiple_tasks_and_items() -> None:
+    content = {
+        "lectureText": "x",
+        "tasks": [
+            {"form": "questions", "items": [{"itemId": "a1", "question": "A?", "referenceAnswer": "secretA"}]},
+            {"form": "questions", "items": [
+                {"itemId": "b1", "question": "B1?", "referenceAnswer": "secretB1"},
+                {"itemId": "b2", "question": "B2?", "referenceAnswer": "secretB2"},
+            ]},
+        ],
+    }
+    stripped = strip_answer_key_for_learner(content)
+    all_items = [item for task in stripped["tasks"] for item in task["items"]]
+    assert {item["itemId"] for item in all_items} == {"a1", "b1", "b2"}
+    assert "secret" not in str(stripped)

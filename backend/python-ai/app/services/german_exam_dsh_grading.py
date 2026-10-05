@@ -186,14 +186,19 @@ def strip_answer_key_for_learner(content: Mapping[str, Any]) -> dict[str, Any]:
     unambiguous fix: the object a renderer receives and operates on to build the UI no longer
     carries that material.
 
-    What this does NOT do: make the full content unreachable. Grading still needs the complete,
-    original content (requiredPoints and all) to call the content_matcher against — with no
-    server-side storage of generated content in this phase (see app/routers/german_exam.py's
-    dsh/lv-hv endpoints), the only place that full content can come from at grading time is a
-    second round-trip through the caller, carried in a field the renderer never touches. A
-    learner who inspects raw network traffic rather than the rendered page could still read it
-    there; fully preventing that needs server-side generation storage, which this phase
-    deliberately does not add (see german_exam_dsh_grading.py's own module docstring on scope)."""
+    What this does NOT do, stated plainly rather than hedged: it does NOT make the answer key
+    unreachable over the network. app/routers/german_exam.py's dsh_lv_hv_generate_endpoint
+    returns this stripped `content` AND the full, unstripped original as `gradingContent` in the
+    very same HTTP response (grading needs that full content again later, and no server-side
+    storage of generated content exists in this phase to hold it instead). The browser DOES
+    receive the complete answer key, in that response, the moment generation completes — a
+    learner reading raw network traffic sees it regardless of what this function strips. The
+    property this function actually guarantees is narrower and real: the RENDERER
+    (dsh-open-answer-task.ts's mountDshOpenAnswer) only ever receives `content`, never
+    `gradingContent`, so nothing answer-key-shaped reaches the DOM or the rendered UI. Fully
+    closing the network-level exposure needs server-side generation storage (client holds only an
+    opaque reference; grading looks the real content up by it) — deliberately not added this
+    phase, per repeated instruction not to invent new persistence."""
     stripped_tasks = []
     for task in content.get("tasks") or ():
         stripped_items = [

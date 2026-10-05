@@ -18,6 +18,20 @@ function lvContent(){
   return {source:{text:'Dies ist ein Lesetext über Forschung.'},
     tasks:[{form:'questions',items:[{itemId:'q1',question:'Worum geht es?',requiredPoints:[{pointId:'p1',description:'Forschung',points:1}]}]}]};
 }
+// Simulates content that was NOT stripped server-side (defense in depth: the renderer itself
+// must never surface this, regardless of what the caller passes it) — distinctive secret marker
+// strings so a false negative (e.g. a field silently serialised into an attribute) is obvious.
+function unstrippedLvContentWithFullAnswerKey(){
+  return {source:{text:'Dies ist ein Lesetext über Forschung.'},
+    tasks:[{form:'questions',items:[{
+      itemId:'q1',question:'Worum geht es?',
+      requiredPoints:[{pointId:'p1',description:'SECRET_CONTENT_POINT_MARKER',points:1,alternatives:['SECRET_ALT_MARKER']}],
+      optionalPoints:[{pointId:'p2',description:'SECRET_OPTIONAL_MARKER',points:1}],
+      referenceAnswer:'SECRET_REFERENCE_ANSWER_MARKER',
+      errorfulVariant:'SECRET_ERRORFUL_VARIANT_MARKER',
+      gradingNotes:'SECRET_GRADING_NOTES_MARKER',
+    }]}]};
+}
 
 async function withPage(run){
   const browser=await chromium.launch({headless:true});
@@ -147,6 +161,25 @@ test('empty answers still submit for grading rather than being blocked client-si
     await page.getByRole('button',{name:'Antworten einreichen'}).click();
     await page.waitForFunction(()=>document.body.textContent.includes('inhaltliche Punkte'));
     assert.deepEqual(await page.evaluate(()=>window.__receivedAnswers),{});
+  });
+});
+
+test('answer-key fields never enter the DOM, before or after a successful submission, even if the caller passes unstripped content',async()=>{
+  await withPage(async page=>{
+    await page.evaluate(c=>{
+      const grade=()=>Promise.resolve({part:'lv',generationId:'g1',rawPoints:1,rawMaxPoints:1,percent:100,items:[],officialDshScore:null,officialScoreAvailable:false});
+      window.dispose=exports.mountDshOpenAnswer(document.querySelector('#root'),c,'lv',grade);
+    },unstrippedLvContentWithFullAnswerKey());
+    const before=await page.locator('#root').innerHTML();
+    for (const marker of ['SECRET_CONTENT_POINT_MARKER','SECRET_ALT_MARKER','SECRET_OPTIONAL_MARKER','SECRET_REFERENCE_ANSWER_MARKER','SECRET_ERRORFUL_VARIANT_MARKER','SECRET_GRADING_NOTES_MARKER']) {
+      assert.doesNotMatch(before,new RegExp(marker));
+    }
+    await page.getByRole('button',{name:'Antworten einreichen'}).click();
+    await page.waitForFunction(()=>document.body.textContent.includes('inhaltliche Punkte'));
+    const after=await page.locator('#root').innerHTML();
+    for (const marker of ['SECRET_CONTENT_POINT_MARKER','SECRET_ALT_MARKER','SECRET_OPTIONAL_MARKER','SECRET_REFERENCE_ANSWER_MARKER','SECRET_ERRORFUL_VARIANT_MARKER','SECRET_GRADING_NOTES_MARKER']) {
+      assert.doesNotMatch(after,new RegExp(marker));
+    }
   });
 });
 

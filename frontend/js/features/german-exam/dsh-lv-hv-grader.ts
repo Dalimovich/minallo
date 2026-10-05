@@ -26,11 +26,19 @@ export async function dshLvHvRequest<T>(path: string, body: unknown, signal?: Ab
 
 export interface DshLvHvGenerateResponse {
   part: 'lv' | 'hv';
+  // A fresh id minted per generate call with no server-held state behind it — a client-visible
+  // correlation label only, never a pointer to anything the server remembers. Do not treat it as
+  // a security boundary or as proof the server can look grading state up by it; it cannot.
   generationId: string;
   content: DshOpenAnswerContent;
-  // Opaque: must be held without rendering and resent verbatim to grade() below. Carries the
-  // answer key (requiredPoints/referenceAnswer/...) that `content` above has had stripped — see
-  // dsh-open-answer-task.ts's module docstring for why this is never passed to that renderer.
+  // AUDITED FACT: this field carries the FULL answer key (requiredPoints[].description,
+  // referenceAnswer, errorfulVariant, gradingNotes) that `content` above has had stripped, and it
+  // arrived in the browser in this very same response — reading raw network traffic for this
+  // call already exposes it, independent of anything below. The only guarantee callers get is
+  // that nothing in this codebase ever passes `gradingContent` to mountDshOpenAnswer or otherwise
+  // renders it — hold it in a closure (see createDshLvHvGrader) and nowhere else. Do not describe
+  // this as "the answer key never reaches the browser"; it does. Fully preventing that needs
+  // server-side generation storage, not built in this phase.
   gradingContent: unknown;
 }
 
