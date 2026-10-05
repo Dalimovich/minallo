@@ -126,7 +126,7 @@
             'Ask your 24/7 AI Tutor when a topic does not make sense'
           ]
         },
-        germanCard: {
+        activeStudyCard: {
           eyebrow: 'Active study',
           title: 'I want to stop rereading PDFs',
           desc: 'For students who want to turn passive reading into active recall, practice, and step-by-step learning.',
@@ -407,7 +407,7 @@
             'Den 24/7 KI-Tutor fragen, wenn ein Thema nicht sitzt'
           ]
         },
-        germanCard: {
+        activeStudyCard: {
           eyebrow: 'Aktiv lernen',
           title: 'Ich will PDFs nicht nur wieder lesen',
           desc: 'Fuer Studierende, die aus passivem Lesen aktives Erinnern, Ueben und Verstehen machen wollen.',
@@ -614,7 +614,7 @@
           ['trophy', 'Exam prep', 'Generate quizzes, flashcards, cheatsheets, lessons, and ExamForge practice.']
         ]
       },
-      german: {
+      'active-study': {
         title: 'Active study mode',
         subtitle: 'Stop rereading and start practicing',
         description: 'Use Minallo to move from long course files to active study: learn difficult topics, revise important concepts, and check your readiness before the exam.',
@@ -650,21 +650,21 @@
           ['timer', 'Fokus-Modus', 'Lerne mit Pomodoro-Sitzungen, Fortschritt und sichtbaren Lernserien.']
         ]
       },
-      german: {
-        title: 'Deutsch-Übungsbereich',
-        subtitle: 'Für täglichen Sprachfortschritt',
-        description: 'Ein eigener Bereich zum Deutschlernen mit Vokabeln, Grammatikhilfe, einfachen Erklärungen, Alltagsbeispielen und spielerischer Wiederholung.',
+      'active-study': {
+        title: 'Aktiver Lernmodus',
+        subtitle: 'Hoer auf nur zu lesen, fang an zu ueben',
+        description: 'Nutze Minallo, um von langen Kursdateien zu aktivem Lernen zu wechseln: schwierige Themen verstehen, wichtige Konzepte wiederholen und deine Pruefungsbereitschaft pruefen.',
         icon: 'languages',
         items: [
-          'Vokabelübungen mit einfachen Beispielen und Übersetzungen',
-          'Grammatikerklärungen für echtes Verständnis',
-          'Satzbeispiele für alltägliche Situationen auf Deutsch',
-          'Mini-Spiele und Wiederholungs-Challenges, damit Üben leichter zur Routine wird'
+          'Deep Learn fuer schwierige Themen',
+          'Karteikarten fuer Definitionen, Formeln und Konzepte',
+          'Quiz fuer schnelle Wissenschecks',
+          'ExamForge fuer pruefungsnahes Ueben'
         ],
         preview: [
-          ['languages', 'Deutsch-Coach', 'Baue Vokabeln, Grammatik, Sätze und Alltagsphrasen auf.'],
-          ['book-open', 'Beispiele & Phrasen', 'Übe mit einfachen Beispielen und nützlichen Alltagssätzen.'],
-          ['gamepad-2', 'Sprachspiele', 'Wiederhole Vokabeln mit kurzen Challenges.']
+          ['languages', 'Verstehen', 'Zerlege verwirrende Themen in einfachere Schritte.'],
+          ['book-open', 'Wiederholen', 'Verwandle langes Material in Cheatsheets und Karteikarten.'],
+          ['gamepad-2', 'Ueben', 'Nutze Quiz und ExamForge vor der echten Pruefung.']
         ]
       }
     }
