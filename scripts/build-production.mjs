@@ -69,6 +69,10 @@ if (!indexHtmlRaw.includes(LANDING_MARKER)) {
 const landingFragment = readFileSync(landingFragmentPath, 'utf8');
 writeFileSync(indexPath, indexHtmlRaw.replace(LANDING_MARKER, landingFragment));
 
+// Shared footer splice + sitemap.xml generation for the public SEO pages —
+// see scripts/build-seo.mjs and scripts/seo-pages-manifest.mjs.
+execFileSync(process.execPath, ['scripts/build-seo.mjs'], { stdio: 'inherit' });
+
 // This URL is public: browsers connect to it directly for streaming. Generate
 // it at build time so a host cutover does not require editing application code.
 const DEFAULT_AI_SERVICE_URL = 'https://python-ai.fly.dev';
