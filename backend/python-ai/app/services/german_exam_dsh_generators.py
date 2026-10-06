@@ -109,13 +109,19 @@ _LV_GENERATION_SHAPE = {
 def _lv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
     c = part.constraints
     shape = json.dumps(_LV_GENERATION_SHAPE, ensure_ascii=False)
+    target = c["textCharsMin"] + round((c["textCharsMax"] - c["textCharsMin"]) * 0.6)
     system = (
         "Generate ONE DSH (Deutsche Sprachprüfung für den Hochschulzugang) Leseverstehen (LV) "
         "reading-comprehension task in German, for the official 'questions' task form.\n\n"
         f"The text must be ORIGINAL, {c['textCharsMin']}-{c['textCharsMax']} characters including "
-        f"spaces, and {c['textCharacter'].replace('_', ' ')}. It must require NO specialist "
-        "knowledge beyond general academic literacy — a non-specialist, academically literate "
-        "reader must be able to understand it from the text alone.\n\n"
+        f"spaces, and {c['textCharacter'].replace('_', ' ')}. This length requirement is checked "
+        f"automatically and strictly: a text even slightly under {c['textCharsMin']} characters is "
+        f"rejected outright. Aim for approximately {target} characters — comfortably inside the "
+        "range, not merely at its edge. Reach this length by developing the topic across several "
+        "(4-6) distinct sub-aspects, each with genuine supporting detail, examples, or reasoning — "
+        "never through filler, repetition, or padding. It must require NO specialist knowledge "
+        "beyond general academic literacy — a non-specialist, academically literate reader must "
+        "be able to understand it from the text alone.\n\n"
         f"Produce exactly {_LV_ITEM_COUNT} open comprehension questions (task form \"questions\"). "
         "Each question must be answerable from the text ALONE, with exactly ONE defensible reading "
         "— never ambiguous, never requiring information the text does not state, never answerable "
@@ -129,7 +135,13 @@ def _lv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[s
         "ONE question across the whole task, also give an errorfulVariant: the exact same "
         "content as its referenceAnswer, rewritten with deliberate grammar/case/word-order "
         "mistakes — never a different answer, never a worse one content-wise, only worse "
-        "language (this proves content grading ignores language errors, so never skip it).\n\n"
+        "language (this proves content grading ignores language errors, so never skip it). "
+        "Before finalizing, re-read the text and verify every required-point description is a "
+        "precise, directly-grounded paraphrase of something the text actually and exactly states "
+        "— never your own summary, count, or categorization of the text's structure that could be "
+        "imprecise (e.g. do not describe 'two central questions' unless the text poses exactly "
+        "two) — and that each referenceAnswer explicitly addresses every one of its item's "
+        "required points.\n\n"
         f"Topic: {topic.get('label', '')}. Never mention being an AI or that this is a generated "
         "exercise within the text itself.\n\n"
         f"Return JSON only, in exactly this shape: {shape}"
@@ -338,6 +350,7 @@ _HV_GENERATION_SHAPE = {
 def _hv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[str, str]:
     c = part.constraints
     shape = json.dumps(_HV_GENERATION_SHAPE, ensure_ascii=False)
+    target = c["lectureCharsMin"] + round((c["lectureCharsMax"] - c["lectureCharsMin"]) * 0.6)
     system = (
         "Generate ONE DSH (Deutsche Sprachprüfung für den Hochschulzugang) Hörverstehen (HV) "
         "listening-comprehension task in German, written as the TRANSCRIPT of a spoken academic "
@@ -347,9 +360,14 @@ def _hv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[s
         "form.\n\n"
         f"The transcript must be ORIGINAL, {c['lectureCharsMin']}-{c['lectureCharsMax']} "
         "characters including spaces (measuring the transcript text, not an audio duration — none "
-        "is specified), and require NO specialist knowledge beyond general academic literacy — a "
-        "non-specialist, academically literate listener must be able to follow it from the "
-        "transcript alone.\n\n"
+        f"is specified). This length requirement is checked automatically and strictly: a "
+        f"transcript even slightly under {c['lectureCharsMin']} characters is rejected outright. "
+        f"Aim for approximately {target} characters — comfortably inside the range, not merely at "
+        "its edge. A spoken academic lecture naturally runs long: reach this length by developing "
+        "the topic across several (5-7) distinct sub-aspects, each with genuine supporting detail, "
+        "examples, or reasoning — never through filler, repetition, or padding. It must require NO "
+        "specialist knowledge beyond general academic literacy — a non-specialist, academically "
+        "literate listener must be able to follow it from the transcript alone.\n\n"
         f"Produce exactly {_HV_ITEM_COUNT} open comprehension questions (task form \"questions\"). "
         "Each question must be answerable from the transcript ALONE, with exactly ONE defensible "
         "reading — never ambiguous, never requiring information the transcript does not state, "
@@ -361,7 +379,13 @@ def _hv_generation_prompt(part: PartBlueprint, topic: dict[str, str]) -> tuple[s
         "AT LEAST ONE question across the whole task, also give an errorfulVariant: the exact "
         "same content as its referenceAnswer, rewritten with deliberate grammar/case/word-order "
         "mistakes — never a different answer, never a worse one content-wise, only worse "
-        "language (this proves content grading ignores language errors, so never skip it).\n\n"
+        "language (this proves content grading ignores language errors, so never skip it). "
+        "Before finalizing, re-read the transcript and verify every required-point description is "
+        "a precise, directly-grounded paraphrase of something the transcript actually and exactly "
+        "states — never your own summary, count, or categorization of its structure that could be "
+        "imprecise (e.g. do not describe 'two central questions' unless the transcript poses "
+        "exactly two) — and that each referenceAnswer explicitly addresses every one of its item's "
+        "required points.\n\n"
         f"Topic: {topic.get('label', '')}. Never mention being an AI or that this is a generated "
         "exercise within the transcript itself.\n\n"
         f"Return JSON only, in exactly this shape: {shape}"
