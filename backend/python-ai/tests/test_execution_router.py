@@ -288,8 +288,11 @@ def test_stream_courseless_study_plan_reaction_skips_workspace_pipeline(monkeypa
 
     monkeypatch.setattr(stream_router, "stream_answer", fake_stream_answer)
     monkeypatch.setattr(
-        stream_router, "generate_general_answer",
-        lambda *_a, **_k: {"answer": "Let's break the plan down step by step.", "model": "test"},
+        stream_router, "stream_general_answer",
+        lambda *_a, **_k: iter([
+            {"t": "Let's break the plan down step by step."},
+            {"done": True, "model": "test"},
+        ]),
     )
     monkeypatch.setattr(
         stream_router, "fetch_account_snapshot",

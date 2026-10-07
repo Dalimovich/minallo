@@ -22,7 +22,7 @@ import urllib.parse
 import uuid
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
-from typing import Any, NamedTuple
+from typing import Any, Callable, Iterator, NamedTuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -46,7 +46,7 @@ from ..services.answer_intent import (
 )
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
-from ..services.general_answer import generate_general_answer
+from ..services.general_answer import generate_general_answer, stream_general_answer
 from ..services.execution_router import (
     EscalationReason,
     ExecutionLane,
@@ -113,7 +113,7 @@ from ..services.german_learner_profile import (
     get_german_learner_profile,
     learner_profile_fingerprint,
 )
-from ..services.web_answer import generate_web_answer
+from ..services.web_answer import stream_web_answer
 from ..services.usage_meter import record_usage
 from ..services.workspace_context import (
     assistant_mode_from_turn,
@@ -868,6 +868,105 @@ def _stream_static_answer(
             **extra_meta,
             **_source_meta(decision, cache_hit=False),
         }, ensure_ascii=False))
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+def _stream_live_answer(
+    *,
+    events: Iterator[dict[str, Any]],
+    decision: SourceDecision,
+    answer_mode: str,
+    request_id: str,
+    status_key: str = "writing_answer",
+    extra_meta: dict[str, Any] | None = None,
+    sources: list[dict[str, Any]] | None = None,
+    map_sources: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
+    decision_for_done: Callable[[dict[str, Any]], SourceDecision] | None = None,
+    on_finish: Callable[[dict[str, Any]], None] | None = None,
+):
+    """Same status -> meta -> t... -> done SSE contract as _stream_static_answer,
+    but driven by a live `{"t"}`/`{"done"}` token iterator instead of an
+    already-complete string, so the browser sees text as the model writes it.
+    """
+    extra_meta = extra_meta or {}
+
+    def gen():
+        confidence = "low" if answer_mode == "clarification" else "high"
+        needs_clarification = answer_mode == "clarification"
+        used_general_knowledge = answer_mode == "general"
+        unsupported = needs_clarification
+        yield _status_sse(status_key)
+        meta = {
+            "meta": True,
+            "retrievalMode": decision.source_scope.value,
+            "answerMode": answer_mode,
+            "confidence": confidence,
+            "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
+            **extra_meta,
+            **_source_meta(decision, cache_hit=False),
+        }
+        yield _sse_bytes(json.dumps(meta, ensure_ascii=False))
+
+        text_sent = False
+        final: dict[str, Any] = {}
+        try:
+            for event in events:
+                text = event.get("t")
+                if isinstance(text, str) and text:
+                    text_sent = True
+                    yield _sse_bytes(json.dumps({"t": text}, ensure_ascii=False))
+                elif event.get("done"):
+                    final = event
+                    break
+        except Exception:
+            log.exception("live_answer_failed request_id=%s answer_mode=%s", request_id, answer_mode)
+            yield _error_sse(
+                code="live_generation_failed",
+                message="The response could not be completed.",
+                retryable=True, request_id=request_id,
+                stage="live_generation", recoverable=True,
+                partial_answer_available=text_sent,
+            )
+            return
+
+        if not final.get("done") or not text_sent:
+            code = "empty_completed_response" if final.get("done") else "stream_ended_without_terminal_event"
+            log.warning(
+                "live_answer_no_terminal_event request_id=%s answer_mode=%s code=%s",
+                request_id, answer_mode, code,
+            )
+            yield _error_sse(
+                code=code,
+                message="The tutor did not return a complete answer.",
+                retryable=True, request_id=request_id,
+                stage="live_generation", recoverable=True,
+                partial_answer_available=text_sent,
+            )
+            return
+
+        final_decision = decision_for_done(final) if decision_for_done else decision
+        final_sources = map_sources(final) if map_sources else (sources or [])
+        yield _sse_bytes(json.dumps({
+            "done": True,
+            "retrievalMode": final_decision.source_scope.value,
+            "answerMode": answer_mode,
+            "confidence": confidence,
+            "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
+            "sources": final_sources,
+            "cacheHit": False,
+            "model": final.get("model"),
+            "promptTokens": final.get("promptTokens"),
+            "completionTokens": final.get("completionTokens"),
+            **extra_meta,
+            **_source_meta(final_decision, cache_hit=False),
+        }, ensure_ascii=False))
+        if on_finish:
+            on_finish(final)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -3568,42 +3667,36 @@ async def _prepare_ask_stream_response(
             if source_decision.sanitized_web_query:
                 web_facts["topic_label"] = source_decision.sanitized_web_query
             status_sink(_CommentaryStatus("checking_web_sources", web_facts))
-        web_answer = await run_in_threadpool(
-            lambda: generate_web_answer(question, query=source_decision.sanitized_web_query or question)
-        )
-        source_decision = replace(source_decision, web_search_used=bool(web_answer.get("webSources")))
-        record_usage(
-            feature="ask_stream_web", model=web_answer.get("model"),
-            prompt_tokens=web_answer.get("promptTokens"),
-            completion_tokens=web_answer.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=web_answer["answer"],
+        return _stream_live_answer(
+            events=stream_web_answer(question, query=source_decision.sanitized_web_query or question),
             decision=source_decision,
             answer_mode="internet",
-            sources=_web_sources_to_js(web_answer.get("webSources") or []),
-            model=web_answer.get("model"),
-            prompt_tokens=web_answer.get("promptTokens"),
-            completion_tokens=web_answer.get("completionTokens"),
             status_key="writing_answer",
+            request_id=request_id,
+            map_sources=lambda final: _web_sources_to_js(final.get("webSources") or []),
+            decision_for_done=lambda final: replace(
+                source_decision, web_search_used=bool(final.get("webSources"))
+            ),
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_web", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
-        general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=prefix))
-        record_usage(
-            feature="ask_stream_general", model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=general["answer"],
+        return _stream_live_answer(
+            events=stream_general_answer(question, prefix=prefix, max_tokens=1200),
             decision=source_decision,
             answer_mode="general",
-            model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"),
             status_key="writing_answer",
+            request_id=request_id,
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_general", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     # ── Live workspace context (layer 2: the student's real Minallo data) ────
@@ -5456,20 +5549,17 @@ async def _prepare_ask_stream_response(
             source_scope=SourceScope.GENERAL_KNOWLEDGE,
             source_label="Using: General knowledge",
         )
-        general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=auto_general_prefix()))
-        record_usage(
-            feature="ask_stream_general", model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=general["answer"],
+        return _stream_live_answer(
+            events=stream_general_answer(question, prefix=auto_general_prefix(), max_tokens=1200),
             decision=general_decision,
             answer_mode="general",
-            model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"),
             status_key="no_strong_match",
+            request_id=request_id,
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_general", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     # ── Stream + save to cache on finish ─────────────────────────────────────

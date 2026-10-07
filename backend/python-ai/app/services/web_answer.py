@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Iterator
 
 from ..config import get_settings
 from .openai_client import get_openai_client
@@ -101,6 +101,67 @@ def generate_web_answer(question: str, *, query: str, max_tokens: int = 1400) ->
     }
 
 
+def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> Iterator[dict[str, Any]]:
+    """Live-token counterpart to generate_web_answer.
+
+    Errors before the first delta (search never started) fall back to the
+    unavailable message inline, same as the non-streaming path. An error
+    once tokens are already on the wire is left to propagate so the caller's
+    SSE error handler can mark partialAnswerAvailable=True instead of
+    silently discarding what the student already saw.
+    """
+    settings = get_settings()
+    if not settings.web_search_enabled:
+        yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+        return
+
+    client = get_openai_client()
+    try:
+        stream = client.responses.create(
+            model=settings.web_search_model,
+            input=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": query or question},
+            ],
+            tools=[{"type": "web_search"}],
+            tool_choice={"type": "web_search"},
+            max_output_tokens=max_tokens,
+            stream=True,
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("OpenAI web search stream failed to start")
+        yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+        return
+
+    text_sent = False
+    for event in stream:
+        event_type = getattr(event, "type", "")
+        if event_type == "response.output_text.delta":
+            delta = getattr(event, "delta", None)
+            if delta:
+                text_sent = True
+                yield {"t": delta}
+        elif event_type == "response.completed":
+            response = getattr(event, "response", None)
+            sources = _extract_sources(response) if response is not None else []
+            usage = getattr(response, "usage", None) if response is not None else None
+            # A valid answer whose citations didn't parse still streamed real
+            # text above; only a genuinely empty completion falls back here.
+            if not text_sent:
+                text = _extract_text(response) if response is not None else ""
+                yield {"t": text or INTERNET_UNAVAILABLE_MESSAGE}
+            yield {
+                "done": True,
+                "webSources": sources,
+                "model": settings.web_search_model,
+                "promptTokens": getattr(usage, "input_tokens", None) if usage else None,
+                "completionTokens": getattr(usage, "output_tokens", None) if usage else None,
+            }
+            return
+
+
 def _unavailable() -> dict[str, Any]:
     return {
         "answer": INTERNET_UNAVAILABLE_MESSAGE,
@@ -115,4 +176,4 @@ def _unavailable() -> dict[str, Any]:
     }
 
 
-__all__ = ("INTERNET_UNAVAILABLE_MESSAGE", "generate_web_answer")
+__all__ = ("INTERNET_UNAVAILABLE_MESSAGE", "generate_web_answer", "stream_web_answer")
