@@ -508,10 +508,16 @@ def _prompt_contextual_cloze_mc4(
     example = part.constraints.get("exampleGapCount", 0)
     option_count = part.constraints.get("optionCount", 4)
     approx = part.constraints.get("wordCountApprox", 320)
+    word_min, word_max = round(approx * 0.8), round(approx * 1.2)  # matches validate_contextual_cloze_mc4's own tolerance exactly
     gap_ids = ([" {{g0}}"] if example else []) + [f"{{{{g{i}}}}}" for i in range(1, gap_count + 1)]
     system = _base_system_preamble(profile, part) + (
-        f"\n\nTask structure (IMMUTABLE): one coherent, natural expository text of about {approx} words on the topic "
-        f"'{topic['label']}', written for an educated general readership. Replace {gap_count + example} single words or short "
+        f"\n\nTask structure (IMMUTABLE): one coherent, natural expository text of {word_min}-{word_max} words "
+        f"(target about {approx}) on the topic '{topic['label']}', written for an educated general readership. "
+        f"This length is checked automatically: a text outside {word_min}-{word_max} words is rejected outright. "
+        "Models tend to over-write for this task and produce a full-length article — this is a SHORT text: a "
+        "handful of short paragraphs that make one focused point, not a comprehensive treatment of the topic. Do "
+        "not add extra background, extra examples, or elaboration beyond what the 9 gaps need. "
+        f"Replace {gap_count + example} single words or short "
         f"fixed phrases by the literal placeholders {', '.join(p.strip() for p in gap_ids)} (each EXACTLY once, in this reading order, "
         "spread across the whole text). "
         + ("{{g0}} is the solved EXAMPLE: it is given a full item like the others, and it should be one of the easier gaps. " if example else "")

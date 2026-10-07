@@ -59,7 +59,7 @@ def test_profile_wiring() -> None:
 
 def test_prompt_is_built_from_the_blueprint() -> None:
     system, user = reading._prompt_contextual_cloze_mc4(get_profile(PID), PART, [], {"topicId": "t", "label": "Arbeitszeit"})
-    assert "about 320 words" in system and "exactly 4 options" in system
+    assert "256-384 words" in system and "target about 320" in system and "exactly 4 options" in system
     assert "{{g0}}" in system and "g8" in system and "Arbeitszeit" in user
     assert "example" in system
 
