@@ -389,7 +389,8 @@ class _TurnAwareFakeSupabase:
 
 
 def _run_durable_request(stream, monkeypatch, *, user_id, conversation_id, request_id,
-                          client_message_id, assistant_message_id):
+                          client_message_id, assistant_message_id,
+                          question="What is torsion?", message_text=None):
     async def prepare(*_args, **_kwargs):
         from fastapi.responses import StreamingResponse
 
@@ -406,7 +407,7 @@ def _run_durable_request(stream, monkeypatch, *, user_id, conversation_id, reque
 
     async def run():
         payload = stream.AskStreamRequest(
-            courseId="", question="What is torsion?", sourceMode="internet",
+            courseId="", question=question, messageText=message_text, sourceMode="internet",
             durableConversation=True, conversationId=conversation_id,
             clientMessageId=client_message_id, assistantMessageId=assistant_message_id,
             requestId=request_id,
@@ -442,6 +443,58 @@ def test_durable_turn_is_created_lazily_without_a_prior_ensure_call(monkeypatch)
     assert db.rows["ai_tutor_requests"][0]["status"] == "completed"
     assert db.rows["ai_tutor_requests"][0]["final_answer"] == "The answer."
     assert len(db.rows["ai_chat_messages"]) == 2  # user + assistant, created exactly once
+
+
+def test_durable_turn_saves_the_plain_typed_text_not_the_retrieval_enriched_question(monkeypatch):
+    """question may have a pasted-attachment block merged in by the frontend
+    for retrieval/intent purposes (shell.ts's currentQuestion); the saved
+    turn must store what the user actually typed (messageText), matching
+    what /conversations/ensure already saved for a chat's first message —
+    not the enriched text, or a long paste would render inlined on reload
+    from another device for every message after the first."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000052"
+    conversation_id = "00000000-0000-4000-8000-000000000053"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    pasted_block = "--- Pasted text ---\n" + ("Long attachment content. " * 50)
+    body = _run_durable_request(
+        stream, monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="pasted-text-request-1",
+        client_message_id="user-msg-pasted", assistant_message_id="assistant-msg-pasted",
+        question=pasted_block + "\n\nSummarise this.",
+        message_text="Summarise this.",
+    )
+
+    assert b'"error"' not in body, body
+    user_message = next(m for m in db.rows["ai_chat_messages"] if m.get("role") == "user")
+    assert user_message["content"] == "Summarise this."
+
+
+def test_durable_turn_falls_back_to_question_when_messagetext_is_absent(monkeypatch):
+    """An older client that doesn't send messageText yet must still work —
+    falls back to question, same as before this field existed."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000054"
+    conversation_id = "00000000-0000-4000-8000-000000000055"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    body = _run_durable_request(
+        stream, monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="no-messagetext-request-1",
+        client_message_id="user-msg-legacy", assistant_message_id="assistant-msg-legacy",
+        question="What is torsion?",
+    )
+
+    assert b'"error"' not in body, body
+    user_message = next(m for m in db.rows["ai_chat_messages"] if m.get("role") == "user")
+    assert user_message["content"] == "What is torsion?"
 
 
 def test_retried_request_with_same_idempotency_key_does_not_duplicate_the_turn(monkeypatch):

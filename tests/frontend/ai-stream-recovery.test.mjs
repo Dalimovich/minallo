@@ -82,7 +82,7 @@ test('durable tutor turns persist the assistant placeholder and request snapshot
   // Neutralized for learner accounts (see isLearnerAccount() guard right
   // above this line) so a stale, pre-role-switch snapshot can't ride along.
   assert.match(shell, /requestSnapshot: isLearnerAccount\(\) \? undefined : context\.assistantMessage\?\.requestSnapshot/);
-  assert.match(shell, /assistantMessage\.requestId, assistantMessage\s*\n\s*\)/);
+  assert.match(shell, /assistantMessage\.requestId, assistantMessage, sourceUser\?\.text\s*\n\s*\)/);
 });
 
 test('inactivity checks durable request state before abandoning the stream', () => {

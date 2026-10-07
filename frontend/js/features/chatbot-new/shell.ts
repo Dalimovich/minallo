@@ -1798,7 +1798,7 @@ async function streamAiReply(
         rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
         rag.documentIds, rag.documentNames, rag.groundingRequest, followUpDoc, allowDiagrams,
         rag.activePdfContext, durable!.conversationId, turnImages, true,
-        assistantMessage.requestId, assistantMessage
+        assistantMessage.requestId, assistantMessage, sourceUser?.text
       );
       raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
       if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
@@ -3883,6 +3883,11 @@ async function streamFromAskStream(
   durableConversation = false,
   logicalRequestId?: string,
   assistantMessage?: ChatMessage,
+  // The plain typed text for this turn, as opposed to `question` above
+  // (which may have a pasted-attachment block merged in for retrieval).
+  // Sent separately so the durable turn saves what the user actually
+  // typed — undefined falls back to `question` server-side.
+  displayMessageText?: string,
 ): Promise<{ text: string; meta: Record<string, unknown> | null }> {
   const submitted = assistantMessage?.requestSnapshot;
   const learnerAccount = isLearnerAccount();
@@ -4028,6 +4033,7 @@ async function streamFromAskStream(
       requestSnapshot: outgoingRequestSnapshot,
       groundingRequest: effectiveGroundingRequest,
       question,
+      messageText: displayMessageText,
       tutorMode: resolveTutorModeForTurn(question),
       sourceMode: effectiveSourceMode,
       // When we send a document selection, tell the backend to hard-scope to

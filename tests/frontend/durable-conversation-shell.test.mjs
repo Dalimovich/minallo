@@ -33,3 +33,20 @@ test('the attachments flow still always calls ensureDurableConversation uncondit
     /const durable = await ensureDurableConversation\(chatStore\.getActive\(\), \{ courseId: courseId \|\| undefined, titleSeed: message\.text \}\);/,
   );
 });
+
+// Review fix: /ask-stream's `question` may have a pasted-attachment block
+// merged in for retrieval (see currentQuestion above in this same file) —
+// the durable turn must save the plain typed text instead, via a separate
+// messageText field, same as /conversations/ensure already did.
+
+test('streamFromAskStream sends the plain typed text separately as messageText', () => {
+  assert.match(shell, /displayMessageText\?:\s*string/);
+  assert.match(shell, /messageText:\s*displayMessageText/);
+});
+
+test('the main send flow passes the original user message text as displayMessageText', () => {
+  assert.match(
+    shell,
+    /assistantMessage\.requestId,\s*assistantMessage,\s*sourceUser\?\.text\s*\n?\s*\);/,
+  );
+});
