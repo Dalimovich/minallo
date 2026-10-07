@@ -33,7 +33,7 @@ def _issues(part, content: dict) -> list[str]:
 def test_profile_wiring() -> None:
     for part, task_type in ((SCHREIBEN_1, "forum_discussion_post"), (SCHREIBEN_2, "formal_context_message")):
         assert part.task_type == task_type
-        assert part.available is False, "Goethe parts stay unavailable until live qualification"
+        assert part.available is True, "generator+validator+grading contract all exist; deliberately flipped"
         assert is_task_type_implemented(task_type)
         assert task_type in writing._PROMPT_BUILDERS
         assert task_type in verify._VERIFY_PROMPT_BUILDERS

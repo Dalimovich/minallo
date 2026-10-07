@@ -49,7 +49,11 @@ def test_manifest_goethe() -> None:
     assert "language_elements" not in [x["id"] for x in m["modules"]]
     assert [x["durationSeconds"] for x in m["modules"]] == [3900, 2400, 4500, None]
     assert m["modules"][3]["preparationSeconds"] == 1200
-    assert all(not p["implemented"] for x in m["modules"] for p in x["parts"])  # G0: nothing generatable yet
+    implemented_by_module = {x["id"]: [p["implemented"] for p in x["parts"]] for x in m["modules"]}
+    assert all(implemented_by_module["reading"]), "Lesen: generator+validator+frontend render/grade all exist"
+    assert all(implemented_by_module["writing"]), "Schreiben: generator+validator+grading contract all exist"
+    assert not any(implemented_by_module["listening"]), "Hören: no frontend renderer for any task type yet"
+    assert not any(implemented_by_module["speaking"]), "Sprechen: no grading path, no sourced point weights"
 
 
 def test_manifest_telc_keeps_its_modules_and_order() -> None:
@@ -64,7 +68,7 @@ def test_unavailable_goethe_part_fails_cleanly_before_any_work(monkeypatch: pyte
 
     monkeypatch.setattr(gen.german_exam_inventory, "is_stocked", boom)
     with pytest.raises(NotImplementedError):
-        gen.generate_task("u1", "goethe_c1", "reading", "lesen_3", "adaptive_practice")
+        gen.generate_task("u1", "goethe_c1", "listening", "hoeren_1", "adaptive_practice")
     with pytest.raises(GermanExamProfileError):
         gen.generate_task("u1", "goethe_c1", "language_elements", "sprachbausteine_1", "adaptive_practice")
     with pytest.raises(GermanExamProfileError):

@@ -89,7 +89,7 @@ def _issues(content: dict) -> list[str]:
 
 def test_profile_wiring() -> None:
     assert PART.task_type == "multi_author_statement_matching_with_none"
-    assert PART.available is False, "Goethe parts stay unavailable until live qualification"
+    assert PART.available is True, "generator+validator+frontend render/grade all exist; deliberately flipped"
     assert is_task_type_implemented("multi_author_statement_matching_with_none")
     assert reading._PROMPT_BUILDERS["multi_author_statement_matching_with_none"] is reading._prompt_multi_author_statement_matching
     assert "multi_author_statement_matching_with_none" in verify._VERIFY_PROMPT_BUILDERS
