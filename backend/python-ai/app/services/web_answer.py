@@ -143,7 +143,11 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
             if delta:
                 text_sent = True
                 yield {"t": delta}
-        elif event_type == "response.completed":
+        # response.incomplete (max_output_tokens reached) ends the answer the
+        # same way response.completed does — whatever text/sources/usage the
+        # response carries is real and should reach the student, not get
+        # discarded as a failure just because it was truncated.
+        elif event_type in ("response.completed", "response.incomplete"):
             response = getattr(event, "response", None)
             sources = _extract_sources(response) if response is not None else []
             usage = getattr(response, "usage", None) if response is not None else None
@@ -160,6 +164,19 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
                 "completionTokens": getattr(usage, "output_tokens", None) if usage else None,
             }
             return
+        elif event_type in ("response.failed", "error"):
+            # Before the first delta: search never produced anything, same as
+            # an exception from responses.create() itself — degrade quietly.
+            # After tokens are already on the wire: propagate so the caller's
+            # SSE error handler marks partialAnswerAvailable=True instead of
+            # silently overwriting what the student already saw with a
+            # fabricated success.
+            if not text_sent:
+                yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
+                yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+                return
+            message = getattr(event, "message", None) or f"web search stream ended with {event_type}"
+            raise RuntimeError(message)
 
 
 def _unavailable() -> dict[str, Any]:

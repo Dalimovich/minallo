@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from app.services.source_router import (
     CourseFileScope,
     GroundingPolicy,
@@ -83,6 +85,43 @@ def test_stream_live_answer_emits_tokens_before_terminal_event():
     token_index = next(i for i, e in enumerate(events) if "t" in e)
     done_index = next(i for i, e in enumerate(events) if e.get("done"))
     assert token_index < done_index
+
+
+async def _consume_like_early_stream(response) -> list[dict]:
+    """early_stream (the real consumer of this generator) breaks its loop the
+    moment it sees a terminal SSE event and never calls __anext__ again — so
+    a regression test that drains the body_iterator fully (like _consume
+    above) can't catch code placed after the done/error yield. This mirrors
+    the real stop-reading-at-the-terminal-event behavior instead."""
+    events = []
+    it = response.body_iterator.__aiter__()
+    async for raw in it:
+        for line in raw.decode().splitlines():
+            if line.startswith("data: "):
+                event = json.loads(line[6:])
+                events.append(event)
+                if event.get("done") or event.get("error"):
+                    return events
+    return events
+
+
+def test_stream_live_answer_on_finish_runs_before_the_consumer_can_stop_reading():
+    """Regression: on_finish (record_usage) used to run AFTER yielding the
+    done event, so once early_stream stopped reading at that same done
+    event, on_finish's code never got a chance to execute — usage silently
+    stopped being recorded for every general/web answer."""
+    from app.routers.stream import _stream_live_answer
+
+    finished: list[dict] = []
+    response = _stream_live_answer(
+        events=iter([{"t": "answer text"}, {"done": True, "model": "m", "promptTokens": 3, "completionTokens": 4}]),
+        decision=_decision(), answer_mode="general", request_id="on-finish-1",
+        on_finish=lambda final: finished.append(final),
+    )
+    events = asyncio.run(_consume_like_early_stream(response))
+    assert any(e.get("done") for e in events)
+    assert finished, "on_finish never ran even though the consumer saw the done event"
+    assert finished[0]["model"] == "m"
 
 
 def test_stream_live_answer_mid_stream_exception_reports_partial_answer():
@@ -233,6 +272,28 @@ class _FakeCompletedEvent:
         self.response = response
 
 
+class _FakeIncompleteEvent:
+    type = "response.incomplete"
+
+    def __init__(self, response):
+        self.response = response
+
+
+class _FakeFailedEvent:
+    type = "response.failed"
+
+    def __init__(self, response=None, message=None):
+        self.response = response
+        self.message = message
+
+
+class _FakeErrorEvent:
+    type = "error"
+
+    def __init__(self, message):
+        self.message = message
+
+
 def _fake_settings(*, web_search_enabled: bool):
     from types import SimpleNamespace
     return SimpleNamespace(web_search_enabled=web_search_enabled, web_search_model="test-model")
@@ -268,6 +329,86 @@ def test_stream_web_answer_streams_deltas_then_final_sources(monkeypatch):
     assert done["done"] is True
     assert done["promptTokens"] == 11
     assert done["completionTokens"] == 22
+
+
+def test_stream_web_answer_incomplete_still_finishes_with_streamed_text(monkeypatch):
+    """response.incomplete (max_output_tokens reached mid-answer) must finish
+    like response.completed does — the text already streamed via deltas is
+    real and must not be discarded as a failure just because it was cut off."""
+    from app.services import web_answer
+
+    monkeypatch.setattr(web_answer, "get_settings", lambda: _fake_settings(web_search_enabled=True))
+
+    class _FakeResponse:
+        output_text = "A current fact, cut off mid-sent"
+        output = []
+        usage = type("Usage", (), {"input_tokens": 11, "output_tokens": 22})()
+
+    class _FakeClient:
+        class responses:
+            @staticmethod
+            def create(**kwargs):
+                return iter([
+                    _FakeDeltaEvent("A current "),
+                    _FakeDeltaEvent("fact, cut off mid-sent"),
+                    _FakeIncompleteEvent(_FakeResponse()),
+                ])
+
+    monkeypatch.setattr(web_answer, "get_openai_client", lambda: _FakeClient())
+
+    events = list(web_answer.stream_web_answer("question", query="question"))
+    tokens = "".join(e["t"] for e in events if "t" in e)
+    assert tokens == "A current fact, cut off mid-sent"
+    done = events[-1]
+    assert done["done"] is True
+    assert done["promptTokens"] == 11
+
+
+def test_stream_web_answer_failed_before_first_delta_falls_back(monkeypatch):
+    from app.services import web_answer
+
+    monkeypatch.setattr(web_answer, "get_settings", lambda: _fake_settings(web_search_enabled=True))
+
+    class _FakeClient:
+        class responses:
+            @staticmethod
+            def create(**kwargs):
+                return iter([_FakeFailedEvent(message="provider error")])
+
+    monkeypatch.setattr(web_answer, "get_openai_client", lambda: _FakeClient())
+
+    events = list(web_answer.stream_web_answer("question", query="question"))
+    assert events[0] == {"t": web_answer.INTERNET_UNAVAILABLE_MESSAGE}
+    assert events[-1]["done"] is True
+    assert events[-1]["webSources"] == []
+
+
+def test_stream_web_answer_error_event_after_first_delta_propagates(monkeypatch):
+    """A response.failed/error EVENT (not a raised exception) after real
+    tokens were already streamed must propagate too, same as a mid-stream
+    exception — _stream_live_answer needs this to mark the SSE error event
+    partialAnswerAvailable=True instead of silently discarding what the
+    student already saw."""
+    from app.services import web_answer
+
+    monkeypatch.setattr(web_answer, "get_settings", lambda: _fake_settings(web_search_enabled=True))
+
+    class _FakeClient:
+        class responses:
+            @staticmethod
+            def create(**kwargs):
+                return iter([
+                    _FakeDeltaEvent("Some real text"),
+                    _FakeErrorEvent("provider dropped mid-stream"),
+                ])
+
+    monkeypatch.setattr(web_answer, "get_openai_client", lambda: _FakeClient())
+
+    gen = web_answer.stream_web_answer("question", query="question")
+    first = next(gen)
+    assert first == {"t": "Some real text"}
+    with pytest.raises(RuntimeError, match="provider dropped mid-stream"):
+        next(gen)
 
 
 def test_stream_web_answer_falls_back_before_first_delta(monkeypatch):

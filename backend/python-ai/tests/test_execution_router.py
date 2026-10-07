@@ -321,6 +321,95 @@ def test_stream_courseless_study_plan_reaction_skips_workspace_pipeline(monkeypa
     assert b"Let's break the plan down step by step." in body
 
 
+def test_stream_courseless_general_answer_records_usage_through_the_real_endpoint(monkeypatch) -> None:
+    """Regression: _stream_live_answer's on_finish (record_usage) used to run
+    AFTER yielding the done SSE event, but early_stream — the REAL consumer
+    exercised here via the actual ask_stream_endpoint, not a hand-rolled
+    reader — stops calling next() on the inner generator the instant it
+    sees that done event. Usage silently stopped being recorded for every
+    general/web answer; this must go through the real endpoint to catch it,
+    since a test that drains the response itself doesn't reproduce the bug.
+    """
+    from app.routers import stream as stream_router
+    from app.services import cache, dialogue_state, retrieval, tutor_state_store
+    from app.services.dialogue_state import SpeechAct, TaskFamily, TurnRelation
+    from app.services.tutor_state import TutorState
+
+    recorded: list[dict] = []
+    monkeypatch.setattr(stream_router, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream_router, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(stream_router, "record_usage", lambda **kwargs: recorded.append(kwargs))
+    monkeypatch.setattr(
+        dialogue_state,
+        "resolve_dialogue_semantically",
+        lambda _message, *, previous_turns, base: replace(
+            base,
+            resolved_request="But I don't understand it",
+            relation=TurnRelation.CLARIFICATION,
+            speech_act=SpeechAct.CLARIFICATION_REQUEST,
+            task_family=TaskFamily.STUDY_PLAN,
+            continues_previous_goal=False,
+            confidence=0.9,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "claim_generation", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 0,
+    )
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda user_id, conversation_id: TutorState(
+            conversation_id=conversation_id, user_id=user_id,
+        ),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        stream_router, "chitchat_answer",
+        lambda *_: (_ for _ in ()).throw(AssertionError("raw chitchat intercepted task")),
+    )
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+    monkeypatch.setattr(
+        stream_router, "stream_general_answer",
+        lambda *_a, **_k: iter([
+            {"t": "Let's break the plan down step by step."},
+            {"done": True, "model": "test-model", "promptTokens": 11, "completionTokens": 22},
+        ]),
+    )
+    monkeypatch.setattr(
+        stream_router, "fetch_account_snapshot",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("workspace pipeline should not run")),
+    )
+
+    async def consume():
+        response = await stream_router.ask_stream_endpoint(
+            stream_router.AskStreamRequest(
+                courseId="",
+                question="But I don't understand it",
+                previousTurns=[
+                    {"role": "user", "text": "How do I create a good learning plan?"},
+                    {"role": "assistant", "text": "Define your goals, then build a schedule..."},
+                ],
+            ),
+            {"id": "00000000-0000-4000-8000-000000000098"},
+            "study-plan-usage-1",
+        )
+        return b"".join([event async for event in response.body_iterator])
+
+    body = asyncio.run(consume())
+    assert b"internal_error" not in body
+    assert recorded, "record_usage was never called for a completed general-knowledge answer"
+    assert recorded[0]["feature"] == "ask_stream_general"
+    assert recorded[0]["prompt_tokens"] == 11
+    assert recorded[0]["completion_tokens"] == 22
+
+
 def test_stream_rejection_keeps_goal_but_drops_offered_choice(monkeypatch) -> None:
     """Rejecting a suggested topic must not fall back to raw chitchat, and
     must not discard the underlying goal — only the specific offered choice."""

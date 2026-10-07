@@ -949,6 +949,13 @@ def _stream_live_answer(
 
         final_decision = decision_for_done(final) if decision_for_done else decision
         final_sources = map_sources(final) if map_sources else (sources or [])
+        # on_finish (record_usage) must run BEFORE the done event is yielded:
+        # early_stream's consumer breaks out of its loop the moment it sees a
+        # terminal SSE event and never calls next() again, so anything after
+        # the yield below would never execute (fast_general_stream calls
+        # record_usage before its own done yield for the same reason).
+        if on_finish:
+            on_finish(final)
         yield _sse_bytes(json.dumps({
             "done": True,
             "retrievalMode": final_decision.source_scope.value,
@@ -965,8 +972,6 @@ def _stream_live_answer(
             **extra_meta,
             **_source_meta(final_decision, cache_hit=False),
         }, ensure_ascii=False))
-        if on_finish:
-            on_finish(final)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -3671,7 +3676,10 @@ async def _prepare_ask_stream_response(
             events=stream_web_answer(question, query=source_decision.sanitized_web_query or question),
             decision=source_decision,
             answer_mode="internet",
-            status_key="writing_answer",
+            # The web search itself (not just generation) runs inside this
+            # live stream now, so "writing_answer" would lie about what's
+            # happening until the first real token arrives.
+            status_key="checking_web_sources",
             request_id=request_id,
             map_sources=lambda final: _web_sources_to_js(final.get("webSources") or []),
             decision_for_done=lambda final: replace(
