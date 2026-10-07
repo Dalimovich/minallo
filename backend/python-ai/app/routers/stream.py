@@ -20,6 +20,7 @@ import time
 import unicodedata
 import urllib.parse
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
 from typing import Any, NamedTuple
@@ -970,6 +971,75 @@ def _web_sources_to_js(sources: list[dict[str, Any]] | None) -> list[dict[str, A
         }
         for s in (sources or [])
     ]
+
+
+# Decorations (visual aids, Deep Learn reuse) must never make the student
+# wait longer for the answer than they already would without them — the
+# generation stage's own done event waits on these futures for at most this
+# long before falling back to an empty list, same as the rest of this
+# pipeline's "best-effort" DB reads.
+_DECORATION_WAIT_TIMEOUT_SECONDS = 3.0
+
+
+def _resolve_learning_recommendations_background(
+    visual_aids_future: "Future[list[dict[str, Any]]]",
+    explanation_plan: Any,
+    *,
+    user_id: str,
+    course_id: str,
+    document_ids: list[str],
+    source_chunk_ids: list[str],
+    weak_topics: list[str],
+    previous_turns: list[dict[str, str]],
+    response_language: str | None,
+) -> list[dict[str, Any]]:
+    """Runs on a background thread, submitted alongside select_visual_aids so
+    neither blocks the OpenAI call that writes the answer. This function
+    waits on visual_aids_future itself (the recommendation needs its
+    persistent_visual_ids) — that's thread-to-thread waiting on a background
+    worker, not something that blocks the request's own generation path.
+    """
+    try:
+        visual_aids = visual_aids_future.result()
+    except Exception:
+        log.exception("visual_aids_lookup_failed_for_learning_recommendation")
+        visual_aids = []
+    persistent_visual_ids = [
+        str(item.get("visualId")) for item in visual_aids
+        if item.get("sourceType") == "course_file"
+        and item.get("visualId")
+        and not str(item.get("visualId")).startswith("page-")
+    ]
+    learning_recommendations = build_learning_recommendations(
+        explanation_plan,
+        course_id=course_id,
+        document_ids=document_ids,
+        source_chunk_ids=source_chunk_ids,
+        visual_ids=persistent_visual_ids,
+        weak_topics=weak_topics,
+        previous_turns=previous_turns,
+        response_language=response_language,
+    )
+    if learning_recommendations:
+        try:
+            recommendation_doc_ids = learning_recommendations[0].get("documentIds") or []
+            recommendation_revision_hash = course_revision_hash(user_id, course_id, recommendation_doc_ids)
+            existing_lesson = find_existing_lesson(
+                user_id=user_id, course_id=course_id,
+                topic=str(learning_recommendations[0].get("topic") or ""),
+                revision_hash=recommendation_revision_hash,
+            )
+            learning_recommendations[0]["documentRevisionHash"] = recommendation_revision_hash
+            if existing_lesson:
+                learning_recommendations[0]["existingLessonId"] = existing_lesson.get("id")
+                learning_recommendations[0]["existingLessonStatus"] = existing_lesson.get("lesson_status") or "complete"
+                learning_recommendations[0]["action"] = {
+                    "label": "Continue Deep Learn" if existing_lesson.get("lesson_status") != "complete" else "Open Deep Learn lesson",
+                    "type": "open_deep_learn",
+                }
+        except Exception:
+            log.exception("deep learn reuse lookup failed (recommendation remains usable)")
+    return learning_recommendations
 
 
 @router.post("/conversations/ensure")
@@ -5484,63 +5554,43 @@ async def _prepare_ask_stream_response(
         has_selected_region=verified_region is not None,
         has_page_image=bool(open_file_images),
     )
-    visual_aids = await run_in_threadpool(
-        lambda: select_visual_aids(
-            explanation_plan,
-            context=VisualContext(
-                document_id=payload.activeDocumentId,
-                document_revision=payload.viewerRevision,
-                page_number=payload.visiblePage,
-                selected_region=(selected_region.model_dump() if selected_region else None),
-                page_image_available=bool(open_file_images),
-            ),
-            user_id=user_id,
-            course_id=payload.courseId,
-            question=resolved_question,
-        ),
-    )
-    persistent_visual_ids = [
-        str(item.get("visualId")) for item in visual_aids
-        if item.get("sourceType") == "course_file"
-        and item.get("visualId")
-        and not str(item.get("visualId")).startswith("page-")
-    ]
-    learning_recommendations = build_learning_recommendations(
+    # Visual aids + the Deep Learn reuse lookup are shown beside the answer,
+    # never fed into its prompt (confirmed by reading stream_answer's
+    # signature below) — so they no longer block the OpenAI call that writes
+    # it. Both run on background threads; gen() picks up their results
+    # opportunistically as it streams tokens, and waits briefly for them
+    # right before the done event. The executor is shut down (non-blocking)
+    # immediately after submission: that stops it accepting further work
+    # without touching these two already-running futures.
+    decoration_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-decorations")
+    visual_aids_future: "Future[list[dict[str, Any]]]" = decoration_executor.submit(
+        select_visual_aids,
         explanation_plan,
+        context=VisualContext(
+            document_id=payload.activeDocumentId,
+            document_revision=payload.viewerRevision,
+            page_number=payload.visiblePage,
+            selected_region=(selected_region.model_dump() if selected_region else None),
+            page_image_available=bool(open_file_images),
+        ),
+        user_id=user_id,
         course_id=payload.courseId,
+        question=resolved_question,
+    )
+    learning_recommendation_future: "Future[list[dict[str, Any]]]" = decoration_executor.submit(
+        _resolve_learning_recommendations_background,
+        visual_aids_future, explanation_plan,
+        user_id=user_id, course_id=payload.courseId,
         document_ids=[
             chunk.document_id for chunk in chunks
             if chunk.document_id and not chunk.document_id.startswith("__")
         ],
         source_chunk_ids=[chunk.chunk_id for chunk in chunks if chunk.chunk_id],
-        visual_ids=persistent_visual_ids,
         weak_topics=weak_topics,
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
-    if learning_recommendations:
-        try:
-            recommendation_doc_ids = learning_recommendations[0].get("documentIds") or []
-            recommendation_revision_hash = await run_in_threadpool(
-                lambda: course_revision_hash(user_id, payload.courseId, recommendation_doc_ids)
-            )
-            existing_lesson = await run_in_threadpool(
-                lambda: find_existing_lesson(
-                    user_id=user_id, course_id=payload.courseId,
-                    topic=str(learning_recommendations[0].get("topic") or ""),
-                    revision_hash=recommendation_revision_hash,
-                )
-            )
-            learning_recommendations[0]["documentRevisionHash"] = recommendation_revision_hash
-            if existing_lesson:
-                learning_recommendations[0]["existingLessonId"] = existing_lesson.get("id")
-                learning_recommendations[0]["existingLessonStatus"] = existing_lesson.get("lesson_status") or "complete"
-                learning_recommendations[0]["action"] = {
-                    "label": "Continue Deep Learn" if existing_lesson.get("lesson_status") != "complete" else "Open Deep Learn lesson",
-                    "type": "open_deep_learn",
-                }
-        except Exception:
-            log.exception("deep learn reuse lookup failed (recommendation remains usable)")
+    decoration_executor.shutdown(wait=False)
     context_consistent = bool(
         retrieval_scope.exercise_reference == grounded_identity.exercise_reference
         and (
@@ -5638,6 +5688,50 @@ async def _prepare_ask_stream_response(
             "conversationId": payload.conversationId,
             "assistantMessageId": payload.assistantMessageId,
         }
+        # Snapshot of each decoration future the moment it resolves, so the
+        # done event can reuse it below without a second wait.
+        decoration_results: dict[str, list[dict[str, Any]]] = {"visualAids": [], "learningRecommendations": []}
+        decoration_reported = {"visualAids": False, "learningRecommendations": False}
+
+        def _poll_decoration_ready() -> list[bytes]:
+            """Non-blocking check, called between generation events: emit a
+            *.ready event the first time each background future resolves."""
+            ready_events: list[bytes] = []
+            for key, future, event_name in (
+                ("visualAids", visual_aids_future, "visual_aids.ready"),
+                ("learningRecommendations", learning_recommendation_future, "learning_recommendation.ready"),
+            ):
+                if decoration_reported[key] or not future.done():
+                    continue
+                decoration_reported[key] = True
+                try:
+                    result = future.result()
+                except Exception:
+                    log.exception("%s_future_failed request_id=%s", key, request_id)
+                    result = []
+                decoration_results[key] = result
+                if result:
+                    ready_events.append(_sse_bytes(json.dumps({
+                        **event_identity, "event": event_name, key: result,
+                    }, ensure_ascii=False)))
+            return ready_events
+
+        def _await_decoration_results() -> None:
+            """Called right before the done event: give any still-pending
+            decoration a short grace window instead of leaving it empty just
+            because it resolved a moment too late."""
+            for key, future in (
+                ("visualAids", visual_aids_future),
+                ("learningRecommendations", learning_recommendation_future),
+            ):
+                if decoration_reported[key]:
+                    continue
+                decoration_reported[key] = True
+                try:
+                    decoration_results[key] = future.result(timeout=_DECORATION_WAIT_TIMEOUT_SECONDS)
+                except Exception:
+                    log.warning("%s_future_not_ready_by_done request_id=%s", key, request_id)
+
         observer.start("draft_generated")
         if app_or_workspace:
             yield _status_sse("checking_app_context")
@@ -5721,6 +5815,8 @@ async def _prepare_ask_stream_response(
             ),
         )
         for chunk_bytes in gen_iter:
+            for ready_event in _poll_decoration_ready():
+                yield ready_event
             # Decode the SSE event so we can intercept the closing 'done' frame.
             try:
                 line = chunk_bytes.decode("utf-8").lstrip().removeprefix("data: ").rstrip()
@@ -5751,23 +5847,18 @@ async def _prepare_ask_stream_response(
                     evt["retrievalRouting"] = cache_routing_plan.trace()
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
-                    evt["learningRecommendations"] = learning_recommendations
-                    evt["visualAids"] = visual_aids
+                    # Almost always still running at this point (this is the
+                    # very first event of the stream) — included here only
+                    # for the rare case either one already finished; the
+                    # real values normally arrive via the *.ready events
+                    # _poll_decoration_ready() emits as generation continues.
+                    evt["learningRecommendations"] = decoration_results["learningRecommendations"]
+                    evt["visualAids"] = decoration_results["visualAids"]
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     evt.update(event_identity)
                     evt["event"] = "sources.ready"
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                     yield chunk_bytes
-                    if visual_aids:
-                        yield _sse_bytes(json.dumps({
-                            **event_identity, "event": "visual_aids.ready",
-                            "visualAids": visual_aids,
-                        }, ensure_ascii=False))
-                    if learning_recommendations:
-                        yield _sse_bytes(json.dumps({
-                            **event_identity, "event": "learning_recommendation.ready",
-                            "learningRecommendations": learning_recommendations,
-                        }, ensure_ascii=False))
                     continue
                 if evt.get("t"):
                     evt.update(event_identity)
@@ -5784,8 +5875,9 @@ async def _prepare_ask_stream_response(
                     observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
-                    evt["learningRecommendations"] = learning_recommendations
-                    evt["visualAids"] = visual_aids
+                    _await_decoration_results()
+                    evt["learningRecommendations"] = decoration_results["learningRecommendations"]
+                    evt["visualAids"] = decoration_results["visualAids"]
                     if multi_item_result.evidence:
                         original_text = "".join(full_text_buf)
                         completed_text, coverage = ensure_complete_answer(
