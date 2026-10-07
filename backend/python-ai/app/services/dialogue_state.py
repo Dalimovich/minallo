@@ -928,7 +928,7 @@ def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str
                                   base: DialogueResolution) -> DialogueResolution:
     """Resolve only ambiguous turns with a small structured model call; fail closed."""
     from .answer import chat_completion_params  # local imports avoid startup cycles
-    from .openai_client import INTERACTIVE_SUPPORT_TIMEOUT, get_openai_client
+    from .openai_client import INTERACTIVE_CLASSIFIER_TIMEOUT, get_openai_client
     from ..config import get_settings
 
     frame = {
@@ -946,10 +946,14 @@ and source intent for continuations; mark unrelated self-contained requests new_
 Do not include reasoning."""
     try:
         model = get_settings().openai_generate_model
-        completion = get_openai_client().chat.completions.create(
+        # max_retries=0: this call already fails closed to a lexical fallback
+        # on any exception below, so a stalled attempt should surface (and
+        # get caught) immediately rather than retrying within the already-
+        # tight classifier timeout.
+        completion = get_openai_client().with_options(max_retries=0).chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(frame)}],
-            response_format={"type": "json_object"}, timeout=INTERACTIVE_SUPPORT_TIMEOUT,
+            response_format={"type": "json_object"}, timeout=INTERACTIVE_CLASSIFIER_TIMEOUT,
             **chat_completion_params(model, 220),
         )
         raw = completion.choices[0].message.content if completion.choices else "{}"

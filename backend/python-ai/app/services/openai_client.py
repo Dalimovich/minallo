@@ -70,3 +70,11 @@ INTERACTIVE_ANSWER_TIMEOUT = httpx.Timeout(120.0, connect=10.0, pool=10.0)
 # fails fast on a genuine provider stall and still comfortably covers normal
 # latency for a short, non-streaming completion.
 INTERACTIVE_SUPPORT_TIMEOUT = httpx.Timeout(45.0, connect=10.0, pool=10.0)
+
+# Per-call timeout for the short dialogue-state classifier call
+# (resolve_dialogue_semantically) that runs in the /ask-stream preflight,
+# before any byte reaches the browser. It already fails closed to a lexical
+# fallback on ANY exception, so there is no correctness reason to wait out
+# the shared client's default retries at the 45s support timeout — cut it
+# to fail fast instead, paired with max_retries=0 at the call site.
+INTERACTIVE_CLASSIFIER_TIMEOUT = httpx.Timeout(2.5, connect=2.0, pool=1.0)

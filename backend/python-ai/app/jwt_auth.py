@@ -21,6 +21,28 @@ from .config import get_settings
 
 log = logging.getLogger(__name__)
 
+# Lazily created, process-wide pooled client for Supabase auth verification.
+# Every /ask-stream and /conversations/ensure call used to open a brand-new
+# httpx.AsyncClient, paying a fresh TCP+TLS handshake to Supabase on every
+# request (twice per message, once per endpoint). Built on first use inside
+# a request rather than at import, since there's no running event loop yet
+# at import time. Closed in main.py's lifespan on shutdown.
+_auth_client: httpx.AsyncClient | None = None
+
+
+def _get_auth_client() -> httpx.AsyncClient:
+    global _auth_client
+    if _auth_client is None:
+        _auth_client = httpx.AsyncClient(timeout=5.0)
+    return _auth_client
+
+
+async def aclose_auth_client() -> None:
+    global _auth_client
+    if _auth_client is not None:
+        await _auth_client.aclose()
+        _auth_client = None
+
 
 def _auth_error(code: str, message: str, retryable: bool) -> dict[str, Any]:
     return {"code": code, "message": message, "retryable": retryable}
@@ -60,8 +82,7 @@ async def verify_supabase_jwt(authorization: str = Header(default="")) -> dict[s
         "apikey": settings.supabase_service_role_key,
     }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url, headers=headers)
+        r = await _get_auth_client().get(url, headers=headers)
     except httpx.HTTPError as e:
         log.warning("supabase auth verify network error: %s", e)
         raise HTTPException(

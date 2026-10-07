@@ -1309,8 +1309,23 @@ async def ask_stream_endpoint(
     )
     user_id = user["id"]
     access_started = time.perf_counter()
-    await run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream"))
-    await run_in_threadpool(lambda: enforce_interactive_cap(user_id, _INTERACTIVE_MONTHLY_CAP))
+    # Subscription + interactive-cap are both pure reads that either pass or
+    # raise — safe to run concurrently. Priority is preserved by checking the
+    # subscription outcome before the cap outcome, so a user failing both
+    # still sees 402 (not 429). enforce_rate_limit must stay last and alone:
+    # unlike the other two, it writes a security_events row even on its
+    # success path, so running it concurrently with a check that might still
+    # reject the request would log a rate-limit-counted event for a request
+    # that was never actually served.
+    subscription_outcome, cap_outcome = await asyncio.gather(
+        run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream")),
+        run_in_threadpool(lambda: enforce_interactive_cap(user_id, _INTERACTIVE_MONTHLY_CAP)),
+        return_exceptions=True,
+    )
+    if isinstance(subscription_outcome, Exception):
+        raise subscription_outcome
+    if isinstance(cap_outcome, Exception):
+        raise cap_outcome
     await run_in_threadpool(
         lambda: enforce_rate_limit(
             user_id, "ask_stream", _ASK_STREAM_RATE_LIMIT_MAX,
@@ -1827,13 +1842,12 @@ async def ask_stream_endpoint(
         return StreamingResponse(
             full_document_scope_required_stream(), media_type="text/event-stream"
         )
-    preflight_documents = await run_in_threadpool(
-        lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
-    )
+    authorized_ids = list(resolved_ids)
     if payload.activeDocumentId:
-        preflight_documents.update(await run_in_threadpool(
-            lambda: _load_authorized_documents(user_id, payload.courseId, [payload.activeDocumentId])
-        ))
+        authorized_ids.append(payload.activeDocumentId)
+    preflight_documents = await run_in_threadpool(
+        lambda: _load_authorized_documents(user_id, payload.courseId, authorized_ids)
+    )
     # Authorization is complete at this point.  Only now may revision/page
     # manifests be enumerated.  This ordering is a security invariant.
     document_revisions = {
@@ -3616,15 +3630,36 @@ async def _prepare_ask_stream_response(
     )
     workspace_snapshot = None
     weak_topics: list[str] = []
+    learner_profile = None
     if payload.courseId:
         if status_sink:
             status_sink("collecting_sources")
         from ..services.mastery import fetch_weak_topics  # noqa: WPS433
         context_started = time.perf_counter()
-        workspace_snapshot, weak_topics = await asyncio.gather(
+        # German learner profile is independent of the course, but fetching
+        # it here alongside the workspace/weak-topics reads (rather than
+        # sequentially after this whole block) saves a full round trip on
+        # every course-bound request. return_exceptions=True because all
+        # three are best-effort — one failing must not cancel the others or
+        # the request; each already degrades to None/[] on its own below.
+        workspace_result, weak_topics_result, learner_profile_result = await asyncio.gather(
             run_in_threadpool(lambda: fetch_workspace_snapshot(user_id, payload.courseId)),
             run_in_threadpool(lambda: fetch_weak_topics(user_id, payload.courseId)),
+            run_in_threadpool(lambda: get_german_learner_profile(user_id)),
+            return_exceptions=True,
         )
+        if isinstance(workspace_result, Exception):
+            log.warning("workspace_snapshot_failed request_id=%s", request_id, exc_info=workspace_result)
+        else:
+            workspace_snapshot = workspace_result
+        if isinstance(weak_topics_result, Exception):
+            log.warning("weak_topics_failed request_id=%s", request_id, exc_info=weak_topics_result)
+        else:
+            weak_topics = weak_topics_result
+        if isinstance(learner_profile_result, Exception):
+            log.warning("learner_profile_failed request_id=%s", request_id, exc_info=learner_profile_result)
+        else:
+            learner_profile = learner_profile_result
         log.info(
             "ai_stream_timing request_id=%s phase=context context_ms=%.0f",
             request_id, (time.perf_counter() - context_started) * 1000,
@@ -3661,8 +3696,12 @@ async def _prepare_ask_stream_response(
         workspace_block += format_account_block(account_snapshot, in_course_chat=True)
     # German learner target, read server-side from the authenticated profile.
     # Its fingerprint joins the cache key so a level change (B2 → C1
-    # Hochschule) never replays an answer written for the old level.
-    learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
+    # Hochschule) never replays an answer written for the old level. Already
+    # fetched above (concurrently with workspace/weak-topics) when there's a
+    # course; a courseless chat skipped that gather entirely, so fetch it
+    # here instead of leaving German learners without their profile block.
+    if learner_profile is None and not payload.courseId:
+        learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
     workspace_block += format_learner_profile_block(learner_profile)
     ws_fingerprint = workspace_fingerprint(
         {"s": workspace_snapshot, "w": weak_topics, "p": page_context,
