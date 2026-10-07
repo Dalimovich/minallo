@@ -950,7 +950,13 @@ Do not include reasoning."""
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(frame)}],
             response_format={"type": "json_object"}, timeout=INTERACTIVE_SUPPORT_TIMEOUT,
-            **chat_completion_params(model, 220),
+            # This is a short classification call, not math/reasoning work —
+            # matches notes_full.py's existing override for the same reason.
+            # Without it, a reasoning-model OPENAI_GENERATE_MODEL would use
+            # the global (math-tuned) reasoning_effort default here too,
+            # making every short-reply classification as slow as a deep
+            # math call before any byte of the real answer can be sent.
+            **chat_completion_params(model, 220, reasoning_effort="low"),
         )
         raw = completion.choices[0].message.content if completion.choices else "{}"
         data = json.loads(raw or "{}")

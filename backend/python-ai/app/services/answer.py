@@ -68,8 +68,12 @@ FIGURE_CHUNK_TYPES = frozenset({"exercise", "diagram", "figure", "image", "solut
 # fail multi-phase kinematics (resetting velocity at an internal boundary)
 # that o4-mini solves correctly. gpt-5 is grouped the same way llm_json.py's
 # _MAX_COMPLETION_TOKENS_PREFIXES already does for the german-exam call path.
+# The gpt-5-chat variant is excluded: it's a plain chat model (temperature,
+# no reasoning_effort) despite the gpt-5 name.
 def is_reasoning_model(model: str | None) -> bool:
     m = (model or "").strip()
+    if m.startswith("gpt-5-chat"):
+        return False
     return bool(re.match(r"^o\d", m)) or m.startswith("gpt-5")
 
 

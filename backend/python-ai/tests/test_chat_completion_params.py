@@ -29,6 +29,13 @@ def test_is_reasoning_model_false_for_ordinary_chat_models(model: str | None) ->
     assert not is_reasoning_model(model)
 
 
+@pytest.mark.parametrize("model", ["gpt-5-chat", "gpt-5-chat-latest"])
+def test_is_reasoning_model_excludes_gpt5_chat_variant(model: str) -> None:
+    """gpt-5-chat is a plain chat model (temperature, no reasoning_effort)
+    despite the gpt-5 name — must not be swept in by the prefix match."""
+    assert not is_reasoning_model(model)
+
+
 def test_needs_max_completion_tokens_covers_gpt41_and_gpt45_without_being_reasoning_models() -> None:
     """These need max_completion_tokens (same as reasoning models) but stay
     ordinary chat models otherwise — no reasoning_effort, temperature allowed."""
