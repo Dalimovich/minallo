@@ -8,11 +8,14 @@ academic intent classification to ``answer_intent``.
 
 from __future__ import annotations
 
+import logging
 import re
 import json
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 class DialogueAct(str, Enum):
@@ -1007,10 +1010,17 @@ Do not include reasoning."""
                "requires_new_retrieval": evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL,
                "confidence": confidence}
         )
-    except Exception:
+    except Exception as exc:
         # Classification unavailability must not erase obvious conversational
         # continuity. This branch is reached only for turns already deemed
         # short/context-dependent (standalone questions never call it).
+        # Logged so a tight INTERACTIVE_CLASSIFIER_TIMEOUT tripping under
+        # real provider latency is visible, not silent — watch this rate
+        # after release and raise the timeout if it fires often.
+        log.info(
+            "dialogue_semantic_classifier_fallback exception=%s",
+            type(exc).__name__,
+        )
         return _safe_conversational_fallback(message, previous_turns, base)
 
 
