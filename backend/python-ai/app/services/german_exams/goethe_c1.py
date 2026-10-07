@@ -25,10 +25,31 @@ Sprachbausteine section.
 Every part is `available=False` until its generator, validator and renderer
 exist (G1 Lesen, G2 Hören, G3 Schreiben, G4 Sprechen); flip the flag here then.
 
-Lesen (G1) and Schreiben (G3) are now flipped available: generation, structural/
-semantic validation, frontend rendering+grading (reading: practice.js's
-rdRenderXxx/rdGradeXxx dispatch maps; writing: grade-writing's
-GRADABLE_WRITING_PROFILE_IDS) all genuinely exist for every task type here.
+Lesen (G1) is now flipped available: generation, structural/semantic validation,
+and frontend rendering+grading (practice.js's rdRenderXxx/rdGradeXxx dispatch
+maps) all genuinely exist for every task type here — confirmed live by a real
+production generation (2026-10-07).
+
+Schreiben (G3) stays `available=False` despite `goethe_c1` being listed in
+GRADABLE_WRITING_PROFILE_IDS (german_exam_writing_grading.py) — that only
+means the GRADING FUNCTION accepts this profile, not that the shapes line up
+end to end. Confirmed live by a real generation + grading attempt
+(2026-10-07): forum_discussion_post/formal_context_message's generator
+(_prompt_goethe_single_scenario) produces {"questions": [{"title",
+"communicativeSituation", "contentPoints", "taskInstructions",
+"writingCoachTaskType"}]}, but task-workspace.ts's TASK_RENDERERS dispatches
+BOTH Goethe's and TestDaF's writing task types through the generic
+productive-task-v1 contract (ProductiveContent: schemaVersion/id/prompt/
+sources — see productive-task.ts), and writing-grader.ts's createWritingGrader
+sends that same raw `content` as `task` to /grade-writing verbatim. The shapes
+do not match: a real student could generate a Goethe writing task, write a
+full response, and get a hard "invalid productive schema" error on submit,
+losing their work. This needs either a shape-transform adapter or a dedicated
+Goethe writing renderer/grader (mirroring how TELC's own choice_long_form_
+writing is NOT routed through task-workspace.ts's generic productive path) —
+not yet built. Do not flip this flag again until that's fixed and re-verified
+with a real generate+grade round trip, not just a code-inspection pass.
+
 Hören (G2) stays `available=False`: generation/validation are real, but the
 live frontend listening surface (practice.js's lsMapGeneratedQuestion/
 LS_RENDERERS/LS_OPTION_TYPES, and its hv1/hv2/hv3-hardcoded part switcher) has
@@ -204,7 +225,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=60, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 14, "coherence": 14, "vocabulary": 16, "structures": 16},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=True,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=False,
     ),
     PartBlueprint(
         part_id="schreiben_2", module="writing", title="(Halb-)formelle Nachricht",
@@ -218,7 +239,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=40, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 10, "coherence": 10, "vocabulary": 10, "structures": 10},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=True,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=False,
     ),
 )
 

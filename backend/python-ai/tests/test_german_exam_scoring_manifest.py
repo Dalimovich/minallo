@@ -51,7 +51,7 @@ def test_manifest_goethe() -> None:
     assert m["modules"][3]["preparationSeconds"] == 1200
     implemented_by_module = {x["id"]: [p["implemented"] for p in x["parts"]] for x in m["modules"]}
     assert all(implemented_by_module["reading"]), "Lesen: generator+validator+frontend render/grade all exist"
-    assert all(implemented_by_module["writing"]), "Schreiben: generator+validator+grading contract all exist"
+    assert not any(implemented_by_module["writing"]), "Schreiben: generator output shape does not match the productive-task-v1 contract the frontend grader requires"
     assert not any(implemented_by_module["listening"]), "Hören: no frontend renderer for any task type yet"
     assert not any(implemented_by_module["speaking"]), "Sprechen: no grading path, no sourced point weights"
 

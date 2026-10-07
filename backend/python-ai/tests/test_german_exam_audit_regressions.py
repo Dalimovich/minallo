@@ -128,24 +128,27 @@ def test_telc_parts_remain_available_by_default_unchanged():
         assert part.available is True, f"telc {module}/{part.part_id} unexpectedly not available"
 
 
-def test_goethe_hoeren_and_sprechen_remain_unavailable_unchanged():
-    """Lesen/Schreiben were deliberately flipped available=True (generator+validator+frontend
-    render+grade all genuinely exist, see goethe_c1.py's module docstring) — Hören (no frontend
-    renderer for any of its 4 task types yet) and Sprechen (no grading path, no sourced point
-    weights) stay unavailable."""
+def test_goethe_hoeren_schreiben_and_sprechen_remain_unavailable_unchanged():
+    """Lesen was deliberately flipped available=True (generator+validator+frontend render+grade
+    all genuinely exist, confirmed by a real production generation 2026-10-07 — see goethe_c1.py's
+    module docstring). Schreiben, Hören and Sprechen stay unavailable: Schreiben's generator output
+    shape does not match the productive-task-v1 contract the frontend grader requires (confirmed
+    broken by a real generate+grade attempt 2026-10-07, NOT just a leftover flag); Hören has no
+    frontend renderer for any of its 4 task types; Sprechen has no grading path at all."""
     profile = get_profile("goethe_c1")
     for module, part in _all_parts(profile):
-        if module in ("listening", "speaking"):
-            assert part.available is False, f"goethe {module}/{part.part_id} unexpectedly available"
-        else:
+        if module == "reading":
             assert part.available is True, f"goethe {module}/{part.part_id} unexpectedly unavailable"
+        else:
+            assert part.available is False, f"goethe {module}/{part.part_id} unexpectedly available"
 
 
-def test_only_telc_and_goethe_lesen_schreiben_opt_parts_in_explicitly():
+def test_only_telc_and_goethe_lesen_opt_parts_in_explicitly():
     """PartBlueprint.available defaults to False (fail closed). `available=True` may appear in the
-    TELC profile file (once per released part) and in Goethe's Lesen/Schreiben parts only
-    (4 + 2 = 6, deliberately flipped — see goethe_c1.py's module docstring); TestDaF must contain
-    none (blocked on its own formal live-qualification policy, audit/testdaf-offline/
+    TELC profile file (once per released part) and in Goethe's Lesen parts only (4, deliberately
+    flipped — see goethe_c1.py's module docstring); Goethe's Schreiben was flipped and then
+    reverted (confirmed broken by a real generate+grade attempt, not just gated) and TestDaF must
+    contain none (blocked on its own formal live-qualification policy, audit/testdaf-offline/
     LIVE_QUALIFICATION_PLAN.md). The effective set is frozen separately in
     test_german_exam_availability_gate.py."""
     import inspect
@@ -153,7 +156,7 @@ def test_only_telc_and_goethe_lesen_schreiben_opt_parts_in_explicitly():
     from app.services.german_exams import goethe_c1, telc_c1_hochschule, testdaf_digital
 
     assert inspect.getsource(telc_c1_hochschule).count("available=True") == 10
-    assert inspect.getsource(goethe_c1).count("available=True") == 6
+    assert inspect.getsource(goethe_c1).count("available=True") == 4
     assert "available=True" not in inspect.getsource(testdaf_digital)
 
 
