@@ -1712,14 +1712,22 @@ async function streamAiReply(
         });
       }
     }
-    const durable = initialRag ? await ensureDurableConversation(originChat, {
-      courseId: initialRag.courseId,
-      activeDocumentId: initialRag.activePdfContext?.documentId,
-      titleSeed: originChat.title,
-      message: sourceUser,
-      assistantMessage,
-      resumeExisting: options.resumeExistingRequest,
-    }) : null;
+    // A chat that's already persisted (persistedId set) needs no round trip
+    // here, including on a retry of an earlier request — /ask-stream now
+    // creates the durable turn itself on first sight of a request_id it
+    // hasn't seen (idempotent on retry), so only a brand-new chat's first
+    // message still needs to create the conversation row through here.
+    const durable = initialRag
+      ? (originChat.persistedId
+          ? { conversationId: originChat.persistedId, created: false }
+          : await ensureDurableConversation(originChat, {
+              courseId: initialRag.courseId,
+              activeDocumentId: initialRag.activePdfContext?.documentId,
+              titleSeed: originChat.title,
+              message: sourceUser,
+              assistantMessage,
+            }))
+      : null;
     // Phase 12 wiring: when the active chat has ≥1 course-imported source
     // Grounded course files, active-PDF captures, and pasted screenshots use
     // /ask-stream. Arbitrary non-indexed file attachments retain their
@@ -3797,12 +3805,8 @@ async function ensureDurableConversation(
     titleSeed?: string;
     message?: ChatMessage;
     assistantMessage?: ChatMessage;
-    resumeExisting?: boolean;
   }
 ): Promise<DurableConversationResult> {
-  if (context.resumeExisting && chat.persistedId) {
-    return { conversationId: chat.persistedId, created: false };
-  }
   const existing = inFlightConversationCreates.get(chat.id);
   if (existing) return existing;
   const promise = (async (): Promise<DurableConversationResult> => {
