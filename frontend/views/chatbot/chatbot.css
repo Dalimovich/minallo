@@ -5560,16 +5560,15 @@ body:not(.night) .ncb-cs-reopen-btn:hover {
 @media (prefers-reduced-motion: reduce) {
   .ncb-saved-confirm-spinner { animation-duration: 1.6s; }
 }
-.study-file-card.ncb-file-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; cursor: default; }
+.study-file-card.ncb-file-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; cursor: pointer; }
+.study-file-card.ncb-file-row:hover { background: rgba(148, 163, 184, 0.08); }
+.study-file-card.ncb-file-row:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 .study-file-card__identity { min-width: 0; display: flex; align-items: center; gap: 12px; }
 .study-file-card__content { min-width: 0; }
 .study-file-card__filename { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .study-file-card__meta { min-width: 0; margin-top: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .study-file-card__meta > small { flex: 0 1 auto; max-width: 100%; }
 .study-file-card__actions { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0; }
-.study-file-card__open { padding: 5px 4px; border: 0; color: #9bb0ca; background: transparent; font: 700 .67rem/1.2 var(--font-main, sans-serif); cursor: pointer; }
-.study-file-card__open:hover { color: #dbeafe; }
-.study-file-card__open:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; border-radius: 5px; }
 .study-file-card__actions .ncb-library-delete { margin-left: 0; }
 .ncb-file-doctype { display: inline-flex; min-width: 0; max-width: 100%; }
 .ncb-file-doctype .doc-type-badge { display: none; }

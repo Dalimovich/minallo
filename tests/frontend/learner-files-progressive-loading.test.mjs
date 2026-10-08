@@ -21,7 +21,6 @@ export const uploadLearnerFile = (f) => c().upload(f);
 export const indexLearnerFile = async (f) => f;
 export const refreshLearnerFile = async (f) => f;
 export const deleteLearnerFile = async () => {};
-export const openLearnerFile = async () => {};
 `;
 
 async function bundle() {

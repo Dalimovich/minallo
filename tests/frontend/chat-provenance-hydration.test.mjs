@@ -14,7 +14,7 @@ test('durable cache recovery restores answer provenance and the original retry s
     }] }) }),
     repairOrphanedAssistantMessages: () => false, repairConversationIntegrity: () => {},
     saveChatStore: () => {}, chatStore: { activeId: 'other-chat' },
-  }, ['hydrateDurableTranscript']);
+  }, ['hydrateDurableTranscript', 'fetchDurableTranscript', 'fetchDurableTranscriptOnce']);
   const chat = { id: 'chat-a', persistedId: 'conversation', messages: [] };
   await runtime.hydrateDurableTranscript(chat, null);
   const restored = chat.messages[0];

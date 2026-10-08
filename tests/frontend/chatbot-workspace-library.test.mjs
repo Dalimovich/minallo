@@ -56,6 +56,61 @@ test('Study Panel file cards keep filename identity separate from type actions',
   assert.match(css, /\.study-file-card__meta\s*\{[^}]*flex-wrap:\s*wrap/);
   assert.match(css, /\.ncb-file-doctype \.doc-type-select\s*\{[^}]*max-width:\s*150px/);
 });
+
+test('the whole file card opens the viewer; there is no separate Open button', () => {
+  assert.doesNotMatch(moduleSource, /study-file-card__open/);
+  assert.doesNotMatch(moduleSource, />Open<\/button>/);
+  assert.match(moduleSource, /data-library-file="" data-document-id="\$\{escapeHtml\(doc\?\.id \|\| ''\)\}" data-file-name="\$\{escapeHtml\(file\.name\)\}" data-folder="\$\{escapeHtml\(folder \|\| ''\)\}" tabindex="0" role="button"/);
+  assert.doesNotMatch(css, /\.study-file-card__open/);
+  assert.match(css, /\.study-file-card\.ncb-file-row\s*\{[^}]*cursor:\s*pointer/);
+
+  // bindSingleFileRow (student rows) and learnerFileRow (learner rows) both
+  // bind one click handler on the row and skip it for clicks on interactive
+  // descendants, so Delete/Retry/the file-type <select> never open the file.
+  const bindSingleFileRowBody = moduleSource.slice(
+    moduleSource.indexOf('function bindSingleFileRow'),
+    moduleSource.indexOf('function findCourseFile(')
+  );
+  assert.match(bindSingleFileRowBody, /const openThisFile = \(\): void => \{/);
+  assert.match(bindSingleFileRowBody, /row\.addEventListener\('click', \(event\) => \{/);
+  assert.match(bindSingleFileRowBody, /\.closest\('button, select, label, a, input, textarea, \[data-delete-file\], \[data-retry-index\], \[data-learner-retry\]'\)\) return;/);
+  assert.match(bindSingleFileRowBody, /openThisFile\(\);/);
+  assert.match(bindSingleFileRowBody, /row\.addEventListener\('keydown', \(event\) => \{/);
+
+  const learnerFileRowBody = moduleSource.slice(
+    moduleSource.indexOf('function learnerFileRow('),
+    moduleSource.indexOf('function learnerRowRetry(')
+  );
+  assert.match(learnerFileRowBody, /const openThisLearnerFile = \(\): void => \{/);
+  assert.match(learnerFileRowBody, /row\.addEventListener\('click', \(event\) => \{/);
+  assert.match(learnerFileRowBody, /\.closest\('button, select, label, a, input, textarea, \[data-delete-file\], \[data-retry-index\], \[data-learner-retry\]'\)\) return;/);
+});
+
+test('learner files open through the same in-chat viewer as student files, never a new tab', () => {
+  assert.doesNotMatch(moduleSource, /openLearnerFile/);
+  const learnerFileRowBody = moduleSource.slice(
+    moduleSource.indexOf('function learnerFileRow('),
+    moduleSource.indexOf('function learnerRowRetry(')
+  );
+  assert.match(learnerFileRowBody, /openWorkspacePdf\(rootFor\(row\), file, pdfScope\)/);
+  assert.doesNotMatch(learnerFileRowBody, /window\.open\(/);
+  assert.doesNotMatch(learnerFileRowBody, /_blank/);
+
+  const learnerFilesTs = fs.readFileSync('frontend/js/features/german/learner-files.ts', 'utf8');
+  assert.doesNotMatch(learnerFilesTs, /export (async )?function openLearnerFile/);
+  assert.doesNotMatch(learnerFilesTs, /window\.open\(/);
+});
+
+test('openWorkspacePdf waits for the viewer DOM instead of failing silently, and never falls back to a new tab', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('function openWorkspacePdf'),
+    moduleSource.indexOf('function fileButton(')
+  );
+  assert.match(fn, /function openWorkspacePdf\(root: HTMLElement, file: CourseFile, course: LibraryCourse, attempt = 0\): void \{/);
+  assert.match(fn, /if \(attempt < 80\) \{ window\.setTimeout\(\(\) => openWorkspacePdf\(root, file, course, attempt \+ 1\), 100\); return; \}/);
+  assert.match(fn, /window\.showToast\?\.\('Could not open file'/);
+  assert.doesNotMatch(fn, /window\.open\(/);
+});
 const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',
   'utf8'
