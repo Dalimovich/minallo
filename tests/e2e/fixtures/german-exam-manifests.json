@@ -609,7 +609,7 @@
               "structures"
             ],
             "id": "schreiben_1",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 60,
               "mode": "rubric",
@@ -634,7 +634,7 @@
               "structures"
             ],
             "id": "schreiben_2",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 40,
               "mode": "rubric",
