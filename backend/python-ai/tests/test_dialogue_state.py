@@ -375,6 +375,12 @@ def test_classifier_uses_low_reasoning_effort_for_a_reasoning_model(monkeypatch)
     class _FakeClient:
         chat = _FakeChat()
 
+        def with_options(self, **_kwargs):
+            # Forward-compatible with Phase 2's .with_options(max_retries=0)
+            # wrapping this same call — mirrors the real OpenAI client and
+            # llm_json.py's own usage, which just keeps chaining on self.
+            return self
+
     monkeypatch.setattr(openai_client, "get_openai_client", lambda: _FakeClient())
     monkeypatch.setattr(
         config_module, "get_settings",
