@@ -179,23 +179,3 @@ export async function deleteLearnerFile(file: LearnerFile): Promise<void> {
   if (!response.ok) throw new Error('Could not delete the stored file. Please retry.');
   clearCourseDocumentCache(file.learnerFileScope);
 }
-
-export async function openLearnerFile(file: LearnerFile): Promise<void> {
-  assertOwner(file);
-  const tab = window.open('about:blank', '_blank');
-  if (!tab) throw new Error('Allow a new tab to open this file.');
-  tab.opener = null;
-  try {
-    const bytes = await readLearnerFile(file);
-    assertOwner(file);
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    const type = ext === 'pdf' ? 'application/pdf' : ext === 'txt' ? 'text/plain' :
-      ext === 'png' ? 'image/png' : ['jpg', 'jpeg'].includes(ext || '') ? 'image/jpeg' : 'application/octet-stream';
-    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
-    tab.location.href = url;
-    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (error) {
-    tab.close();
-    throw error;
-  }
-}
