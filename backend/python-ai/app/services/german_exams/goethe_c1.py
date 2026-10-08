@@ -123,7 +123,17 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
         part_id="lesen_1", module="reading", title="Lückentext (Multiple Choice)",
         task_type="contextual_cloze_mc4",
         constraints={"gapCount": 8, "exampleGapCount": 1, "optionCount": 4, "wordCountApprox": 320,
-                     "suggestedMinutes": 10, "balanceOptionPositions": True},
+                     "suggestedMinutes": 10, "balanceOptionPositions": True,
+                     # A real production run measured ONE unchunked verify call at 56s / 7461
+                     # reasoning tokens for just 8 items -- over half the 95s request budget, so a
+                     # repair-then-reverify cycle (needed when the verifier finds a real issue) ran
+                     # out of time. Same chunked-transport fix as TestDaF lesen_3's own
+                     # text_reconstruction_sentence_matching (same module, same verify_semantic_chunked
+                     # engine) -- semantic rules/prompt/schema/model/effort are unchanged, only the
+                     # transport splits the 8 items into 2 parallel 4-item calls. No blindSolve here:
+                     # that pass is specific to lesen_3's sentence-insertion gap shape, not this
+                     # single-word/short-phrase MC4 cloze.
+                     "verifier": {"chunks": 2, "chunkMaxTokens": 8000}},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("lexical_specificity", "grammar_complexity"),
         scoring=ScoringSpec(max_points=8, points_per_correct=1), available=True,
     ),

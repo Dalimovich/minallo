@@ -387,6 +387,10 @@
               "gapCount": 8,
               "optionCount": 4,
               "suggestedMinutes": 10,
+              "verifier": {
+                "chunkMaxTokens": 8000,
+                "chunks": 2
+              },
               "wordCountApprox": 320
             },
             "gradingDimensions": null,
