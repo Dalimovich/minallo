@@ -21,6 +21,8 @@ export const uploadLearnerFile = (f) => c().upload(f);
 export const indexLearnerFile = async (f) => f;
 export const refreshLearnerFile = async (f) => f;
 export const deleteLearnerFile = async () => {};
+export const openLearnerFile = async () => {};
+export const isLearnerFileScope = (id) => id === 'german-files' || id === 'german-reading' || id === 'german-grammar';
 `;
 
 async function bundle() {

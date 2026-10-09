@@ -19,7 +19,7 @@ import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/a
 import {
   listCanonicalLearnerFiles, listLearnerFilesForScope, getLegacyLearnerScopes, dedupeLearnerFiles,
   getLearnerFileStorageScope, uploadLearnerFile, indexLearnerFile,
-  refreshLearnerFile, deleteLearnerFile, type LearnerFile,
+  refreshLearnerFile, deleteLearnerFile, openLearnerFile, isLearnerFileScope, type LearnerFile,
 } from '../german/learner-files.js';
 
 export type CourseFile = {
@@ -836,7 +836,10 @@ function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attemp
   // involve a remote storage listing and must never block refresh restore.
   // renderCourseDetail updates the hidden origin panel in the background so
   // Back still returns to the fully refreshed course once it is ready.
-  void renderCourseDetail(coursePanel, course);
+  // A learner's synthetic file scope has no real course-detail page to
+  // render (no SEMS course, no files()/userFolders() to hydrate) — skip it
+  // entirely rather than painting a fake course page behind the viewer.
+  if (!isLearnerFileScope(course.id)) void renderCourseDetail(coursePanel, course);
   openWorkspacePdf(root, file, course);
 }
 
@@ -975,6 +978,15 @@ function learnerFileRow(file: LearnerFile): HTMLElement {
   }
   row.dataset.learnerFileKey = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
   const openThisLearnerFile = (): void => {
+    // Mirrors pdf-viewer.ts openFile()'s own isHtml/isImage classification
+    // (plus the default pdf.js path for .pdf) — anything else (e.g. a
+    // learner-upload-accepted .docx) has no in-chat render path, so it falls
+    // back to openLearnerFile's new-tab opener instead of silently failing
+    // inside the viewer.
+    if (!/\.(pdf|html?|png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(file.name)) {
+      void openLearnerFile(file).catch((error: Error) => window.showToast?.('Could not open file', error.message));
+      return;
+    }
     const pdfScope: LibraryCourse = {
       id: file.learnerFileScope, short: file.learnerFileScope, name: 'German Files', files: [], userFolders: [],
     };
@@ -1812,7 +1824,11 @@ function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCo
     window.showToast?.('Could not open file', 'The file viewer is not ready yet. Please reload and try again.');
     return;
   }
-  rememberCourse(course);
+  // A learner's synthetic file scope (e.g. 'german-files') is not a real
+  // SEMS course — recording it as the "most recent course" would corrupt
+  // the student-only Courses tab's recent-course ordering for an account
+  // that never had a course to begin with.
+  if (!isLearnerFileScope(course.id)) rememberCourse(course);
   saveWorkspacePdfSession(course, file);
 
   if (!pdfOrigin) {

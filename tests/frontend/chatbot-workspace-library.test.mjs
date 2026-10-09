@@ -86,19 +86,26 @@ test('the whole file card opens the viewer; there is no separate Open button', (
   assert.match(learnerFileRowBody, /\.closest\('button, select, label, a, input, textarea, \[data-delete-file\], \[data-retry-index\], \[data-learner-retry\]'\)\) return;/);
 });
 
-test('learner files open through the same in-chat viewer as student files, never a new tab', () => {
-  assert.doesNotMatch(moduleSource, /openLearnerFile/);
+test('learner files open through the same in-chat viewer as student files; a new tab is only the explicit fallback for types the viewer cannot render', () => {
   const learnerFileRowBody = moduleSource.slice(
     moduleSource.indexOf('function learnerFileRow('),
     moduleSource.indexOf('function learnerRowRetry(')
   );
   assert.match(learnerFileRowBody, /openWorkspacePdf\(rootFor\(row\), file, pdfScope\)/);
+  // Gated on the SAME extensions the in-chat viewer (pdf-viewer.ts) actually
+  // renders (isHtml/isImage plus the default pdf.js path) — anything else
+  // (e.g. a learner-upload-accepted .docx) must hit the fallback, never
+  // silently fail inside the viewer.
+  assert.ok(learnerFileRowBody.includes('pdf|html?|png|jpe?g|gif|webp|svg|bmp|tiff?'));
+  assert.match(learnerFileRowBody, /void openLearnerFile\(file\)\.catch/);
+  // Only that one fallback call site may open a new tab — the viewer path
+  // itself (openWorkspacePdf/openThisLearnerFile's happy path) never does.
   assert.doesNotMatch(learnerFileRowBody, /window\.open\(/);
   assert.doesNotMatch(learnerFileRowBody, /_blank/);
 
   const learnerFilesTs = fs.readFileSync('frontend/js/features/german/learner-files.ts', 'utf8');
-  assert.doesNotMatch(learnerFilesTs, /export (async )?function openLearnerFile/);
-  assert.doesNotMatch(learnerFilesTs, /window\.open\(/);
+  assert.match(learnerFilesTs, /export async function openLearnerFile/);
+  assert.match(learnerFilesTs, /window\.open\('about:blank', '_blank'\)/);
 });
 
 test('openWorkspacePdf waits for the viewer DOM instead of failing silently, and never falls back to a new tab', () => {
@@ -110,6 +117,19 @@ test('openWorkspacePdf waits for the viewer DOM instead of failing silently, and
   assert.match(fn, /if \(attempt < 80\) \{ window\.setTimeout\(\(\) => openWorkspacePdf\(root, file, course, attempt \+ 1\), 100\); return; \}/);
   assert.match(fn, /window\.showToast\?\.\('Could not open file'/);
   assert.doesNotMatch(fn, /window\.open\(/);
+  // A learner's synthetic file scope ('german-files' etc.) is not a real
+  // SEMS course — it must never be recorded as the "most recent course".
+  assert.match(fn, /if \(!isLearnerFileScope\(course\.id\)\) rememberCourse\(course\);/);
+});
+
+test('refresh-restoring a learner file skips the fake course-detail render', () => {
+  const fn = moduleSource.slice(
+    moduleSource.indexOf('function restoreWorkspacePdf'),
+    moduleSource.indexOf('function renderCourses(')
+  );
+  assert.match(fn, /if \(!isLearnerFileScope\(course\.id\)\) void renderCourseDetail\(coursePanel, course\);/);
+  assert.match(fn, /openWorkspacePdf\(root, file, course\);/);
+  assert.match(moduleSource, /isLearnerFileScope, type LearnerFile,/);
 });
 const pdfViewerSource = fs.readFileSync(
   'frontend/js/features/pdf-viewer/pdf-viewer.ts',

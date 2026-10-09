@@ -11,6 +11,14 @@ const LEGACY_SCOPES = [
 ];
 const SCOPES = [CANONICAL_SCOPE, ...LEGACY_SCOPES];
 
+/** True for any learner-files storage scope id (canonical or legacy) — lets
+ * callers outside this module (workspace-library.ts's course-detail restore
+ * path) tell a learner's synthetic file scope apart from a real SEMS course
+ * id without reaching into LEGACY_SCOPES/CANONICAL_SCOPE directly. */
+export function isLearnerFileScope(id: string): boolean {
+  return SCOPES.includes(id);
+}
+
 export type LearnerFile = {
   id: string;
   documentId: string | null;
@@ -178,4 +186,29 @@ export async function deleteLearnerFile(file: LearnerFile): Promise<void> {
   }, { safeToRetry: true });
   if (!response.ok) throw new Error('Could not delete the stored file. Please retry.');
   clearCourseDocumentCache(file.learnerFileScope);
+}
+
+/** Fallback only: the in-chat viewer (pdf-viewer.ts) renders PDF, images and
+ * HTML natively — everything else (e.g. .docx, a learner-upload-accepted
+ * type) has no in-chat render path, so this is the explicit "open in a new
+ * tab" escape hatch workspace-library.ts's learnerFileRow() falls back to
+ * for those extensions. Never the default/first choice. */
+export async function openLearnerFile(file: LearnerFile): Promise<void> {
+  assertOwner(file);
+  const tab = window.open('about:blank', '_blank');
+  if (!tab) throw new Error('Allow a new tab to open this file.');
+  tab.opener = null;
+  try {
+    const bytes = await readLearnerFile(file);
+    assertOwner(file);
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const type = ext === 'pdf' ? 'application/pdf' : ext === 'txt' ? 'text/plain' :
+      ext === 'png' ? 'image/png' : ['jpg', 'jpeg'].includes(ext || '') ? 'image/jpeg' : 'application/octet-stream';
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type }));
+    tab.location.href = url;
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (error) {
+    tab.close();
+    throw error;
+  }
 }
