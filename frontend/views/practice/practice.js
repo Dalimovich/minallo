@@ -6024,24 +6024,75 @@
         return (p && p.examProfileId) || null;
       }
 
+      // The part list is the ACTIVE EXAM's, from its manifest (profile decides structure; task type
+      // decides behaviour) — mirrors rdParts()/RD_FALLBACK_PARTS exactly. The telc list below is only
+      // the fallback while no manifest is available, so behaviour is unchanged for a telc learner
+      // before/without it. Needed (unlike Lesen, which never needed this) because Goethe's Hören part
+      // ids (hoeren_1..4) don't share telc's hv1/hv2/hv3 strings.
+      var LS_FALLBACK_PARTS = [
+        { id: 'hv1', title: 'Globalverstehen', taskType: 'speaker_statement_matching', implemented: true },
+        { id: 'hv2', title: 'Detailverstehen', taskType: 'sentence_completion_mc3', implemented: true },
+        { id: 'hv3', title: 'Informationstransfer', taskType: 'structured_note_completion', implemented: true }
+      ];
+      function lsParts() {
+        var st = window._glExamState && window._glExamState();
+        var mods = st && st.status === 'ready' && st.manifest ? st.manifest.modules.filter(function (m) { return m.id === 'listening'; }) : [];
+        return st && st.status === 'ready' && st.manifest ? (mods.length ? mods[0].parts : []) : LS_FALLBACK_PARTS;
+      }
+      function lsPart(partId) {
+        return lsParts().filter(function (p) { return p.id === partId; })[0] || null;
+      }
+      function lsPartLabel(partId) {
+        var parts = lsParts();
+        for (var i = 0; i < parts.length; i++) {
+          if (parts[i].id === partId) return 'Teil ' + (i + 1) + ' · ' + parts[i].title;
+        }
+        return partId || '';
+      }
+      function lsFirstPartId() {
+        var p = lsParts().filter(function (x) { return x.implemented; })[0];
+        return p ? p.id : null;
+      }
+      // Official tristate wording (Goethe Hören Teil 2) comes from the manifest's own constraints —
+      // same single-source-of-truth principle as scoring/pointsPerCorrect elsewhere in this file —
+      // falling back to the one fixed official triple if the manifest isn't available yet.
+      var LS_TRISTATE_VALUES = ['richtig', 'falsch', 'nicht_im_text'];
+      var LS_TRISTATE_DEFAULT_LABELS = ['stimmt', 'stimmt nicht', 'dazu wird nichts gesagt'];
+      function lsTristateLabels() {
+        var p = lsPart(ls.partId);
+        var opts = p && p.constraints && p.constraints.answerOptions;
+        return (Array.isArray(opts) && opts.length === 3) ? opts : LS_TRISTATE_DEFAULT_LABELS;
+      }
+
+      // Extending with a new exam-specific task type means one branch here (field-shape mapping
+      // only — rendering/grading dispatch lives in LS_RENDERERS/LS_GRADERS below). Goethe's
+      // multi_source_statement_matching/listening_tristate statements use `statement`, not telc's
+      // `prompt` — both are accepted so one branch serves both exams' shapes.
       function lsMapGeneratedQuestion(part, q, speakerToSegment, allSegmentIds) {
         var base = {
           questionId: q.questionId, type: part.taskType, category: part.title,
           skillTags: q.skillTags || [], difficulty: q.difficulty || null, hints: []
         };
-        if (part.taskType === 'speaker_statement_matching') {
-          base.prompt = q.prompt || '';
+        if (part.taskType === 'speaker_statement_matching' || part.taskType === 'multi_source_statement_matching') {
+          base.prompt = q.prompt || q.statement || '';
           base.matching = q.matching || {};
           var spId = base.matching.correctSpeakerId;
           base.segmentIds = (spId && speakerToSegment[spId]) ? [speakerToSegment[spId]] : [];
-        } else if (part.taskType === 'sentence_completion_mc3') {
+        } else if (part.taskType === 'sentence_completion_mc3' || part.taskType === 'segmented_dialogue_mc3' || part.taskType === 'listening_detail_mc3') {
           base.prompt = (q.mc3 && q.mc3.stem) || '';
           base.mc3 = q.mc3 || {};
+          base.sectionId = q.sectionId || null;
           base.segmentIds = allSegmentIds;
         } else if (part.taskType === 'structured_note_completion') {
           base.prompt = (q.note && q.note.fieldLabel) || '';
           base.note = q.note || {};
           base.segmentIds = allSegmentIds;
+        } else if (part.taskType === 'listening_tristate') {
+          base.prompt = q.prompt || q.statement || '';
+          base.tristate = q.tristate || {};
+          base.answer = base.tristate.answer || ''; // lets this type reuse lsGradeMcqLikeType unchanged
+          var evidence = base.tristate.evidenceSegmentIds;
+          base.segmentIds = (evidence && evidence.length) ? evidence : allSegmentIds;
         } else {
           base.prompt = q.prompt || '';
           base.segmentIds = allSegmentIds;
@@ -6364,7 +6415,11 @@
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
         lsResetToPracticeTabChrome();
-        lsGenerateOrLoadPart('listening', ls.partId || 'hv1').then(function () {
+        // The stored partId may belong to a since-switched exam's manifest (e.g. 'hv1' left over
+        // from telc after switching to a Goethe profile, whose parts are named hoeren_1..4) —
+        // re-resolve against the CURRENT manifest rather than trusting it blindly.
+        var openPartId = (lsPart(ls.partId) ? ls.partId : lsFirstPartId()) || ls.partId || 'hv1';
+        lsGenerateOrLoadPart('listening', openPartId).then(function () {
           if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
           if (ls._awaitingProfile) return; // lsShowWaitingForProfile() already drew the loading panel
           lsRenderPlayerChrome();
@@ -6397,7 +6452,7 @@
         if (ls.profileId && ls.profileId !== nextProfileId) {
           ls.usingGenerated = false; ls.profileId = null; ls.profileVersion = null; ls.generationId = null;
           ls.set = null; ls.questions = []; ls.index = 0; ls.answers = {}; ls.hintLevel = {}; ls.transcriptRevealed = {};
-          ls.attemptsBuffer = []; ls._speakerOrder = []; ls.partId = 'hv1'; ls.done = false;
+          ls.attemptsBuffer = []; ls._speakerOrder = []; ls.partId = null; ls.done = false;
           ls._lastGenFailed = false; ls._resultsSavePromise = null;
         }
       });
@@ -6504,17 +6559,21 @@
         if (onWeak) lsRenderWeakAreasTab();
       }
 
-      // Minimal part switcher for the generated (telc C1 Hochschule) path —
-      // only 3 flat buttons, no full Exam/Level/Part header treatment yet.
-      // Clicking a part that's already active is a no-op (no need to
-      // regenerate the same part); clicking a different part goes through
-      // the same lsGenerateOrLoadPart() race-safety as everything else.
+      // Part switcher for the generated path — buttons are rebuilt from lsParts() on every call
+      // (unlike Lesen's rdEnsureGeneratedSwitcher, which creates its bar once and never rebuilds,
+      // this one has pre-existing static markup in practice.html to reuse, and rebuilding is cheap)
+      // so it always reflects whichever exam's manifest is currently active, not just telc's fixed
+      // 3 parts. Each button keeps the id="glListenPart<PARTID>" convention existing E2E tests rely
+      // on (e.g. #glListenPartHV2) — just generalized to any part id, not only hv1/hv2/hv3. Clicking
+      // a part that's already active is a no-op; a non-implemented part is disabled outright.
       function lsWirePartSwitcher() {
-        ['hv1', 'hv2', 'hv3'].forEach(function (partId) {
-          var btn = lsEl('glListenPart' + partId.toUpperCase());
-          if (!btn || btn._lsWired) return;
-          btn._lsWired = true;
-          btn.addEventListener('click', function () {
+        var bar = lsEl('glListenPartSwitcher');
+        if (bar && !bar._lsWired) {
+          bar._lsWired = true;
+          bar.addEventListener('click', function (e) {
+            var btn = e.target.closest('[data-part-id]');
+            if (!btn || btn.disabled) return;
+            var partId = btn.getAttribute('data-part-id');
             if (ls.usingGenerated && ls.partId === partId) return;
             lsGenerateOrLoadPart('listening', partId).then(function () {
               lsEl('glListenPractice').style.display = '';
@@ -6525,7 +6584,14 @@
               lsRenderWorkspace();
             });
           });
-        });
+        }
+        if (bar) {
+          bar.innerHTML = lsParts().map(function (p) {
+            return '<button type="button" class="gl-listen-part-btn" id="glListenPart' + _glEscape(p.id.toUpperCase()) +
+              '" data-part-id="' + _glEscape(p.id) + '" role="tab"' + (p.implemented ? '' : ' disabled title="Coming soon"') +
+              '>' + _glEscape(lsPartLabel(p.id)) + '</button>';
+          }).join('');
+        }
         var newTestBtn = lsEl('glListenNewTestBtn');
         if (newTestBtn && !newTestBtn._lsWired) {
           newTestBtn._lsWired = true;
@@ -6555,7 +6621,9 @@
         lsEl('glListenPractice').style.display = '';
         lsEl('glListenEnd').style.display = 'none';
         lsResetToPracticeTabChrome();
-        lsGenerateOrLoadPart('listening', 'hv1').then(function () {
+        var firstPartId = lsFirstPartId();
+        if (!firstPartId) return;
+        lsGenerateOrLoadPart('listening', firstPartId).then(function () {
           if (ls._lastGenFailed) return; // lsShowGenerationError() already drew the error panel
           if (typeof console !== 'undefined' && console.assert) {
             console.assert(ls.generationId !== oldGenerationId, '[Hören] New Test did not produce a new generationId');
@@ -6570,13 +6638,10 @@
         var switcher = lsEl('glListenPartSwitcher');
         if (!switcher) return;
         switcher.style.display = ls.usingGenerated ? '' : 'none';
-        ['hv1', 'hv2', 'hv3'].forEach(function (partId) {
-          var btn = lsEl('glListenPart' + partId.toUpperCase());
-          if (btn) btn.classList.toggle('active', ls.usingGenerated && ls.partId === partId);
+        switcher.querySelectorAll('[data-part-id]').forEach(function (btn) {
+          btn.classList.toggle('active', ls.usingGenerated && ls.partId === btn.getAttribute('data-part-id'));
         });
       }
-
-      var LS_PART_LABELS = { hv1: 'Teil 1', hv2: 'Teil 2', hv3: 'Teil 3' };
 
       // Generated (exam-profile-backed) sessions get their real exam
       // identity in the header — "telc C1 Hochschule · C1 · Hören · Teil 1"
@@ -6595,7 +6660,7 @@
           else if (ls.examVariant) parts.push(ls.examVariant);
           if (ls.targetLevel) parts.push(ls.targetLevel);
           parts.push('Hören');
-          parts.push(LS_PART_LABELS[ls.partId] || ls.partId);
+          parts.push((lsPartLabel(ls.partId) || '').split(' · ')[0] || ls.partId);
           var topicLabel = (ls.set && ls.set.meta && ls.set.meta.topic) || '';
           examContext.innerHTML = _glEscape(parts.join(' · ')) +
             (topicLabel ? '<span class="gl-listen-exam-topic"> — ' + _glEscape(topicLabel) + '</span>' : '');
@@ -6692,7 +6757,11 @@
       // for telc C1 Hochschule Hören. Extending with a new exam-specific type
       // later means adding one entry to each map here, not another if/else
       // branch across three functions.
-      var LS_OPTION_TYPES = ['main-idea', 'detail', 'tf', 'speaker_statement_matching', 'sentence_completion_mc3'];
+      var LS_OPTION_TYPES = [
+        'main-idea', 'detail', 'tf', 'speaker_statement_matching', 'sentence_completion_mc3',
+        // --- Goethe-Zertifikat C1 ---
+        'multi_source_statement_matching', 'listening_tristate', 'segmented_dialogue_mc3', 'listening_detail_mc3'
+      ];
 
       function lsRenderMcqBody(q, ans, resolved, showingMinimalRetry) {
         var opts = ['A', 'B', 'C', 'D'].filter(function (l) { return q.options[l]; });
@@ -6765,6 +6834,22 @@
           '<input type="text" class="gl-listen-text-input" id="glListenNoteInput" placeholder="Fill in the missing information…"' +
           (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
       }
+      // Goethe Hören Teil 2 (listening_tristate): richtig/falsch/nicht_im_text, shown under the
+      // official German wording (lsTristateLabels(), sourced from the manifest). Grading reuses
+      // lsGradeMcqLikeType unchanged — lsMapGeneratedQuestion already copies tristate.answer to
+      // base.answer for exactly this reason.
+      function lsRenderTristateBody(q, ans, resolved, showingMinimalRetry) {
+        var labels = lsTristateLabels();
+        return '<div class="gl-listen-options">' + LS_TRISTATE_VALUES.map(function (value, i) {
+          var state = '';
+          if (resolved) {
+            if (value === q.answer) state = 'gl-correct';
+            else if (value === ans.selected) state = 'gl-incorrect';
+          }
+          return '<button type="button" class="gl-listen-option ' + state + '" data-opt="' + value + '"' + (resolved || showingMinimalRetry ? ' disabled' : '') + '>' +
+            '<span class="gl-listen-opt-mark"></span><span>' + _glEscape(labels[i]) + '</span></button>';
+        }).join('') + '</div>';
+      }
 
       var LS_RENDERERS = {
         'main-idea': lsRenderMcqBody,
@@ -6774,7 +6859,12 @@
         'fill-gap': lsRenderFillGapBody,
         'speaker_statement_matching': lsRenderSpeakerMatchingBody,
         'sentence_completion_mc3': lsRenderMc3Body,
-        'structured_note_completion': lsRenderNoteCompletionBody
+        'structured_note_completion': lsRenderNoteCompletionBody,
+        // --- Goethe-Zertifikat C1 --- (hoeren_1/3/4 reuse telc's exact shapes; hoeren_2 is new)
+        'multi_source_statement_matching': lsRenderSpeakerMatchingBody,
+        'listening_tristate': lsRenderTristateBody,
+        'segmented_dialogue_mc3': lsRenderMc3Body,
+        'listening_detail_mc3': lsRenderMc3Body
       };
 
       function lsRenderWorkspace() {
@@ -6836,7 +6926,7 @@
         if (q.type === 'structured_note_completion') {
           return '<div class="gl-listen-feedback-line">Your answer: <strong>' + _glEscape(ans.userText || '') + '</strong> · Correct: <strong>' + _glEscape((q.note && q.note.correctFill) || '') + '</strong></div>';
         }
-        if (q.type === 'sentence_completion_mc3') {
+        if (q.type === 'sentence_completion_mc3' || q.type === 'segmented_dialogue_mc3' || q.type === 'listening_detail_mc3') {
           var mc3Opts = (q.mc3 && q.mc3.options) || [];
           var mc3Correct = q.mc3 && q.mc3.correctIndex;
           var mc3Html = '';
@@ -6846,7 +6936,7 @@
           }
           return mc3Html;
         }
-        if (q.type === 'speaker_statement_matching') {
+        if (q.type === 'speaker_statement_matching' || q.type === 'multi_source_statement_matching') {
           var correctSpId = (q.matching && q.matching.correctSpeakerId) || 'no_match';
           var speakerOrder = ls._speakerOrder || [];
           var labelFor = function (spId) {
@@ -6860,6 +6950,19 @@
               '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(labelFor(correctSpId)) + '</strong></div>';
           }
           return matchHtml;
+        }
+        if (q.type === 'listening_tristate') {
+          var tLabels = lsTristateLabels();
+          var tLabelFor = function (value) {
+            var i = LS_TRISTATE_VALUES.indexOf(value);
+            return i === -1 ? (value || '') : tLabels[i];
+          };
+          var tHtml = '';
+          if (!isCorrect) {
+            tHtml += '<div class="gl-listen-feedback-line">Your answer:<br><strong>' + _glEscape(tLabelFor(ans.selected)) + '</strong></div>' +
+              '<div class="gl-listen-feedback-line">Correct answer:<br><strong>' + _glEscape(tLabelFor(q.answer)) + '</strong></div>';
+          }
+          return tHtml;
         }
         // main-idea / detail / tf
         var html = '';
@@ -7066,7 +7169,12 @@
         'fill-gap': lsGradeFillGapType,
         'speaker_statement_matching': lsGradeSpeakerMatchingType,
         'sentence_completion_mc3': lsGradeMc3Type,
-        'structured_note_completion': lsGradeNoteCompletionType
+        'structured_note_completion': lsGradeNoteCompletionType,
+        // --- Goethe-Zertifikat C1 ---
+        'multi_source_statement_matching': lsGradeSpeakerMatchingType,
+        'listening_tristate': lsGradeMcqLikeType,
+        'segmented_dialogue_mc3': lsGradeMc3Type,
+        'listening_detail_mc3': lsGradeMc3Type
       };
 
       function lsFinishCheckAnswer(q, ans, result) {

@@ -59,11 +59,30 @@ forum_discussion_post/formal_context_message there instead of mountWriting.
 Re-flipped available afterward, once a real production generate+grade round trip
 confirmed the fix (see commit history for the exact verification).
 
-Hören (G2) stays `available=False`: generation/validation are real, but the
-live frontend listening surface (practice.js's lsMapGeneratedQuestion/
-LS_RENDERERS/LS_OPTION_TYPES, and its hv1/hv2/hv3-hardcoded part switcher) has
-no rendering/grading support for any of these 4 task types yet — flipping this
-without that frontend work would silently serve broken/blank questions.
+Hören (G2) stays `available=False`: generation/validation are real, and as of
+2026-10-09 the frontend rendering/grading/switcher work is also done —
+lsMapGeneratedQuestion/LS_RENDERERS/LS_GRADERS/LS_OPTION_TYPES all have
+entries for the 4 task types (multi_source_statement_matching and
+listening_detail_mc3/segmented_dialogue_mc3 reuse telc's existing
+speaker_statement_matching/sentence_completion_mc3 shapes verbatim;
+listening_tristate got its own renderer, using the official
+richtig/falsch/nicht_im_text wording sourced from the manifest's own
+constraints.answerOptions, not hardcoded English), and the part switcher
+(lsParts/lsPart/lsWirePartSwitcher) is now manifest-driven instead of
+hardcoded to telc's hv1/hv2/hv3, mirroring rdParts()'s existing design for
+Lesen. Covered by tests/frontend/listening-goethe-browser.spec.mjs (run
+manually via `node --test`, same as reading-mc-browser.spec.mjs — neither is
+in npm run test:unit's *.test.mjs discovery or playwright's e2e-only
+testDir). The remaining, sole blocker is NOT frontend code: real audio
+delivery depends on Qwen3-TTS (backend/qwen-tts), whose own deploy README
+says not to point production at it until real-hardware latency is measured
+and reported — nothing in this codebase has ever served live TTS audio to a
+student yet (TestDaF's listening module hits the exact same /tts-batch path
+and is also still fully available=False). Do not flip this flag until that
+measurement/provisioning is independently confirmed done and a real
+generate+play+grade round trip has been verified live for each of the 4
+task types — a code-inspection pass is not enough, per every other module's
+precedent in this file.
 Sprechen (G4) stays `available=False`: generation/validation are real, but no
 grading path exists (goethe_c1 is in neither GRADABLE_SPEAKING_PROFILE_IDS nor
 GRADABLE_SPEAKING_RECORDING_PROFILE_IDS) — official per-criterion point
