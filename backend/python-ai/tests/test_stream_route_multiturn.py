@@ -328,6 +328,207 @@ def test_relevance_scoped_document_question_does_not_crash_on_undefined_name(mon
     assert b'"done": true' in joined
 
 
+# ── Phase 3 of the TTFT brief: /conversations/ensure is skippable for a chat
+# ── that's already persisted — /ask-stream must create the durable turn
+# ── itself on first sight of a request_id it hasn't seen yet, idempotently.
+
+def _durable_preflight_mocks(monkeypatch, db):
+    from app.routers import stream
+    from app.services import conversation_store
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+
+class _TurnAwareFakeSupabase:
+    """Reuses test_conversation_store's FakeTable for plain select/update, but
+    also simulates create_ai_tutor_turn's real ON CONFLICT DO NOTHING
+    semantics (the real RPC) so a retried request can be proven not to
+    duplicate the user/assistant messages or the request row."""
+
+    def __init__(self):
+        from test_conversation_store import FakeTable
+        self._table_cls = FakeTable
+        self.rows = {"ai_chat_conversations": [], "ai_chat_messages": [], "ai_tutor_requests": []}
+        self.rpc_calls: list[tuple[str, dict]] = []
+
+    def table(self, name):
+        return self._table_cls(self, name)
+
+    def rpc(self, name, payload):
+        self.rpc_calls.append((name, payload))
+        if name == "create_ai_tutor_turn":
+            conv_id, uid = payload["p_conversation_id"], payload["p_user_id"]
+            user_msg_id, assistant_msg_id = payload["p_user_message_id"], payload["p_assistant_message_id"]
+            request_id = payload["p_request_id"]
+            messages = self.rows["ai_chat_messages"]
+            if not any(m.get("client_message_id") == user_msg_id for m in messages):
+                messages.append({
+                    "conversation_id": conv_id, "user_id": uid,
+                    "client_message_id": user_msg_id, "role": "user",
+                    "content": payload["p_user_content"],
+                })
+            if not any(m.get("client_message_id") == assistant_msg_id for m in messages):
+                messages.append({
+                    "conversation_id": conv_id, "user_id": uid,
+                    "client_message_id": assistant_msg_id, "role": "assistant",
+                    "content": "", "request_id": request_id, "completion_state": "pending",
+                })
+            requests = self.rows["ai_tutor_requests"]
+            if not any(r.get("request_id") == request_id for r in requests):
+                requests.append({
+                    "request_id": request_id, "conversation_id": conv_id, "user_id": uid,
+                    "user_client_message_id": user_msg_id,
+                    "assistant_client_message_id": assistant_msg_id,
+                    "status": "queued", "stage": "queued", "request_snapshot": payload.get("p_request_snapshot") or {},
+                })
+        from types import SimpleNamespace
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data=None))
+
+
+def _run_durable_request(stream, monkeypatch, *, user_id, conversation_id, request_id,
+                          client_message_id, assistant_message_id,
+                          question="What is torsion?", message_text=None):
+    async def prepare(*_args, **_kwargs):
+        from fastapi.responses import StreamingResponse
+
+        # early_stream() (the real wrapper around _prepare_ask_stream_response)
+        # persists "completed" with the accumulated answer itself once it
+        # sees a non-empty "t" followed by "done" — no need to call
+        # update_tutor_request manually here.
+        async def gen():
+            yield b'data: {"t": "The answer."}\n\n'
+            yield b'data: {"done": true}\n\n'
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    monkeypatch.setattr(stream, "_prepare_ask_stream_response", prepare)
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="", question=question, messageText=message_text, sourceMode="internet",
+            durableConversation=True, conversationId=conversation_id,
+            clientMessageId=client_message_id, assistantMessageId=assistant_message_id,
+            requestId=request_id,
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return b"".join([event async for event in response.body_iterator])
+
+    return asyncio.run(run())
+
+
+def test_durable_turn_is_created_lazily_without_a_prior_ensure_call(monkeypatch):
+    """A newer frontend that skipped /conversations/ensure for an
+    already-persisted chat sends straight to /ask-stream. The conversation
+    row already exists (from the chat's first message); this specific
+    request_id's turn does not. The endpoint must create it and finish with
+    the row completed, not a tutor_request_not_found failure."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000050"
+    conversation_id = "00000000-0000-4000-8000-000000000051"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    body = _run_durable_request(
+        stream, monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="no-prior-ensure-request-1",
+        client_message_id="user-msg-1", assistant_message_id="assistant-msg-1",
+    )
+
+    assert b'"error"' not in body, body
+    assert len(db.rows["ai_tutor_requests"]) == 1
+    assert db.rows["ai_tutor_requests"][0]["status"] == "completed"
+    assert db.rows["ai_tutor_requests"][0]["final_answer"] == "The answer."
+    assert len(db.rows["ai_chat_messages"]) == 2  # user + assistant, created exactly once
+
+
+def test_durable_turn_saves_the_plain_typed_text_not_the_retrieval_enriched_question(monkeypatch):
+    """question may have a pasted-attachment block merged in by the frontend
+    for retrieval/intent purposes (shell.ts's currentQuestion); the saved
+    turn must store what the user actually typed (messageText), matching
+    what /conversations/ensure already saved for a chat's first message —
+    not the enriched text, or a long paste would render inlined on reload
+    from another device for every message after the first."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000052"
+    conversation_id = "00000000-0000-4000-8000-000000000053"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    pasted_block = "--- Pasted text ---\n" + ("Long attachment content. " * 50)
+    body = _run_durable_request(
+        stream, monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="pasted-text-request-1",
+        client_message_id="user-msg-pasted", assistant_message_id="assistant-msg-pasted",
+        question=pasted_block + "\n\nSummarise this.",
+        message_text="Summarise this.",
+    )
+
+    assert b'"error"' not in body, body
+    user_message = next(m for m in db.rows["ai_chat_messages"] if m.get("role") == "user")
+    assert user_message["content"] == "Summarise this."
+
+
+def test_durable_turn_falls_back_to_question_when_messagetext_is_absent(monkeypatch):
+    """An older client that doesn't send messageText yet must still work —
+    falls back to question, same as before this field existed."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000054"
+    conversation_id = "00000000-0000-4000-8000-000000000055"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    body = _run_durable_request(
+        stream, monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="no-messagetext-request-1",
+        client_message_id="user-msg-legacy", assistant_message_id="assistant-msg-legacy",
+        question="What is torsion?",
+    )
+
+    assert b'"error"' not in body, body
+    user_message = next(m for m in db.rows["ai_chat_messages"] if m.get("role") == "user")
+    assert user_message["content"] == "What is torsion?"
+
+
+def test_retried_request_with_same_idempotency_key_does_not_duplicate_the_turn(monkeypatch):
+    """A client retry reuses the same X-Idempotency-Key, which the endpoint
+    resolves to the same request_id. create_durable_tutor_turn's RPC is
+    idempotent on request_id, so sending the identical request twice must
+    leave exactly one tutor-request row and one pair of messages, not two."""
+    from app.routers import stream
+
+    db = _TurnAwareFakeSupabase()
+    user_id = "00000000-0000-4000-8000-000000000060"
+    conversation_id = "00000000-0000-4000-8000-000000000061"
+    db.rows["ai_chat_conversations"].append({"id": conversation_id, "user_id": user_id})
+    _durable_preflight_mocks(monkeypatch, db)
+
+    kwargs = dict(
+        stream=stream, monkeypatch=monkeypatch, user_id=user_id, conversation_id=conversation_id,
+        request_id="retried-request-1",
+        client_message_id="user-msg-2", assistant_message_id="assistant-msg-2",
+    )
+    first_body = _run_durable_request(**kwargs)
+    second_body = _run_durable_request(**kwargs)
+
+    assert b'"error"' not in first_body, first_body
+    assert b'"error"' not in second_body, second_body
+    assert len(db.rows["ai_tutor_requests"]) == 1
+    assert len(db.rows["ai_chat_messages"]) == 2
+    # The retry's update_tutor_request finds the row the first call already
+    # created, so it never falls into the create-turn branch a second time —
+    # create_durable_tutor_turn's own ON CONFLICT DO NOTHING is only a
+    # backstop for a genuine race, not what dedupes this sequential retry.
+    assert len(db.rpc_calls) == 1
+
+
 def test_visual_aids_and_learning_recommendations_do_not_block_generation(monkeypatch):
     """Phase 4 of the TTFT brief: visual aids + the Deep Learn reuse lookup
     must run as background futures instead of blocking the OpenAI call that
