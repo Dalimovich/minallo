@@ -50,7 +50,7 @@ def _issues(content: dict) -> list[str]:
 
 def test_profile_wiring() -> None:
     assert PART.task_type == "contextual_cloze_mc4"
-    assert PART.available is False, "Goethe parts stay unavailable until live qualification"
+    assert PART.available is True, "generator+validator+frontend render/grade all exist; deliberately flipped"
     assert is_task_type_implemented("contextual_cloze_mc4")
     assert reading._PROMPT_BUILDERS["contextual_cloze_mc4"] is reading._prompt_contextual_cloze_mc4
     assert "contextual_cloze_mc4" in verify._VERIFY_PROMPT_BUILDERS
@@ -59,7 +59,7 @@ def test_profile_wiring() -> None:
 
 def test_prompt_is_built_from_the_blueprint() -> None:
     system, user = reading._prompt_contextual_cloze_mc4(get_profile(PID), PART, [], {"topicId": "t", "label": "Arbeitszeit"})
-    assert "about 320 words" in system and "exactly 4 options" in system
+    assert "256-384 words" in system and "target about 320" in system and "exactly 4 options" in system
     assert "{{g0}}" in system and "g8" in system and "Arbeitszeit" in user
     assert "example" in system
 

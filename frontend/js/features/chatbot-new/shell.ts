@@ -8439,16 +8439,41 @@ function updateStoredMessageRow(root: HTMLElement, message: ChatMessage): void {
   if (replacement) current.replaceWith(replacement);
 }
 
+// A cold/slow AI service must never hang this fetch indefinitely, and a
+// transient 503 (cold start) is worth one quick retry before giving up —
+// but still silently, since a missing durable transcript just means the
+// live in-memory chat (already rendered) is what the user sees.
+async function fetchDurableTranscriptOnce(url: string, timeoutMs = 8000): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await authenticatedFetch(
+      url, { method: 'GET', signal: controller.signal }, { safeToRetry: true }
+    );
+    return response.ok ? response : null;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function fetchDurableTranscript(url: string): Promise<Response | null> {
+  const first = await fetchDurableTranscriptOnce(url);
+  if (first) return first;
+  await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  return fetchDurableTranscriptOnce(url);
+}
+
 async function hydrateDurableTranscript(chat: SavedChat, root: HTMLElement): Promise<void> {
   if (!chat.persistedId || durableTranscriptHydrations.has(chat.id)) return;
   const aiHost = ((window as unknown as { AI_SERVICE_URL?: string }).AI_SERVICE_URL || '').replace(/\/$/, '');
   if (!aiHost) return;
   durableTranscriptHydrations.add(chat.id);
   try {
-    const response = await authenticatedFetch(
-      aiHost + '/conversations/' + encodeURIComponent(chat.persistedId) + '/messages',
-      { method: 'GET' }, { safeToRetry: true }
-    ).catch(() => null);
+    const response = await fetchDurableTranscript(
+      aiHost + '/conversations/' + encodeURIComponent(chat.persistedId) + '/messages'
+    );
     if (!response?.ok) return;
     const body = await response.json() as { revision?: string; messages?: Array<Record<string, unknown>> };
     if (body.revision && body.revision === chat.hydrationRevision) {

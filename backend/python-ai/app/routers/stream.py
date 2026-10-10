@@ -1169,8 +1169,8 @@ async def conversation_messages_endpoint(
             if attempt == 0:
                 await asyncio.sleep(0.15)
     if rows is None:
-        log.warning("durable_transcript_hydration_failed conversation=%s error=%s",
-                    conversation_id, type(last_error).__name__)
+        log.warning("durable_transcript_hydration_failed conversation=%s error=%s message=%s",
+                    conversation_id, type(last_error).__name__, last_error)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={
             "code": "transcript_hydration_unavailable", "retryable": True,
         }) from last_error

@@ -21,6 +21,15 @@ EXPECTED_AVAILABLE = frozenset({
     ("telc_c1_hochschule", "writing", "schreiben_1"),
     ("telc_c1_hochschule", "speaking", "sprechen_1"), ("telc_c1_hochschule", "speaking", "sprechen_2"),
     ("telc_c1_hochschule", "language_elements", "sprachbausteine_1"),
+    # Goethe C1 Lesen + Schreiben: generator, validator AND frontend render+grade all genuinely
+    # exist (see goethe_c1.py's module docstring) — deliberately flipped, each confirmed live by
+    # a real production generate(+grade) round trip (Lesen 2026-10-07/08, Schreiben 2026-10-08
+    # after goethe-writing-task.ts's dedicated renderer/grader fixed the earlier shape mismatch).
+    # Hören/Sprechen stay unavailable: Hören has no frontend renderer; Sprechen has no grading
+    # path. See goethe_c1.py's module docstring for each.
+    ("goethe_c1", "reading", "lesen_1"), ("goethe_c1", "reading", "lesen_2"),
+    ("goethe_c1", "reading", "lesen_3"), ("goethe_c1", "reading", "lesen_4"),
+    ("goethe_c1", "writing", "schreiben_1"), ("goethe_c1", "writing", "schreiben_2"),
 })
 
 
@@ -42,7 +51,7 @@ def test_available_parts_match_the_frozen_allowlist_exactly() -> None:
         f"no longer available: {sorted(EXPECTED_AVAILABLE - actual)}")
 
 
-@pytest.mark.parametrize("profile_id", ["testdaf_digital", "goethe_c1"])
+@pytest.mark.parametrize("profile_id", ["testdaf_digital"])
 def test_no_part_of_a_unqualified_profile_is_available(profile_id: str) -> None:
     assert not [part.part_id for m, parts in GERMAN_EXAM_PROFILES[profile_id].modules.items()
                 for part in parts if part.available]
