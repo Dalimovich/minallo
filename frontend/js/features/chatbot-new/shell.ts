@@ -4320,6 +4320,7 @@ async function streamFromAskStream(
             extracting_items: 'Working through the questions in order…',
             preparing_document_structure: 'Preparing this document for complete extraction…',
             checking_completeness: 'Checking every expected document page…',
+            checking_web_sources: 'Checking web sources…',
             writing_answer: 'Preparing the explanation…',
             recovering_response: 'A step took longer than expected. Recovering your response…',
             verifying_answer: 'Verifying the final result…',

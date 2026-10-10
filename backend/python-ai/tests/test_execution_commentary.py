@@ -214,7 +214,6 @@ def test_live_stream_web_search_emits_real_commentary(monkeypatch) -> None:
     from app.routers import stream
     from app.services import tutor_state_store
     from app.services.tutor_state import TutorState
-    from app.services.web_answer import generate_web_answer  # noqa: F401
 
     user_id = "00000000-0000-4000-8000-000000000011"
     conversation_id = "commentary-web-search-single-turn"
@@ -231,12 +230,15 @@ def test_live_stream_web_search_emits_real_commentary(monkeypatch) -> None:
     monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
     monkeypatch.setattr(tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 1)
     monkeypatch.setattr(
-        stream, "generate_web_answer",
-        lambda *_a, **_k: {
-            "answer": "The current chancellor is ...",
-            "webSources": [{"title": "Example source", "url": "https://example.com"}],
-            "model": "test-model", "promptTokens": 10, "completionTokens": 20,
-        },
+        stream, "stream_web_answer",
+        lambda *_a, **_k: iter([
+            {"t": "The current chancellor is ..."},
+            {
+                "done": True,
+                "webSources": [{"title": "Example source", "url": "https://example.com"}],
+                "model": "test-model", "promptTokens": 10, "completionTokens": 20,
+            },
+        ]),
     )
 
     async def run():
