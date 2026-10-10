@@ -387,11 +387,15 @@
               "gapCount": 8,
               "optionCount": 4,
               "suggestedMinutes": 10,
+              "verifier": {
+                "chunkMaxTokens": 8000,
+                "chunks": 2
+              },
               "wordCountApprox": 320
             },
             "gradingDimensions": null,
             "id": "lesen_1",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
@@ -413,7 +417,7 @@
             },
             "gradingDimensions": null,
             "id": "lesen_2",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 7,
               "mode": "fixed_per_item",
@@ -444,7 +448,7 @@
             },
             "gradingDimensions": null,
             "id": "lesen_3",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 8,
               "mode": "fixed_per_item",
@@ -464,7 +468,7 @@
             },
             "gradingDimensions": null,
             "id": "lesen_4",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 7,
               "mode": "fixed_per_item",
@@ -605,7 +609,7 @@
               "structures"
             ],
             "id": "schreiben_1",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 60,
               "mode": "rubric",
@@ -630,7 +634,7 @@
               "structures"
             ],
             "id": "schreiben_2",
-            "implemented": false,
+            "implemented": true,
             "scoring": {
               "maxPoints": 40,
               "mode": "rubric",

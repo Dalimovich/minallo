@@ -33,7 +33,11 @@ def _issues(part, content: dict) -> list[str]:
 def test_profile_wiring() -> None:
     for part, task_type in ((SCHREIBEN_1, "forum_discussion_post"), (SCHREIBEN_2, "formal_context_message")):
         assert part.task_type == task_type
-        assert part.available is False, "Goethe parts stay unavailable until live qualification"
+        assert part.available is True, (
+            "goethe-writing-task.ts now gives this shape its own dedicated renderer/grader "
+            "(instead of the mismatched productive-task-v1 one) -- confirmed by a real "
+            "generate+grade round trip 2026-10-08; see goethe_c1.py's module docstring"
+        )
         assert is_task_type_implemented(task_type)
         assert task_type in writing._PROMPT_BUILDERS
         assert task_type in verify._VERIFY_PROMPT_BUILDERS
