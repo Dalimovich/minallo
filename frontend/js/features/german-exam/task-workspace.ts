@@ -10,18 +10,23 @@ import { mountOrdering, gradeOrdering, type OrderingPart, type OrderingContent }
 import { mountSummaryError, type SummaryErrorPart, type SummaryErrorContent } from './summary-error-task.js';
 import { mountDshOpenAnswer, type DshOpenAnswerContent } from './dsh-open-answer-task.js';
 import { mountDshWritingStimulus, mountDshOralStimulus, type DshStimulusContent } from './dsh-stimulus-task.js';
+import { mountGoetheWriting, type GoetheWritingContent } from './goethe-writing-task.js';
 export interface TaskPart {id: string; title: string; taskType: string; implemented: boolean; gradingDimensions?: string[]; constraints?: Record<string, unknown>}
 export interface TaskManifest {profileId: string; profileVersion: number; modules: Array<{id: string; label: string; code?: string | null; parts: TaskPart[]}>}
 export interface TaskEnvelope {generationId?: string; exam: {profileId: string; profileVersion: number}; module: string; part: {id: string; taskType: string}; content: unknown}
 export type TaskRenderer = (root: HTMLElement, part: TaskPart, content: unknown, identity: string, envelope: TaskEnvelope) => () => void;
 export const TASK_RENDERERS: Record<string, TaskRenderer> = {};
-// forum_discussion_post/formal_context_message = Goethe C1; argumentative_essay/
-// text_graph_summary = TestDaF — all four are the same productive-task-v1 writing
-// shape, graded through the same backend adapter (german_exam_writing_grading.py),
-// so they share one real grader here rather than a per-exam renderer.
-for (const type of ['argumentative_essay','text_graph_summary','forum_discussion_post','formal_context_message'])
+// argumentative_essay/text_graph_summary = TestDaF: the real productive-task-v1 shape
+// (schemaVersion/id/prompt/sources), graded through the same backend adapter
+// (german_exam_writing_grading.py) TELC's own Writing already uses.
+for (const type of ['argumentative_essay','text_graph_summary'])
   TASK_RENDERERS[type]=(root,part,content,identity,envelope)=>mountWriting(root,part as unknown as ProductivePart,content as ProductiveContent,identity,
     createWritingGrader(envelope,content as ProductiveContent,part.gradingDimensions||[]));
+// forum_discussion_post/formal_context_message = Goethe C1: a genuinely different shape (no
+// id/prompt/sources — see goethe-writing-task.ts's own header comment for why this is NOT routed
+// through mountWriting/ProductiveContent, same reasoning as DSH's dsh-stimulus-task.ts below).
+for (const type of ['forum_discussion_post','formal_context_message'])
+  TASK_RENDERERS[type]=(root,part,content,identity,envelope)=>mountGoetheWriting(root,part as unknown as ProductivePart,content as GoetheWritingContent,identity,envelope);
 for (const type of ['spoken_advice','spoken_option_comparison','spoken_text_summary','spoken_information_comparison','recorded_topic_presentation','spoken_argument_response','spoken_measure_critique'])
   TASK_RENDERERS[type]=(root,part,content,_identity,envelope)=>mountSpeaking(root,part as unknown as ProductivePart,content as ProductiveContent,
     {submitRecording:createSpeakingRecordingGrader(envelope,content as ProductiveContent)});

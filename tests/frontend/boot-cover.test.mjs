@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import * as esbuild from 'esbuild';
 import { chromium } from '@playwright/test';
 
-// Runs the REAL boot cover markup/CSS from index.html and the REAL
-// js/boot-cover.js in Chromium. Only the app's readiness signals are driven by
-// hand.
+// Runs the REAL boot cover markup/CSS from app/index.html (the app shell —
+// frontend/index.html is the static marketing page at / since the app-move
+// split, see commit 1debdce2) and the REAL js/boot-cover.js in Chromium.
+// Only the app's readiness signals are driven by hand.
 
-const index = readFileSync('frontend/index.html', 'utf8');
+const index = readFileSync('frontend/app/index.html', 'utf8');
 const script = readFileSync('frontend/js/boot-cover.js', 'utf8');
 const style = index.match(/\/\* Boot cover:[\s\S]*?html\.mn-boot-done #minalloBootCover \{ display: none; \}/)[0];
 const cover = index.match(/<div id="minalloBootCover"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/)[0];
@@ -28,6 +30,122 @@ const coverShown = (page) => page.evaluate(() => {
   return getComputedStyle(c).display !== 'none';
 });
 const fire = (page, name) => page.evaluate((n) => window.dispatchEvent(new Event(n)), name);
+
+// ── cached profile unblocking the splash (user-data.ts loadUserData, real) ──
+// These drive the REAL bundled user-data.ts (esbuild, same pattern as
+// boot-order.test.mjs) alongside the real boot-cover.js, so the splash
+// behavior is exercised end to end rather than by poking its globals by hand.
+
+let userDataBundlePromise;
+function userDataBundle() {
+  userDataBundlePromise ??= esbuild.build({
+    entryPoints: ['frontend/js/features/auth/user-data.ts'],
+    bundle: true, format: 'iife', globalName: '__ud', platform: 'browser', write: false, logLevel: 'silent',
+  }).then((r) => r.outputFiles[0].text);
+  return userDataBundlePromise;
+}
+
+// `profilesImpl` controls what the mocked `profiles` table query does;
+// settings/subscriptions resolve to null immediately (not the focus here).
+// Uses a real (route-intercepted) origin, not page.setContent's null-origin
+// about:blank — localStorage (the profile cache this is testing) throws
+// SecurityError on a null origin, so a real URL is required here.
+async function withBootAndProfile(profilesImpl, fn) {
+  const ud = await userDataBundle();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('https://boot-cache.test/**', (route) => route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><html><head><style>body{background:#031323;margin:0}${style}</style></head>
+        <body>${cover}<div id="ncbRoot" data-role-resolved="true"></div></body></html>`,
+    }));
+    await page.goto('https://boot-cache.test/index.html');
+    await page.addScriptTag({ content: script });
+    await page.addScriptTag({ content: ud });
+    await page.exposeFunction('__profilesImpl', profilesImpl);
+    await page.evaluate(() => {
+      window._ssIsLoggedIn = true;
+      window.applyProfile = window.__ud.applyProfile;
+      window._sb = {
+        from: (table) => ({
+          select: () => ({
+            eq: () => ({
+              single: async () => (table === 'profiles' ? window.__profilesImpl() : null),
+            }),
+          }),
+        }),
+      };
+      window._currentUser = { id: 'u1', email: 'a@b.c' };
+      window.SUPA_URL = 'https://x.invalid';
+    });
+    await fn(page);
+  } finally { await browser.close(); }
+}
+
+const LEARNER_ROW = { id: 'u1', user_type: 'learner', german_test: 'telc', german_level: 'C1 Hochschule' };
+
+test('a cached learner role unblocks the splash immediately; the authoritative confirm changes nothing visible', { timeout: 60_000 }, async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await withBootAndProfile(async () => { await gate; return LEARNER_ROW; }, async (page) => {
+    await page.evaluate((row) => localStorage.setItem('profile_cache_u1', JSON.stringify(row)), LEARNER_ROW);
+    await fire(page, 'ss-ready');
+    await page.evaluate(() => { void window.__ud.loadUserData('u1'); });
+    // Synchronous within loadUserData's first microtask — no network round
+    // trip needed — but poll briefly rather than assume exact scheduling.
+    await page.waitForFunction(
+      () => getComputedStyle(document.getElementById('minalloBootCover')).display === 'none',
+      { timeout: 2000 }
+    );
+    assert.equal(await page.evaluate(() => window._userType), 'learner');
+    assert.equal(await page.evaluate(() => window._profileResolutionSource), 'cache');
+    assert.equal(await page.evaluate(() => document.getElementById('minalloBootRecovery').hidden), true);
+
+    release();
+    await page.waitForFunction(() => window._profileResolutionSource === 'network', { timeout: 2000 });
+    assert.equal(await coverShown(page), false, 'still revealed after the authoritative confirm');
+    assert.equal(await page.evaluate(() => window._userType), 'learner');
+    assert.equal(await page.evaluate(() => document.getElementById('minalloBootRecovery').hidden), true);
+  });
+});
+
+test('with no cache, the splash stays covered until the real row arrives (unchanged behaviour)', { timeout: 60_000 }, async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  await withBootAndProfile(async () => { await gate; return LEARNER_ROW; }, async (page) => {
+    await fire(page, 'ss-ready');
+    await page.evaluate(() => { void window.__ud.loadUserData('u1'); });
+    await page.waitForTimeout(300);
+    assert.equal(await coverShown(page), true, 'no cache to fall back on: must keep waiting');
+    assert.equal(await page.evaluate(() => window._profileResolutionState), 'loading');
+
+    release();
+    await page.waitForFunction(
+      () => getComputedStyle(document.getElementById('minalloBootCover')).display === 'none',
+      { timeout: 2000 }
+    );
+    assert.equal(await page.evaluate(() => window._profileResolutionSource), 'network');
+  });
+});
+
+test('a cached role survives the authoritative fetch failing through every retry: UI stays visible, no recovery screen', { timeout: 60_000 }, async () => {
+  await withBootAndProfile(async () => { throw new Error('503'); }, async (page) => {
+    await page.evaluate((row) => localStorage.setItem('profile_cache_u1', JSON.stringify(row)), LEARNER_ROW);
+    await fire(page, 'ss-ready');
+    await page.evaluate(() => { void window.__ud.loadUserData('u1'); });
+    assert.equal(await coverShown(page), false, 'cache unblocks immediately');
+
+    // PROFILE_RETRY_DELAYS_MS = [500, 1500, 4000] — give every bounded retry
+    // time to fire and fail before asserting nothing regressed.
+    await page.waitForTimeout(7000);
+    assert.equal(await coverShown(page), false, 'must stay revealed through every failed retry');
+    assert.equal(await page.evaluate(() => document.getElementById('minalloBootRecovery').hidden), true,
+      'ss-profile-failed must never fire while a cached role is active');
+    assert.equal(await page.evaluate(() => window._userType), 'learner');
+    assert.equal(await page.evaluate(() => window._profileResolutionSource), 'cache');
+  });
+});
 
 test('first frame: the cover is logo only — no text, no spinner — and sits above the app', { timeout: 60_000 }, async () => {
   await withPage(true, async (page) => {
@@ -116,7 +234,7 @@ test('the cover is in RAW index.html before any section/app script, and boot-cov
   const coverIdx = index.indexOf('id="minalloBootCover"');
   assert.ok(coverIdx > index.indexOf('<body'), 'cover is inside <body>');
   assert.ok(coverIdx < index.indexOf('id="ss-sections-root"'), 'cover precedes the app root');
-  const first = index.indexOf('<script src="js/boot-cover.js');
+  const first = index.indexOf('<script src="/js/boot-cover.js');
   assert.ok(first > 0 && first < index.indexOf('js/ss-ready-marker.js') && first < index.indexOf('js/loader.js'));
   assert.match(index, /html\.mn-boot-done #minalloBootCover \{ display: none; \}/);
   assert.match(readFileSync('.gitignore', 'utf8'), /!frontend\/js\/boot-cover\.js/);

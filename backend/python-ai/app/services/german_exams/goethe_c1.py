@@ -24,6 +24,52 @@ Sprachbausteine section.
 
 Every part is `available=False` until its generator, validator and renderer
 exist (G1 Lesen, G2 Hören, G3 Schreiben, G4 Sprechen); flip the flag here then.
+
+Lesen (G1) is now flipped available: generation, structural/semantic validation,
+and frontend rendering+grading (practice.js's rdRenderXxx/rdGradeXxx dispatch
+maps) all genuinely exist for every task type here — confirmed live by a real
+production generation (2026-10-07).
+
+Schreiben (G3) stays `available=False` despite `goethe_c1` being listed in
+GRADABLE_WRITING_PROFILE_IDS (german_exam_writing_grading.py) — that only
+means the GRADING FUNCTION accepts this profile, not that the shapes line up
+end to end. Confirmed live by a real generation + grading attempt
+(2026-10-07): forum_discussion_post/formal_context_message's generator
+(_prompt_goethe_single_scenario) produces {"questions": [{"title",
+"communicativeSituation", "contentPoints", "taskInstructions",
+"writingCoachTaskType"}]}, but task-workspace.ts's TASK_RENDERERS dispatches
+BOTH Goethe's and TestDaF's writing task types through the generic
+productive-task-v1 contract (ProductiveContent: schemaVersion/id/prompt/
+sources — see productive-task.ts), and writing-grader.ts's createWritingGrader
+sends that same raw `content` as `task` to /grade-writing verbatim. The shapes
+do not match: a real student could generate a Goethe writing task, write a
+full response, and get a hard "invalid productive schema" error on submit,
+losing their work. This needs either a shape-transform adapter or a dedicated
+Goethe writing renderer/grader (mirroring how TELC's own choice_long_form_
+writing is NOT routed through task-workspace.ts's generic productive path) —
+not yet built. Do not flip this flag again until that's fixed and re-verified
+with a real generate+grade round trip, not just a code-inspection pass.
+
+UPDATE (2026-10-08): fixed. german_exam.py's grade_writing_endpoint gained a
+third dispatch branch for Goethe's actual {"questions": [{...}]} shape
+(reusing validate_content(), not a new check), and goethe-writing-task.ts is
+a dedicated renderer+grader for it (mirroring dsh-stimulus-task.ts's own
+"own shape, own renderer" precedent) — task-workspace.ts now dispatches
+forum_discussion_post/formal_context_message there instead of mountWriting.
+Re-flipped available afterward, once a real production generate+grade round trip
+confirmed the fix (see commit history for the exact verification).
+
+Hören (G2) stays `available=False`: generation/validation are real, but the
+live frontend listening surface (practice.js's lsMapGeneratedQuestion/
+LS_RENDERERS/LS_OPTION_TYPES, and its hv1/hv2/hv3-hardcoded part switcher) has
+no rendering/grading support for any of these 4 task types yet — flipping this
+without that frontend work would silently serve broken/blank questions.
+Sprechen (G4) stays `available=False`: generation/validation are real, but no
+grading path exists (goethe_c1 is in neither GRADABLE_SPEAKING_PROFILE_IDS nor
+GRADABLE_SPEAKING_RECORDING_PROFILE_IDS) — official per-criterion point
+weights are not sourced (see the per-criterion Sprechen weights note above),
+and the shared turn-sequence renderer is hardcoded to telc's own structure.
+See test_german_exam_goethe_sprechen.py for exactly what's blocked and why.
 """
 
 from __future__ import annotations
@@ -86,9 +132,19 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
         part_id="lesen_1", module="reading", title="Lückentext (Multiple Choice)",
         task_type="contextual_cloze_mc4",
         constraints={"gapCount": 8, "exampleGapCount": 1, "optionCount": 4, "wordCountApprox": 320,
-                     "suggestedMinutes": 10, "balanceOptionPositions": True},
+                     "suggestedMinutes": 10, "balanceOptionPositions": True,
+                     # A real production run measured ONE unchunked verify call at 56s / 7461
+                     # reasoning tokens for just 8 items -- over half the 95s request budget, so a
+                     # repair-then-reverify cycle (needed when the verifier finds a real issue) ran
+                     # out of time. Same chunked-transport fix as TestDaF lesen_3's own
+                     # text_reconstruction_sentence_matching (same module, same verify_semantic_chunked
+                     # engine) -- semantic rules/prompt/schema/model/effort are unchanged, only the
+                     # transport splits the 8 items into 2 parallel 4-item calls. No blindSolve here:
+                     # that pass is specific to lesen_3's sentence-insertion gap shape, not this
+                     # single-word/short-phrase MC4 cloze.
+                     "verifier": {"chunks": 2, "chunkMaxTokens": 8000}},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("lexical_specificity", "grammar_complexity"),
-        scoring=ScoringSpec(max_points=8, points_per_correct=1), available=False,
+        scoring=ScoringSpec(max_points=8, points_per_correct=1), available=True,
     ),
     PartBlueprint(
         part_id="lesen_2", module="reading", title="Sachtext verstehen",
@@ -101,7 +157,7 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
                                   "scientific topic of general interest, as published in the general press",
                      "balanceOptionPositions": True},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("paraphrase_distance", "inference_depth"),
-        scoring=ScoringSpec(max_points=7, points_per_correct=1), available=False,
+        scoring=ScoringSpec(max_points=7, points_per_correct=1), available=True,
     ),
     PartBlueprint(
         part_id="lesen_3", module="reading", title="Text mit Sätzen rekonstruieren",
@@ -120,7 +176,7 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
                      "textGenre": "a press commentary (Kommentar) or report (Reportage) on a controversial current "
                                   "topic from public, professional or academic life"},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("reference_complexity", "distractor_similarity"),
-        scoring=ScoringSpec(max_points=8, points_per_correct=1), available=False,
+        scoring=ScoringSpec(max_points=8, points_per_correct=1), available=True,
     ),
     PartBlueprint(
         part_id="lesen_4", module="reading", title="Meinungen zuordnen",
@@ -128,7 +184,7 @@ _GOETHE_C1_LESEN: tuple[PartBlueprint, ...] = (
         constraints={"authorCount": 3, "statementCount": 7, "unmatchedStatements": 2, "wordCountApprox": 430,
                      "suggestedMinutes": 15},
         allowed_skill_tags=_LESEN_TAGS, allowed_adaptations=("paraphrase_distance", "inference_depth"),
-        scoring=ScoringSpec(max_points=7, points_per_correct=1), available=False,
+        scoring=ScoringSpec(max_points=7, points_per_correct=1), available=True,
     ),
 )
 
@@ -188,7 +244,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=60, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 14, "coherence": 14, "vocabulary": 16, "structures": 16},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=False,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=True,
     ),
     PartBlueprint(
         part_id="schreiben_2", module="writing", title="(Halb-)formelle Nachricht",
@@ -202,7 +258,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=40, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 10, "coherence": 10, "vocabulary": 10, "structures": 10},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=False,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=True,
     ),
 )
 
