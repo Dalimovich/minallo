@@ -343,3 +343,57 @@ def test_pure_social_turn_depends_on_resolved_conversation_state() -> None:
     )
     assert not is_pure_social_turn("sure", pending_plan)
     assert is_pure_social_turn("sure", base)
+
+
+def test_classifier_uses_low_reasoning_effort_for_a_reasoning_model(monkeypatch) -> None:
+    """resolve_dialogue_semantically is a short classification call, not math
+    work — it must override reasoning_effort to "low" so a reasoning-model
+    OPENAI_GENERATE_MODEL doesn't spend the global (math-tuned) effort level
+    on every short-reply classification, adding latency before any byte of
+    the real answer can be sent."""
+    from app import config as config_module
+    from app.services import openai_client
+    from app.services.dialogue_state import resolve_dialogue, resolve_dialogue_semantically
+
+    captured_kwargs: dict = {}
+
+    class _FakeCompletions:
+        @staticmethod
+        def create(**kwargs):
+            captured_kwargs.update(kwargs)
+            content = (
+                '{"relation":"new_topic","speechAct":"question","taskFamily":"explain",'
+                '"continuesPreviousGoal":false,"resolvedRequest":"why?","confidence":0.9}'
+            )
+            message = type("Msg", (), {"content": content})()
+            choice = type("Choice", (), {"message": message})()
+            return type("Completion", (), {"choices": [choice]})()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+        def with_options(self, **_kwargs):
+            # Forward-compatible with Phase 2's .with_options(max_retries=0)
+            # wrapping this same call — mirrors the real OpenAI client and
+            # llm_json.py's own usage, which just keeps chaining on self.
+            return self
+
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: _FakeClient())
+    monkeypatch.setattr(
+        config_module, "get_settings",
+        lambda: type("S", (), {"openai_generate_model": "gpt-5-mini", "openai_reasoning_effort": "high"})(),
+    )
+
+    turns = [
+        {"role": "user", "text": "Explain welding from my course."},
+        {"role": "assistant", "text": "Welding joins materials."},
+    ]
+    base = resolve_dialogue("why?", previous_turns=turns)
+    resolve_dialogue_semantically("why?", previous_turns=turns, base=base)
+
+    assert captured_kwargs.get("reasoning_effort") == "low"
+    assert captured_kwargs.get("max_completion_tokens") == 12000
+    assert "temperature" not in captured_kwargs

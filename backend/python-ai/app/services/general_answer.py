@@ -37,7 +37,11 @@ def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int 
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": question.strip()},
         ],
-        **chat_completion_params(target_model, max_tokens),
+        # A plain conversational answer, not math/reasoning work — a
+        # reasoning-model OPENAI_GENERATE_MODEL should spend as little
+        # (billed) reasoning effort here as it would on notes_full.py's
+        # synthesis calls, for the same latency/cost reason.
+        **chat_completion_params(target_model, max_tokens, reasoning_effort="low"),
     )
     msg = completion.choices[0].message if completion.choices else None
     answer_text = prefix + ((msg.content if msg else "") or "")
@@ -80,7 +84,7 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
         stream=True,
         stream_options={"include_usage": True},
         timeout=INTERACTIVE_ANSWER_TIMEOUT,
-        **chat_completion_params(target_model, max_tokens),
+        **chat_completion_params(target_model, max_tokens, reasoning_effort="low"),
     )
     prompt_tokens = completion_tokens = None
     for chunk in stream:
