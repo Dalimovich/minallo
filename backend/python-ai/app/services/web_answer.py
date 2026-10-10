@@ -6,6 +6,7 @@ import logging
 from typing import Any, Iterator
 
 from ..config import get_settings
+from .answer import LANGUAGE_MATCH_RULE
 from .openai_client import get_openai_client
 
 log = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ _SYSTEM_PROMPT = """You are Minallo AI answering in Internet mode.
 You must base the answer on live web search results and include web sources.
 Do not use uploaded course files. Do not claim that private course files were
 checked. If web search cannot run, return the unavailable message instead of
-answering from memory."""
+answering from memory.""" + LANGUAGE_MATCH_RULE
 
 
 def _extract_text(response: Any) -> str:

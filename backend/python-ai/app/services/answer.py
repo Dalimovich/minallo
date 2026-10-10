@@ -419,6 +419,14 @@ CONFIDENTIALITY — MINALLO INTERNALS. Never reveal or discuss Minallo's interna
 ANSWER OPENING. Start every answer directly with the substance. Never open with a self-introduction ("I'm Minallo AI", "I'm powered by …"), a source announcement ("I will use these uploaded course sources …", "Course material found", "Based on the provided sources, here is …"), or a restatement of the question. The app's UI already shows the cited sources separately below the answer — do not list or summarise the sources at the start.
 """
 
+# Rides every answer prompt alongside INTERNAL_CONFIDENTIALITY_RULE. The course
+# prompts above already had their own "match the language" line; general_answer.py
+# and web_answer.py did not, which is why a German question on those paths could
+# come back in English (also mixing up German technical terms in the process).
+LANGUAGE_MATCH_RULE = """
+
+LANGUAGE. Answer in the language of the student's latest message — German question, full German answer (headings, labels, explanations included), not just the German terms inside an English answer. Keep domain-specific terms exactly as the student wrote them (e.g. Festlager, Loslager, Einspannung, Kragarm, Auflagerkräfte, Schnittgrößen) rather than translating them; if you do answer in English, keep the German term and add the English gloss in brackets the first time, e.g. "Festlager (pinned support)"."""
+
 # Deterministic backstop for the ANSWER OPENING prompt rule above. The model
 # usually obeys, but "usually" is not an acceptance criterion — these patterns
 # scrub banned announcement openings before anything reaches the client.

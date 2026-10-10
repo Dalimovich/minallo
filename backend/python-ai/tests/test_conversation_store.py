@@ -205,3 +205,26 @@ def test_stale_running_request_becomes_recoverable(monkeypatch) -> None:
     assert record["status"] == "failed"
     assert record["error_code"] == "response_worker_stalled"
     assert record["retryable"] is True
+
+
+def test_sweep_expires_every_abandoned_request_but_leaves_fresh_ones(monkeypatch) -> None:
+    db = FakeSupabase()
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    fresh = datetime.now(timezone.utc).isoformat()
+    db.rows["ai_tutor_requests"].extend([
+        {"request_id": "req-a", "user_id": "user-a", "status": "queued",
+         "updated_at": stale, "partial_answer": ""},
+        {"request_id": "req-b", "user_id": "user-b", "status": "running",
+         "updated_at": stale, "partial_answer": "Half an answer"},
+        {"request_id": "req-c", "user_id": "user-c", "status": "queued",
+         "updated_at": fresh, "partial_answer": ""},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    expired = conversation_store.sweep_stale_tutor_requests(stale_after_seconds=180)
+
+    assert expired == 2
+    by_id = {row["request_id"]: row for row in db.rows["ai_tutor_requests"]}
+    assert by_id["req-a"]["status"] == "failed"
+    assert by_id["req-b"]["status"] == "interrupted"
+    assert by_id["req-c"]["status"] == "queued"

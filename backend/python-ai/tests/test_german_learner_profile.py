@@ -80,6 +80,29 @@ def test_block_states_test_level_and_exam_profile():
     assert "B2" not in block
 
 
+def test_block_explains_corrections_with_the_grammar_rule():
+    block = format_learner_profile_block(_profile())
+    assert "verb-final word order" in block
+    assert "weil/dass" in block
+
+
+def test_block_includes_exam_facts_from_the_registry_for_dsh():
+    block = format_learner_profile_block(_profile(test="DSH", level="DSH-2"))
+    assert "Hörverstehen" in block
+    assert "Wissenschaftssprachliche Strukturen" in block
+    assert "DSH-1 57%" in block
+    assert "DSH-2 67%" in block
+    assert "DSH-3 82%" in block
+
+
+def test_block_has_no_exam_facts_without_a_resolved_exam_profile():
+    # telc B2 has a target level but no canonical exam_profile_id (see
+    # test_telc_b2_has_no_exam_profile_but_is_a_valid_target) — nothing to look up.
+    block = format_learner_profile_block(_profile(test="telc", level="B2"))
+    assert "Modules:" not in block
+    assert "Pass thresholds:" not in block
+
+
 def test_block_absent_for_students_unknown_and_targetless_learners():
     assert format_learner_profile_block(None) == ""
     assert format_learner_profile_block(_profile(user_type="enrolled", test="", level="")) == ""

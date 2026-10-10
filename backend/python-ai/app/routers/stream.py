@@ -3828,8 +3828,17 @@ async def _prepare_ask_stream_response(
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
+        # Loaded here (not just further down for the course path) so a German
+        # learner's target level, exam facts and conversation history reach
+        # this answer too — previously this branch returned before any of
+        # that context was ever fetched.
+        learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
         return _stream_live_answer(
-            events=stream_general_answer(question, prefix=prefix, max_tokens=1200),
+            events=stream_general_answer(
+                question, prefix=prefix, max_tokens=1200,
+                previous_turns=previous_turns_payload,
+                context_block=format_learner_profile_block(learner_profile),
+            ),
             decision=source_decision,
             answer_mode="general",
             status_key="writing_answer",
@@ -5717,7 +5726,11 @@ async def _prepare_ask_stream_response(
             source_label="Using: General knowledge",
         )
         return _stream_live_answer(
-            events=stream_general_answer(question, prefix=auto_general_prefix(), max_tokens=1200),
+            events=stream_general_answer(
+                question, prefix=auto_general_prefix(), max_tokens=1200,
+                previous_turns=previous_turns_payload,
+                context_block=format_learner_profile_block(learner_profile),
+            ),
             decision=general_decision,
             answer_mode="general",
             status_key="no_strong_match",

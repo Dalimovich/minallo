@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 from dataclasses import dataclass
 
 from ..supabase_client import get_supabase
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -235,31 +240,91 @@ def get_tutor_request(*, user_id: str, request_id: str) -> dict[str, Any] | None
     return dict(rows[0]) if rows else None
 
 
-def expire_stale_tutor_request(
-    *, user_id: str, record: dict[str, Any], stale_after_seconds: int = 180,
-) -> dict[str, Any]:
-    """Turn an abandoned active request into an explicit resumable state."""
+def _expire_if_stale(user_id: str, record: dict[str, Any], stale_after_seconds: int) -> bool:
+    """Shared by expire_stale_tutor_request (one record, checked when a client
+    re-polls it) and sweep_stale_tutor_requests (every abandoned record, on a
+    timer — for the client that never re-polls at all)."""
     if str(record.get("status") or "") not in {"queued", "running", "recovering"}:
-        return record
+        return False
     try:
         updated = datetime.fromisoformat(str(record.get("updated_at") or "").replace("Z", "+00:00"))
     except ValueError:
-        return record
+        return False
     age = (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()
     if age <= stale_after_seconds:
-        return record
+        return False
     partial = str(record.get("partial_answer") or "").strip()
     update_tutor_request(
         user_id=user_id, request_id=str(record["request_id"]),
         status="interrupted" if partial else "failed", stage="worker_lease_expired",
         partial_answer=partial or None, error_code="response_worker_stalled", retryable=True,
     )
+    return True
+
+
+def expire_stale_tutor_request(
+    *, user_id: str, record: dict[str, Any], stale_after_seconds: int = 180,
+) -> dict[str, Any]:
+    """Turn an abandoned active request into an explicit resumable state."""
+    if not _expire_if_stale(user_id, record, stale_after_seconds):
+        return record
     return get_tutor_request(user_id=user_id, request_id=str(record["request_id"])) or record
+
+
+_TUTOR_SWEEP_STALE_AFTER_SECONDS = 180
+_sweeper_started = False
+_sweeper_lock = threading.Lock()
+
+
+def sweep_stale_tutor_requests(
+    stale_after_seconds: int = _TUTOR_SWEEP_STALE_AFTER_SECONDS, limit: int = 200,
+) -> int:
+    """Expire every abandoned request, not just the one a client happens to
+    re-poll. expire_stale_tutor_request only fires on a request_id someone
+    asks about again; a request nobody ever revisits (closed tab, a fresh
+    "new chat" every time) otherwise stays queued/running forever — this
+    sweeps all of them. Returns how many were expired."""
+    sb = get_supabase()
+    expired = 0
+    for status in ("queued", "running", "recovering"):
+        rows = (
+            sb.table("ai_tutor_requests")
+            .select("request_id,user_id,status,updated_at,partial_answer")
+            .eq("status", status).limit(limit).execute()
+        ).data or []
+        for row in rows:
+            try:
+                if _expire_if_stale(str(row["user_id"]), row, stale_after_seconds):
+                    expired += 1
+            except Exception:  # noqa: BLE001
+                log.exception("tutor_request_sweep_failed request_id=%s", row.get("request_id"))
+    return expired
+
+
+def start_tutor_request_sweeper(interval_seconds: int = 60) -> None:
+    """Daemon thread, mirrors scoped_job_worker.start_scoped_job_worker's pattern."""
+    global _sweeper_started
+    with _sweeper_lock:
+        if _sweeper_started:
+            return
+        threading.Thread(
+            target=_sweep_loop, args=(interval_seconds,), name="tutor-request-sweeper", daemon=True,
+        ).start()
+        _sweeper_started = True
+
+
+def _sweep_loop(interval_seconds: int) -> None:
+    while True:
+        try:
+            sweep_stale_tutor_requests()
+        except Exception:  # noqa: BLE001
+            log.exception("tutor_request_sweeper_loop_failed")
+        time.sleep(interval_seconds)
 
 
 __all__ = [
     "DurableConversation", "ensure_durable_conversation", "validate_durable_conversation",
     "create_durable_tutor_turn", "update_tutor_request", "append_tutor_commentary", "get_tutor_request",
     "get_durable_conversation_messages",
-    "expire_stale_tutor_request",
+    "expire_stale_tutor_request", "sweep_stale_tutor_requests", "start_tutor_request_sweeper",
 ]
