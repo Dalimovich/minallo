@@ -118,6 +118,61 @@ def test_missing_duplicate_and_unknown_placeholders_are_rejected() -> None:
     assert any("not declared gaps" in m for m in _issues(c))
 
 
+# ── reliability: an untracked placeholder is stripped before validation, not a hard failure ────
+# Root cause (confirmed from a real captured production generation,
+# audit/goethe-lesen/baseline-v1/lesen_3-2.json): on one generation attempt the model's gaps/
+# questions arrays correctly declared and linked g1..g8, but the assembled paragraph text also
+# contained a lone, untracked {{g9}} that nothing ever declared or linked to a question or
+# candidate. _check_reconstruction_integrity correctly flagged that as a part-level error (as it
+# must keep doing for a placeholder that IS declared/linked), which burned one of only 2 scarce
+# _MAX_FULL_REGENERATIONS attempts discarding an otherwise entirely valid generation over a token
+# nothing in the exercise ever references. _postprocess now strips any placeholder that is NOT one
+# of the declared gap ids before validation ever runs, so this case no longer costs a regeneration.
+
+def test_untracked_placeholder_is_stripped_by_postprocess_so_validation_passes() -> None:
+    part = get_part(GOETHE, "reading", "lesen_3")
+    c = _valid_content()
+    # Same shape as the real captured failure: gaps/questions correctly declare only g1..g8;
+    # the text additionally contains an untracked {{g9}} with no declaration or question/candidate
+    # link at all -- exactly what a stray extra marker looks like.
+    c["text"]["paragraphs"][2] += " Dies war nie eine echte Lücke. {{g9}}"
+
+    # Without the fix, this is rejected exactly as test_missing_duplicate_and_unknown_placeholders_
+    # are_rejected already proves for the general case -- confirms the validator's own check is
+    # untouched, only reachability of that check changes.
+    assert any("not declared gaps" in m for m in _issues(c))
+
+    cleaned = reading._postprocess(part, c)
+    assert hard_issues(validate_content(part, cleaned)) == []
+    assert "{{g9}}" not in "\n".join(cleaned["text"]["paragraphs"])
+    assert "Dies war nie eine echte Lücke." in cleaned["text"]["paragraphs"][2]  # surrounding prose kept
+    # The 8 real, declared/linked gaps are completely untouched by the stripping pass.
+    for i in range(1, 9):
+        assert "\n".join(cleaned["text"]["paragraphs"]).count("{{g%d}}" % i) == 1
+    assert cleaned["questions"] == c["questions"]
+    # lesen_3 also opts into shuffleCandidates, so _postprocess reorders candidates regardless of
+    # this fix — compare by id->text mapping (order-independent), same as
+    # test_shuffle_keeps_ids_texts_and_keys_and_is_stable does for that behaviour.
+    assert {x["candidateId"]: x["text"] for x in cleaned["candidates"]} == {x["candidateId"]: x["text"] for x in c["candidates"]}
+
+
+def test_postprocess_does_not_touch_paragraphs_with_no_untracked_placeholder() -> None:
+    part = get_part(GOETHE, "reading", "lesen_3")
+    c = _valid_content()
+    # Candidates are always reshuffled (shuffleCandidates) — the stripping pass itself is the
+    # thing under test here, and it must leave an already-clean text completely alone.
+    assert reading._postprocess(part, c)["text"]["paragraphs"] == c["text"]["paragraphs"]
+
+
+def test_strip_untracked_placeholders_is_a_noop_outside_strictPlaceholders() -> None:
+    # telc's lesen_1 (same task_type/generator, no strictPlaceholders) never reaches this
+    # function at all via _postprocess's gate — mirrors test_telc_lesen1_never_gets_the_goethe_only_checks.
+    content = {"text": {"paragraphs": ["x {{g9}}"], "gaps": [{"gapId": "g1"}]}, "questions": [], "candidates": []}
+    telc = get_part(TELC, "reading", "lesen_1")
+    assert not telc.constraints.get("strictPlaceholders")
+    assert reading._postprocess(telc, content) is content  # untouched — the gate never fires for telc
+
+
 def test_adjacent_gaps_and_wrong_length_are_rejected() -> None:
     c = _valid_content()
     c["text"]["paragraphs"][1] = c["text"]["paragraphs"][1].replace("{{g2}}", "{{g2}} {{g3}}").replace(" {{g3}} Ende", " Ende", 0)

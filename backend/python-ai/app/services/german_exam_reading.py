@@ -1064,11 +1064,66 @@ def _postprocess_paragraph_ordering(content: dict[str, Any]) -> dict[str, Any]:
     return {"questions": shuffled, "correctOrder": correct_order}
 
 
+_RECONSTRUCTION_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+
+def _strip_untracked_reconstruction_placeholders(content: dict[str, Any]) -> dict[str, Any]:
+    """Goethe's lesen_3 (text_reconstruction_sentence_matching, strictPlaceholders) occasionally has
+    the model emit one extra {{gN}} marker in the paragraph text beyond the gaps it actually
+    declared and linked to a question -- confirmed from a real production generation (see
+    audit/goethe-lesen/baseline-v1/lesen_3-2.json): gaps=[g1..g8], every question referenced
+    g1..g8, but the paragraph text also contained a lone {{g9}} that nothing declared, linked, or
+    graded. _check_reconstruction_integrity (german_exam_validator.py) correctly flags any
+    undeclared placeholder as a part-level error, which previously meant discarding an otherwise-
+    fully-valid generation and burning one of only 2 scarce _MAX_FULL_REGENERATIONS attempts on a
+    token nothing in the exercise ever references.
+
+    Removing a placeholder that isn't one of the declared gap ids is always safe: it was never a
+    real exam item (no question.gapId points at it, no candidate is scored against it), so the
+    paragraph simply reads as ordinary prose at that point -- exactly as if that sentence had never
+    been a removal candidate. A placeholder that IS a declared, linked gap is never touched here;
+    anything wrong with one of those still fails validation exactly as before. This runs before
+    validation, not instead of it -- it narrows what counts as a hard error, it does not disable
+    the check."""
+    text = content.get("text")
+    if not isinstance(text, dict):
+        return content
+    paragraphs = text.get("paragraphs")
+    gaps = text.get("gaps")
+    if not isinstance(paragraphs, list) or not isinstance(gaps, list):
+        return content
+    gap_ids = {g.get("gapId") for g in gaps if isinstance(g, dict) and g.get("gapId")}
+    if not gap_ids:
+        return content
+
+    changed = False
+
+    def _strip_if_untracked(m: re.Match) -> str:
+        nonlocal changed
+        if m.group(1) in gap_ids:
+            return m.group(0)
+        changed = True
+        return ""
+
+    cleaned = []
+    for p in paragraphs:
+        if not isinstance(p, str):
+            cleaned.append(p)
+            continue
+        stripped = _RECONSTRUCTION_PLACEHOLDER.sub(_strip_if_untracked, p)
+        cleaned.append(re.sub(r" {2,}", " ", stripped).strip())
+    if not changed:
+        return content
+    return {**content, "text": {**text, "paragraphs": cleaned}}
+
+
 def _postprocess(part: PartBlueprint, content: dict[str, Any]) -> dict[str, Any]:
     if part.task_type == "paragraph_ordering":
         content = _postprocess_paragraph_ordering(content)
     elif part.task_type == "reading_summary_error_detection":
         content = _postprocess_reading_summary_error_detection(content)
+    if part.constraints.get("strictPlaceholders"):
+        content = _strip_untracked_reconstruction_placeholders(content)
     if "presentation" in part.constraints:
         from copy import deepcopy
         content["presentation"] = deepcopy(part.constraints["presentation"])
