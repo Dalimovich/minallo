@@ -18,7 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from ..supabase_client import get_supabase
-from .german_exams import resolve_profile_id, GERMAN_EXAM_PROFILES
+from .german_exams import GermanExamProfileError, get_profile, resolve_profile_id, GERMAN_EXAM_PROFILES
 
 log = logging.getLogger(__name__)
 
@@ -114,8 +114,44 @@ def format_learner_profile_block(profile: GermanLearnerProfile | None) -> str:
         "feedback to this target level.",
         "- Do not claim a different level for this learner unless you are "
         "explicitly evaluating their performance.",
+        "- When correcting this learner's German, name the grammar rule "
+        "behind each correction (e.g. verb-final word order after a "
+        "subordinating conjunction like weil/dass, verb-second inversion "
+        "after a fronted element like a time expression, case governed by "
+        "a preposition or verb) — never just a label like \"past tense\".",
     ]
+    exam_facts = _format_exam_facts(profile)
+    if exam_facts:
+        lines.append(exam_facts)
     return "\n".join(lines)
+
+
+def _format_exam_facts(profile: GermanLearnerProfile) -> str:
+    """Short factual block (modules, pass thresholds) from the exam registry
+    so the model states the learner's own exam structure instead of guessing
+    at it from general knowledge — generic over every exam family, not just
+    one hardcoded exam."""
+    if not profile.exam_profile_id:
+        return ""
+    try:
+        exam = get_profile(profile.exam_profile_id)
+    except GermanExamProfileError:
+        return ""
+    lines = [""]
+    if exam.display_name:
+        lines.append(f"- Exam: {exam.display_name}")
+    if exam.module_specs:
+        modules = ", ".join(
+            f"{spec.label} ({spec.code})" if spec.code else spec.label
+            for spec in exam.module_specs.values()
+        )
+        lines.append(f"- Modules: {modules}")
+    result_model = exam.result_model or {}
+    thresholds = result_model.get("thresholdsPercent")
+    if thresholds:
+        levels = ", ".join(f"{level} {pct}%" for level, pct in thresholds.items())
+        lines.append(f"- Pass thresholds: {levels}")
+    return "\n".join(lines) if len(lines) > 1 else ""
 
 
 def learner_profile_fingerprint(profile: GermanLearnerProfile | None) -> str:

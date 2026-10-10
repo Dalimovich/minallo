@@ -3590,7 +3590,16 @@ async def _prepare_ask_stream_response(
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
-        general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=prefix))
+        # Loaded here (not just further down for the course path) so a German
+        # learner's target level, exam facts and conversation history reach
+        # this answer too — previously this branch returned before any of
+        # that context was ever fetched.
+        learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
+        general = await run_in_threadpool(lambda: generate_general_answer(
+            question, prefix=prefix,
+            previous_turns=previous_turns_payload,
+            context_block=format_learner_profile_block(learner_profile),
+        ))
         record_usage(
             feature="ask_stream_general", model=general.get("model"),
             prompt_tokens=general.get("promptTokens"),

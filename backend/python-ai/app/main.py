@@ -65,6 +65,9 @@ async def _lifespan(_app: FastAPI):
     from .services.scoped_job_worker import start_scoped_job_worker
 
     start_scoped_job_worker()
+    from .services.conversation_store import start_tutor_request_sweeper
+
+    start_tutor_request_sweeper()
     yield
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from ..config import get_settings
-from .answer import INTERNAL_CONFIDENTIALITY_RULE, chat_completion_params
+from .answer import INTERNAL_CONFIDENTIALITY_RULE, LANGUAGE_MATCH_RULE, chat_completion_params
 from .openai_client import get_openai_client
 
 
@@ -24,17 +24,47 @@ organize, write, compare, recommend, or plan something, perform that task
 directly. Only explain a process when they ask how to do it. Use conversation
 history to resolve omitted information. If essential details are genuinely
 missing, ask one concise, specific question instead of producing a checklist
-of information requests.""" + INTERNAL_CONFIDENTIALITY_RULE
+of information requests.
+
+STATICS / MECHANICS. Name every support/constraint by its correct type and
+state exactly the reactions it can carry — never confuse them: a Festlager
+(pin support) carries a horizontal AND a vertical force but NO moment; a
+Loslager (roller support) carries only a force perpendicular to its rolling
+direction; an Einspannung (fixed support) carries a horizontal force, a
+vertical force, AND a moment. Write out every equilibrium equation used
+(ΣF_x = 0, ΣF_y = 0, ΣM = 0) and report every reaction, including ones that
+are zero (e.g. state "A_h = 0" rather than omitting it).""" + INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE
 
 
-def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int = 1200) -> dict[str, Any]:
+def _bounded_history(previous_turns: list[dict[str, str]] | None) -> list[dict[str, str]]:
+    history: list[dict[str, str]] = []
+    history_chars = 0
+    for turn in reversed(previous_turns or []):
+        role = turn.get("role")
+        text = str(turn.get("text") or "").strip()
+        if role in {"user", "assistant"} and text:
+            bounded = text[:4000]
+            if history and history_chars + len(bounded) > 24000:
+                break
+            history.append({"role": role, "content": bounded})
+            history_chars += len(bounded)
+    history.reverse()
+    return history
+
+
+def generate_general_answer(
+    question: str, *, prefix: str = "", max_tokens: int = 1200,
+    previous_turns: list[dict[str, str]] | None = None, context_block: str = "",
+) -> dict[str, Any]:
     settings = get_settings()
     target_model = settings.openai_generate_model
     client = get_openai_client()
+    history = _bounded_history(previous_turns)
     completion = client.chat.completions.create(
         model=target_model,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": _SYSTEM_PROMPT + context_block},
+            *history,
             {"role": "user", "content": question.strip()},
         ],
         **chat_completion_params(target_model, max_tokens),
@@ -58,18 +88,7 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
     """Yield real model deltas immediately; never buffer a fast-lane answer."""
     settings = get_settings()
     target_model = settings.openai_generate_model
-    history = []
-    history_chars = 0
-    for turn in reversed(previous_turns or []):
-        role = turn.get("role")
-        text = str(turn.get("text") or "").strip()
-        if role in {"user", "assistant"} and text:
-            bounded = text[:4000]
-            if history and history_chars + len(bounded) > 24000:
-                break
-            history.append({"role": role, "content": bounded})
-            history_chars += len(bounded)
-    history.reverse()
+    history = _bounded_history(previous_turns)
     stream = get_openai_client().chat.completions.create(
         model=target_model,
         messages=[{"role": "system", "content": _SYSTEM_PROMPT + context_block}, *history,
