@@ -6089,10 +6089,12 @@
           base.segmentIds = allSegmentIds;
         } else if (part.taskType === 'listening_tristate') {
           base.prompt = q.prompt || q.statement || '';
+          // tristate.answer/evidenceSegmentIds arrive stripped (see german_exam_generator.
+          // _secure_listening_envelope) — lsGradeTristateType patches q.answer/q.segmentIds
+          // from the grade-item response once grading actually happens, same pattern as
+          // lsGradeSpeakerMatchingType. Nothing answer-revealing is available here at load time.
           base.tristate = q.tristate || {};
-          base.answer = base.tristate.answer || ''; // lets this type reuse lsGradeMcqLikeType unchanged
-          var evidence = base.tristate.evidenceSegmentIds;
-          base.segmentIds = (evidence && evidence.length) ? evidence : allSegmentIds;
+          base.segmentIds = allSegmentIds;
         } else {
           base.prompt = q.prompt || '';
           base.segmentIds = allSegmentIds;
@@ -6835,9 +6837,9 @@
           (resolved ? ' disabled value="' + _glEscape(ans.userText || '') + '"' : ' value="' + _glEscape(showingMinimalRetry ? '' : (ans.userText || '')) + '"') + '>';
       }
       // Goethe Hören Teil 2 (listening_tristate): richtig/falsch/nicht_im_text, shown under the
-      // official German wording (lsTristateLabels(), sourced from the manifest). Grading reuses
-      // lsGradeMcqLikeType unchanged — lsMapGeneratedQuestion already copies tristate.answer to
-      // base.answer for exactly this reason.
+      // official German wording (lsTristateLabels(), sourced from the manifest). Grading is
+      // server-side (lsGradeTristateType, below) -- q.answer is populated by that grader's
+      // response, never present at load time, so this body only ever reads it once resolved=true.
       function lsRenderTristateBody(q, ans, resolved, showingMinimalRetry) {
         var labels = lsTristateLabels();
         return '<div class="gl-listen-options">' + LS_TRISTATE_VALUES.map(function (value, i) {
@@ -7160,6 +7162,23 @@
           return result.correct;
         });
       }
+      // Goethe Hören Teil 2 (listening_tristate) -- a dedicated grader, not a reuse of
+      // lsGradeMcqLikeType: that one is synchronous/local, for the static (non-generated)
+      // main-idea/detail/tf practice sets, where q.answer is legitimately present at load
+      // time. Generated tristate questions never carry q.answer (stripped server-side, see
+      // german_exam_generator._secure_listening_envelope) -- grading is the same server round
+      // trip as the other three generated types, patching q.answer/q.segmentIds from the
+      // response so lsRenderTristateBody's existing resolved-state rendering needs no changes.
+      function lsGradeTristateType(q, ans) {
+        if (!ans._pending) return null;
+        ans.selected = ans._pending;
+        return lsGradeGeneratedAnswer(q, ans.selected).then(function (result) {
+          if (!result) return null;
+          q.answer = result.correctAnswer;
+          q.segmentIds = (result.evidenceSegmentIds && result.evidenceSegmentIds.length) ? result.evidenceSegmentIds : q.segmentIds;
+          return result.correct;
+        });
+      }
 
       var LS_GRADERS = {
         'main-idea': lsGradeMcqLikeType,
@@ -7172,7 +7191,7 @@
         'structured_note_completion': lsGradeNoteCompletionType,
         // --- Goethe-Zertifikat C1 ---
         'multi_source_statement_matching': lsGradeSpeakerMatchingType,
-        'listening_tristate': lsGradeMcqLikeType,
+        'listening_tristate': lsGradeTristateType,
         'segmented_dialogue_mc3': lsGradeMc3Type,
         'listening_detail_mc3': lsGradeMc3Type
       };

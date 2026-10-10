@@ -70,23 +70,19 @@ test('lsMapGeneratedQuestion maps every Goethe Hören task type to the shape its
   // against a host-realm array literal spuriously fails on cross-realm identity, not content.
   assert.deepEqual(Array.from(q1.segmentIds), ['s2']);
 
-  // hoeren_2: listening_tristate — statement + tristate.answer copied to base.answer for lsGradeMcqLikeType reuse.
+  // hoeren_2: listening_tristate — statement only. The backend strips tristate.answer/
+  // evidenceSegmentIds before this ever runs (german_exam_generator._secure_listening_envelope),
+  // so lsMapGeneratedQuestion must never read or forward an answer field here; grading (and the
+  // post-grade reveal) is a server round trip, covered in listening-generated-grading-browser.spec.mjs.
   const q2 = map(
     { taskType: 'listening_tristate', title: 'Interview' },
     { questionId: 'q2', statement: 'Die Miete steigt jedes Jahr.', skillTags: ['detail_fact'], difficulty: 'c1',
-      tristate: { answer: 'falsch', evidenceSegmentIds: ['s2'] } },
+      tristate: {} },
     {}, allSegmentIds
   );
   assert.equal(q2.prompt, 'Die Miete steigt jedes Jahr.');
-  assert.equal(q2.answer, 'falsch');
-  assert.deepEqual(Array.from(q2.segmentIds), ['s2']);
-  // nicht_im_text legitimately has no evidence — falls back to the full audio, not an empty/broken replay.
-  const q2b = map(
-    { taskType: 'listening_tristate', title: 'Interview' },
-    { questionId: 'q2b', statement: '...', tristate: { answer: 'nicht_im_text', evidenceSegmentIds: [] } },
-    {}, allSegmentIds
-  );
-  assert.deepEqual(Array.from(q2b.segmentIds), allSegmentIds);
+  assert.equal('answer' in q2, false);
+  assert.deepEqual(Array.from(q2.segmentIds), allSegmentIds);
 
   // hoeren_3: segmented_dialogue_mc3 — mc3 shape + sectionId carried through.
   const q3 = map(
@@ -111,7 +107,12 @@ test('lsMapGeneratedQuestion maps every Goethe Hören task type to the shape its
 
 // ── Browser: render, answer, check, grade for each of the 4 task types ──
 
-test('Goethe Hören renderers/graders: correct option sets, official tristate wording, right/wrong grading', async () => {
+// Grading itself (lsGradeSpeakerMatchingType/lsGradeMc3Type/lsGradeTristateType) is a server round
+// trip now — real-network-backed coverage (request shape, reveal-after-grading-only, forged-field
+// rejection, failure handling) lives in listening-generated-grading-browser.spec.mjs, which exercises
+// the actual production graders against an intercepted network call. This test stays scoped to what
+// IS still pure/local: the renderers producing correct markup and official wording before any attempt.
+test('Goethe Hören renderers: correct option sets and official tristate wording', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
@@ -122,48 +123,36 @@ test('Goethe Hören renderers/graders: correct option sets, official tristate wo
       var ls = { partId: 'hoeren_2', _speakerOrder: ['source_1', 'source_2', 'source_3'] };
       window._glExamState = () => ({ status: 'ready', manifest: { modules: [${JSON.stringify(goetheListening)}] } });
       ${['lsParts', 'lsPart', 'lsPartLabel', 'lsTristateLabels',
-          'lsRenderSpeakerMatchingBody', 'lsGradeSpeakerMatchingType',
-          'lsRenderTristateBody',
-          'lsRenderMc3Body', 'lsGradeMc3Type'].map(productionFunction).join('\n')}
+          'lsRenderSpeakerMatchingBody', 'lsRenderTristateBody', 'lsRenderMc3Body'].map(productionFunction).join('\n')}
       ${productionVar('LS_TRISTATE_VALUES', '];')}
       ${productionVar('LS_TRISTATE_DEFAULT_LABELS', '];')}
-      function lsGradeMcqLikeType(q, ans) { if (!ans._pending) return null; ans.selected = ans._pending; return ans.selected === q.answer; }
       window.lsRenderSpeakerMatchingBody = lsRenderSpeakerMatchingBody;
-      window.lsGradeSpeakerMatchingType = lsGradeSpeakerMatchingType;
       window.lsRenderTristateBody = lsRenderTristateBody;
-      window.lsGradeMcqLikeType = lsGradeMcqLikeType;
       window.lsRenderMc3Body = lsRenderMc3Body;
-      window.lsGradeMc3Type = lsGradeMc3Type;
     ` });
 
-    // hoeren_1 shape reused via lsRenderSpeakerMatchingBody/lsGradeSpeakerMatchingType.
-    const q1 = { matching: { correctSpeakerId: 'source_2' } };
-    const ans1 = {};
-    await page.evaluate(({ q, html }) => { document.getElementById('glListenTaskPanel').innerHTML = html; },
-      { q: q1, html: await page.evaluate((q) => window.lsRenderSpeakerMatchingBody(q, {}, false, false), q1) });
+    // hoeren_1 shape reused via lsRenderSpeakerMatchingBody — unresolved (pre-attempt): no
+    // correctSpeakerId is even present on a real (post-strip) question, confirming the renderer
+    // doesn't need it to draw the option list.
+    const q1 = { matching: {} };
+    const html1 = await page.evaluate((q) => window.lsRenderSpeakerMatchingBody(q, {}, false, false), q1);
+    await page.evaluate((html) => { document.getElementById('glListenTaskPanel').innerHTML = html; }, html1);
     assert.equal(await page.locator('#glListenTaskPanel .gl-listen-option').count(), 4); // 3 sources + "none of the speakers"
-    ans1._pending = 'source_2';
-    assert.equal(await page.evaluate((args) => window.lsGradeSpeakerMatchingType(args.q, args.a), { q: q1, a: ans1 }), true);
-    ans1._pending = 'source_1';
-    assert.equal(await page.evaluate((args) => window.lsGradeSpeakerMatchingType(args.q, args.a), { q: q1, a: ans1 }), false);
 
-    // hoeren_2: official German tristate wording, sourced from the manifest's constraints, not hardcoded English.
-    const q2 = { answer: 'nicht_im_text' };
+    // hoeren_2: official German tristate wording, sourced from the manifest's constraints, not
+    // hardcoded English — rendered with no q.answer present (real pre-attempt shape).
+    const q2 = {};
     const tristateHtml = await page.evaluate((q) => window.lsRenderTristateBody(q, {}, false, false), q2);
     await page.evaluate((html) => { document.getElementById('glListenTaskPanel').innerHTML = html; }, tristateHtml);
     const optionTexts = await page.locator('#glListenTaskPanel .gl-listen-option span:last-child').allTextContents();
     assert.deepEqual(optionTexts, ['stimmt', 'stimmt nicht', 'dazu wird nichts gesagt']);
-    const ans2 = { _pending: 'nicht_im_text' };
-    assert.equal(await page.evaluate((args) => window.lsGradeMcqLikeType(args.q, args.a), { q: q2, a: ans2 }), true);
 
-    // hoeren_3/4: shared mc3 renderer/grader (segmented_dialogue_mc3 and listening_detail_mc3 both
-    // reuse sentence_completion_mc3's exact shape, confirmed against the backend's own validator reuse).
-    const q3 = { mc3: { options: ['Alpha', 'Beta', 'Gamma'], correctIndex: 2 } };
+    // hoeren_3/4: shared mc3 renderer (segmented_dialogue_mc3 and listening_detail_mc3 both reuse
+    // sentence_completion_mc3's exact shape, confirmed against the backend's own validator reuse).
+    const q3 = { mc3: { options: ['Alpha', 'Beta', 'Gamma'] } };
     const mc3Html = await page.evaluate((q) => window.lsRenderMc3Body(q, {}, false, false), q3);
     await page.evaluate((html) => { document.getElementById('glListenTaskPanel').innerHTML = html; }, mc3Html);
     assert.equal(await page.locator('#glListenTaskPanel .gl-listen-option').count(), 3);
-    const ans3 = { _pending: '2' };
-    assert.equal(await page.evaluate((args) => window.lsGradeMc3Type(args.q, args.a), { q: q3, a: ans3 }), true);
   } finally { await browser.close(); }
 });
 

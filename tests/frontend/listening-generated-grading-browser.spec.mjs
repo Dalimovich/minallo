@@ -42,6 +42,7 @@ function extractFunction(name) {
 const EXTRACTED = [
   '_getAuthFetchModule', '_authFetch',
   'lsGradeGeneratedAnswer', 'lsGradeSpeakerMatchingType', 'lsGradeMc3Type', 'lsGradeNoteCompletionType',
+  'lsGradeTristateType', // Goethe Hören Teil 2 — same server-graded pattern as the 3 telc types
   'lsGradeMcqLikeType', // the unrelated, still-synchronous static-practice grader (regression check)
   'lsFinishCheckAnswer', 'lsCheckAnswer',
 ].map(extractFunction).join('\n');
@@ -63,6 +64,7 @@ const HARNESS = `
     'speaker_statement_matching': lsGradeSpeakerMatchingType,
     'sentence_completion_mc3': lsGradeMc3Type,
     'structured_note_completion': lsGradeNoteCompletionType,
+    'listening_tristate': lsGradeTristateType,
     'main-idea': lsGradeMcqLikeType
   };
 `;
@@ -113,6 +115,9 @@ function mc3Question() {
 }
 function noteQuestion() {
   return { questionId: 'q1', type: 'structured_note_completion', note: { fieldLabel: 'Datum' } };
+}
+function tristateQuestion() {
+  return { questionId: 'q1', type: 'listening_tristate', tristate: {}, segmentIds: ['s1', 's2', 's3'] };
 }
 
 // ---- 1 & 2: request shape — generationId/questionId/selected only, no answer key, nothing to "trust" ----
@@ -174,6 +179,45 @@ test('mc3: an incorrect answer still reveals mc3.correctIndex for the post-grade
     }, mc3Question());
     assert.equal(result.correct, false);
     assert.equal(result.mc3.correctIndex, 1);
+  });
+});
+
+// ---- Goethe Hören Teil 2 (listening_tristate) — same server-graded contract as the 3 telc types ----
+
+test('listening_tristate sends exactly {generationId, questionId, selected}, never an answer key', async () => {
+  await withWiredPage(async (page, gradeRequests) => {
+    await page.evaluate((q) => window.lsGradeTristateType(q, { _pending: 'falsch' }), tristateQuestion());
+    assert.equal(gradeRequests.length, 1);
+    assert.deepEqual(Object.keys(gradeRequests[0]).sort(), ['generationId', 'questionId', 'selected']);
+    assert.equal(gradeRequests[0].selected, 'falsch');
+  });
+});
+
+test('tristate: q.answer is absent before grading and patched only after a response, with evidence replacing the full-audio fallback', async () => {
+  await withWiredPage(async (page, gradeRequests, setGradeResponse) => {
+    setGradeResponse(() => ({ status: 200, body: { questionId: 'q1', correct: true, correctAnswer: 'falsch', evidenceSegmentIds: ['s2'] } }));
+    const q = tristateQuestion();
+    const before = await page.evaluate((q) => 'answer' in q, q);
+    assert.equal(before, false);
+    const result = await page.evaluate((args) => {
+      var q = args.q;
+      return window.lsGradeTristateType(q, { _pending: 'falsch' }).then((correct) => ({ correct: correct, q: q }));
+    }, { q });
+    assert.equal(result.correct, true);
+    assert.equal(result.q.answer, 'falsch');
+    assert.deepEqual(result.q.segmentIds, ['s2']);
+  });
+});
+
+test('tristate: an incorrect answer still reveals q.answer, and keeps the full-audio fallback when no evidence is returned (nicht_im_text)', async () => {
+  await withWiredPage(async (page, gradeRequests, setGradeResponse) => {
+    setGradeResponse(() => ({ status: 200, body: { questionId: 'q1', correct: false, correctAnswer: 'nicht_im_text', evidenceSegmentIds: [] } }));
+    const result = await page.evaluate((q) => {
+      return window.lsGradeTristateType(q, { _pending: 'richtig' }).then((correct) => ({ correct: correct, q: q }));
+    }, tristateQuestion());
+    assert.equal(result.correct, false);
+    assert.equal(result.q.answer, 'nicht_im_text');
+    assert.deepEqual(result.q.segmentIds, ['s1', 's2', 's3']); // unchanged — no evidence to narrow to
   });
 });
 
