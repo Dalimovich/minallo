@@ -21,6 +21,8 @@ from . import german_exam_inventory
 from .german_exam_adaptation import build_adaptation_plan, compute_weakness, instruction_to_dict
 from .german_exam_language_elements import generate_language_elements_part
 from .german_exam_listening import generate_listening_part
+from .german_exam_listening_grading import ANSWER_KEY_TASK_TYPES, build_grading_content, strip_listening_answer_key
+from . import german_exam_listening_practice_state as listening_practice_state
 from .german_exam_reading import generate_reading_part
 from .german_exam_writing import generate_writing_part
 from .german_exam_speaking import generate_speaking_part
@@ -120,6 +122,33 @@ def _generate_writing(profile: ExamProfile, part: PartBlueprint, plan, topic: di
     return generate_writing_part(profile, part, plan, topic)
 
 
+def _secure_listening_envelope(envelope: dict[str, Any], user_id: str) -> dict[str, Any]:
+    """Closes the listening answer-key exposure (audited 2026-10-10): for any of the 7 listening
+    task types in ANSWER_KEY_TASK_TYPES, moves every answer-bearing field (matching.
+    correctSpeakerId, mc3.correctIndex, note.correctFill, tristate.answer, and
+    matching.evidenceSegmentIds — see german_exam_listening_grading.py) out of the response and
+    into german_exam_listening_practice_generations, server-side only. The envelope's existing
+    `generationId` is reused as that row's id — no second id concept, no frontend wiring change
+    needed — and grading (POST /german-exam/listening/grade-item) reads it back by
+    (generationId, userId, questionId), never from anything the browser holds.
+
+    Applies to BOTH generation paths through generate_task() — live and stocked/inventory — since
+    both ultimately build this same envelope shape (german_exam_inventory.take() forwards a
+    previously-built envelope unchanged, generate_task()'s live branch builds one fresh via
+    _envelope()); neither path withheld the answer key before this function existed. A task type
+    outside ANSWER_KEY_TASK_TYPES (or a non-listening module) passes through untouched."""
+    task_type = envelope.get("part", {}).get("taskType")
+    if envelope.get("module") != "listening" or task_type not in ANSWER_KEY_TASK_TYPES:
+        return envelope
+    content = envelope.get("content") or {}
+    grading_content = build_grading_content(task_type, content)
+    listening_practice_state.create_generation(
+        user_id, envelope["part"]["id"], grading_content, generation_id=envelope["generationId"],
+    )
+    envelope["content"] = strip_listening_answer_key(task_type, content)
+    return envelope
+
+
 def generate_task(
     user_id: str,
     profile_id: str,
@@ -147,7 +176,7 @@ def generate_task(
             # Consumed on serve — even for speculative/prefetch calls, so no
             # separate consume step is needed to keep rotation honest.
             record_topic_used(user_id, profile_id, module, part_id, stocked["topic"]["topicId"], stocked["generationId"])
-            return stocked
+            return _secure_listening_envelope(stocked, user_id)
 
     if mode == "exam_simulation":
         # Reserved for a future phase — official blueprint only, no personalization.
@@ -171,7 +200,8 @@ def generate_task(
     if not speculative:
         record_topic_used(user_id, profile_id, module, part_id, topic["topicId"], generation_id)
 
-    return _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta, generation_id)
+    envelope = _envelope(profile, module, part, mode, plan, weakness, topic, content, validation_meta, generation_id)
+    return _secure_listening_envelope(envelope, user_id)
 
 
 def generate_stock_task(profile_id: str, module: str, part_id: str, topic: dict[str, str]) -> dict[str, Any]:

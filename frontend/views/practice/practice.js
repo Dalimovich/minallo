@@ -6981,9 +6981,32 @@
         });
       }
 
-      // Each grader returns true/false when it has enough input to grade, or
-      // null when the user hasn't answered yet (mirrors the original early
-      // `return;`s — lsCheckAnswer treats null as "not ready, do nothing").
+      // Each grader returns true/false when it has enough input to grade, null when the user
+      // hasn't answered yet (mirrors the original early `return;`s — lsCheckAnswer treats null
+      // as "not ready, do nothing"), or — for the three generated-question types below — a
+      // Promise of true/false/null. Generated questions no longer carry their own answer key
+      // (see lsMapGeneratedQuestion: q.matching/q.mc3/q.note arrive from the network without
+      // correctSpeakerId/correctIndex/correctFill — the backend strips them, see
+      // german_exam_generator._secure_listening_envelope), so grading them is a round trip to
+      // /api/ai/german-exam/grade-listening-item, which reads the real answer back server-side
+      // by (ls.generationId, q.questionId) and returns it ONLY now, for display — the caller
+      // patches it onto q.matching/mc3/note so the existing "resolved" rendering in
+      // lsRenderSpeakerMatchingBody/lsRenderMc3Body/lsRenderSupportBody needs no changes at all.
+      function lsGradeGeneratedAnswer(q, selected) {
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/grade-listening-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generationId: ls.generationId, questionId: q.questionId, selected: selected })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('grade_listening_item_http_' + resp.status);
+          return resp.json();
+        }).catch(function (err) {
+          // Fails closed: the question is left ungraded (lsCheckAnswer re-enables the check
+          // button) rather than guessing — never fabricate a correct/incorrect result locally.
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Hören] grade-item failed', err);
+          return null;
+        });
+      }
       function lsGradeMcqLikeType(q, ans) {
         if (!ans._pending) return null;
         ans.selected = ans._pending;
@@ -7005,20 +7028,34 @@
       function lsGradeSpeakerMatchingType(q, ans) {
         if (!ans._pending) return null;
         ans.selected = ans._pending;
-        var correct = (q.matching && q.matching.correctSpeakerId) || 'no_match';
-        return ans.selected === correct;
+        return lsGradeGeneratedAnswer(q, ans.selected).then(function (result) {
+          if (!result) return null;
+          q.matching = q.matching || {};
+          q.matching.correctSpeakerId = result.correctAnswer;
+          q.segmentIds = result.evidenceSegmentIds || [];
+          return result.correct;
+        });
       }
       function lsGradeMc3Type(q, ans) {
         if (!ans._pending) return null;
         ans.selected = parseInt(ans._pending, 10);
-        return ans.selected === (q.mc3 && q.mc3.correctIndex);
+        return lsGradeGeneratedAnswer(q, ans.selected).then(function (result) {
+          if (!result) return null;
+          q.mc3 = q.mc3 || {};
+          q.mc3.correctIndex = result.correctAnswer;
+          return result.correct;
+        });
       }
       function lsGradeNoteCompletionType(q, ans) {
         var input = lsEl('glListenNoteInput');
         ans.userText = input ? input.value.trim() : '';
         if (!ans.userText) return null;
-        var correct = ((q.note && q.note.correctFill) || '').trim();
-        return ans.userText.trim().toLowerCase() === correct.toLowerCase();
+        return lsGradeGeneratedAnswer(q, ans.userText).then(function (result) {
+          if (!result) return null;
+          q.note = q.note || {};
+          q.note.correctFill = result.correctAnswer;
+          return result.correct;
+        });
       }
 
       var LS_GRADERS = {
@@ -7032,12 +7069,8 @@
         'structured_note_completion': lsGradeNoteCompletionType
       };
 
-      function lsCheckAnswer(q, ans) {
-        var grader = LS_GRADERS[q.type];
-        var result = grader ? grader(q, ans) : null;
-        if (result === null || result === undefined) return;
+      function lsFinishCheckAnswer(q, ans, result) {
         var correct = !!result;
-
         ans.attempts++;
         if (ans.attempts === 1) ans._firstAttemptCorrect = correct;
         ans.retrying = false;
@@ -7046,6 +7079,37 @@
           if (ls.usingGenerated) lsRecordAttempt(q, ans, correct);
         }
         lsRenderWorkspace();
+      }
+
+      function lsCheckAnswer(q, ans) {
+        // Guards the server-graded path against a duplicate in-flight request — must run BEFORE
+        // calling the grader at all, since the grader (lsGradeGeneratedAnswer) fires its fetch
+        // synchronously; checking this flag only after calling the grader would be too late (the
+        // second request would already be in flight). A disabled check button already stops a
+        // normal second click, but this is the actual guard: it holds even if something else
+        // calls lsCheckAnswer again for the same `ans` before the first round trip settles.
+        if (ans._checking) return;
+        var grader = LS_GRADERS[q.type];
+        var graded = grader ? grader(q, ans) : null;
+        if (graded && typeof graded.then === 'function') {
+          // Server-graded (generated listening) path — disable the check button for the round
+          // trip; re-enable it untouched on failure/no-answer so the learner can simply retry,
+          // same as the synchronous "not ready yet" case below.
+          ans._checking = true;
+          var checkBtn = lsEl('glListenCheckBtn');
+          if (checkBtn) checkBtn.disabled = true;
+          graded.then(function (result) {
+            ans._checking = false;
+            if (result === null || result === undefined) {
+              if (checkBtn) checkBtn.disabled = false;
+              return;
+            }
+            lsFinishCheckAnswer(q, ans, result);
+          });
+          return;
+        }
+        if (graded === null || graded === undefined) return;
+        lsFinishCheckAnswer(q, ans, graded);
       }
 
       function lsGoTo(delta) {

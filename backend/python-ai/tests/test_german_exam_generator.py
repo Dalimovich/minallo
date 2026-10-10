@@ -11,6 +11,10 @@ def _stub(monkeypatch, record_calls):
     monkeypatch.setattr(gen, "pick_topic", lambda *a, **k: {"topicId": "urban_mobility", "label": "Stadtplanung"})
     monkeypatch.setattr(gen, "record_topic_used", lambda *a, **k: record_calls.append(a))
     monkeypatch.setattr(gen, "_generate_listening", lambda profile, part, plan, topic: ({"segments": [], "questions": []}, {"deterministicPassed": True}))
+    # hv1's task type (speaker_statement_matching) is answer-key-protected (see
+    # test_german_exam_generator_listening_security.py) — _secure_listening_envelope would
+    # otherwise try a real Supabase write here; these tests aren't about that behavior.
+    monkeypatch.setattr(gen.listening_practice_state, "create_generation", lambda *a, **k: k["generation_id"])
 
 
 def test_speculative_generation_does_not_record_topic_used(monkeypatch):

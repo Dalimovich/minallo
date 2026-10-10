@@ -18,7 +18,7 @@ import logging
 import json
 import random
 from fractions import Fraction
-from typing import Literal
+from typing import Annotated, Literal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,6 +27,8 @@ from pydantic import BaseModel, Field
 from ..auth import require_internal_token
 from ..services import gen_timing
 from ..services.german_exam_generator import generate_task
+from ..services import german_exam_listening_grading as listening_grading
+from ..services import german_exam_listening_practice_state as listening_practice_state
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
 from ..services.german_exams import GermanExamProfileError, get_part, get_profile
@@ -177,6 +179,57 @@ class GetWeaknessSnapshotRequest(BaseModel):
 @router.post("/german-exam/weaknesses")
 def get_weakness_snapshot_endpoint(payload: GetWeaknessSnapshotRequest) -> dict[str, Any]:
     return get_weakness_snapshot(payload.userId, payload.profileId, payload.module)
+
+
+# ---- Generated (AI) Hören answer-key protection ------------------------------------------------
+# Closes the exposure audited 2026-10-10: generate_task()'s listening branch (german_exam_
+# generator._secure_listening_envelope) now strips every answer-bearing field before the browser
+# ever sees it and writes it instead to public.german_exam_listening_practice_generations, keyed
+# by the same `generationId` already in the envelope. This endpoint is the only way to learn
+# whether a submitted answer was correct — it reads that server-held state back by
+# (generationId, userId, questionId); the request cannot supply or replace it (no field for a
+# correct answer exists on GradeListeningItemRequest, and extra="ignore" is Pydantic's default,
+# so one sent anyway is silently dropped before this object even exists).
+
+
+class GradeListeningItemRequest(BaseModel):
+    userId: str
+    generationId: str = Field(min_length=1, max_length=80)
+    questionId: str = Field(min_length=1, max_length=80)
+    # str covers speaker ids/the "no_match" sentinel/free-text note answers; int covers mc3's
+    # selected option index. Bounded even though grade_answer() already tolerates any length
+    # safely (no regex, no amplification) — just consistent with every other free-text field in
+    # this router (e.g. DshLvHvAnswer.answer).
+    selected: Annotated[str, Field(max_length=2000)] | int
+
+
+@router.post("/german-exam/listening/grade-item")
+def grade_listening_item_endpoint(payload: GradeListeningItemRequest) -> dict[str, Any]:
+    """Grades one submitted answer against SERVER-HELD state only. An unknown generationId, a
+    different owner, an expired generation, and an unknown questionId within an otherwise valid
+    generation are all the exact same 404 (german_exam_listening_practice_state.
+    get_grading_entry's own contract) — none of those cases is distinguishable from outside.
+    Unlike the DSH LV/HV practice grade endpoint, this is NOT a one-time claim: a Hören part has
+    several questions graded independently as the learner reaches each one, and the existing
+    hint/retry UX legitimately re-submits the same question more than once, so the same
+    generation may be read here many times before it expires."""
+    entry = listening_practice_state.get_grading_entry(payload.userId, payload.generationId, payload.questionId)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                             detail="Generation not found, expired, or has no such question.")
+    task_type = entry.get("taskType")
+    try:
+        correct = listening_grading.grade_answer(task_type, entry.get("correct"), payload.selected)
+    except listening_grading.UnknownListeningTaskTypeError as exc:
+        log.exception("listening grade-item: unrecognized stored taskType=%s", task_type)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                             detail="This question could not be graded.") from exc
+    return {
+        "questionId": payload.questionId,
+        "correct": correct,
+        "correctAnswer": entry.get("correct"),
+        "evidenceSegmentIds": entry.get("evidenceSegmentIds") or [],
+    }
 
 
 class WritingTopic(BaseModel):

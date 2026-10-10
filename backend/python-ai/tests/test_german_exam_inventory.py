@@ -89,6 +89,9 @@ def test_custom_topic_bypasses_stock(monkeypatch):
     monkeypatch.setattr(gen, "build_adaptation_plan", lambda *a, **k: [])
     monkeypatch.setattr(gen, "record_topic_used", lambda *a, **k: None)
     monkeypatch.setattr(gen, "_generate_listening", lambda *a: ({}, {}))
+    # hv1's task type is answer-key-protected (see test_german_exam_generator_listening_security.py)
+    # — stub the server-side write so this test isn't about that behavior.
+    monkeypatch.setattr(gen.listening_practice_state, "create_generation", lambda *a, **k: k["generation_id"])
     env = gen.generate_task("u1", "telc_c1_hochschule", "listening", "hv1", "adaptive_practice", topic_override="Kaffee")
     assert env["topic"]["topicId"] == "custom"
 
