@@ -66,6 +66,9 @@ async def _lifespan(_app: FastAPI):
 
     start_scoped_job_worker()
     yield
+    from .jwt_auth import aclose_auth_client
+
+    await aclose_auth_client()
 
 
 app = FastAPI(
