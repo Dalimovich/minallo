@@ -527,3 +527,147 @@ def test_retried_request_with_same_idempotency_key_does_not_duplicate_the_turn(m
     # create_durable_tutor_turn's own ON CONFLICT DO NOTHING is only a
     # backstop for a genuine race, not what dedupes this sequential retry.
     assert len(db.rpc_calls) == 1
+
+
+def test_visual_aids_and_learning_recommendations_do_not_block_generation(monkeypatch):
+    """Phase 4 of the TTFT brief: visual aids + the Deep Learn reuse lookup
+    must run as background futures instead of blocking the OpenAI call that
+    writes the answer. select_visual_aids is mocked slow (50ms); the fake
+    generation stream below spaces its token chunks out for real (20ms each)
+    so the background future has time to resolve mid-stream — proving an
+    answer.delta token can arrive before visual_aids.ready, and that the
+    final answer.completed event still carries both results."""
+    import threading
+    import time as time_module
+
+    from app.routers import stream
+    from app.services import cache, mastery, retrieval, tutor_state_store
+    from app.services.tutor_state import TutorState
+
+    user_id = "00000000-0000-4000-8000-000000000005"
+    document_id = "00000000-0000-4000-8000-000000000006"
+    conversation_id = "decoration-concurrency-single-turn"
+
+    latest_generation = 0
+
+    def claim(_uid, _conversation, _course, generation):
+        nonlocal latest_generation
+        if generation < latest_generation:
+            return False
+        latest_generation = generation
+        return True
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id, "user_id": user_id, "course_id": "course-1",
+                "file_name": "formelzettel.pdf", "storage_path": "synthetic/formelzettel.pdf",
+                "document_hash": "rev-1", "processing_status": "ready",
+                "page_count": 2, "chunk_count": 5,
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    chunk = retrieval.RetrievedChunk(
+        chunk_id="c1", document_id=document_id, page_start=1, page_end=1,
+        text="Formula sheet contents.", score=1.0, similarity=1.0,
+        chunk_type="formula", section_title="Formelzettel",
+    )
+    # retrieve_routed_chunks/retrieve_exercise_block/retrieve_formula_block/
+    # retrieve_numbered_section_chunks are imported directly into stream.py's
+    # namespace (`from ..services.retrieval import ...`), so they must be
+    # patched there — patching the retrieval module itself is a no-op for
+    # stream.py's own calls. retrieve_visible_page_chunks is a local import
+    # inside the function, so patching it on the retrieval module does work.
+    monkeypatch.setattr(stream, "retrieve_routed_chunks", lambda **_: [chunk])
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(stream, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(stream, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(stream, "retrieve_numbered_section_chunks", lambda **_: [])
+    monkeypatch.setattr(
+        stream, "retrieve_multi_item_course_evidence",
+        lambda **_: type("R", (), {"chunks": [chunk], "evidence": [], "to_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        stream, "research_unresolved_items",
+        lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+    )
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+
+    # Deterministic instead of a timing guess: select_visual_aids blocks
+    # until the fake generation stream has already yielded its first token,
+    # so "a token arrived before visual_aids.ready" is guaranteed by
+    # ordering, not by hoping a sleep duration wins a race against the
+    # surrounding pipeline's own (variable) processing time.
+    aids_can_resolve = threading.Event()
+
+    def gated_select_visual_aids(*_a, **_k):
+        aids_can_resolve.wait(timeout=2.0)
+        return [{"sourceType": "course_file", "visualId": "visual-1", "title": "Diagram"}]
+
+    monkeypatch.setattr(stream, "select_visual_aids", gated_select_visual_aids)
+    monkeypatch.setattr(
+        stream, "build_learning_recommendations",
+        lambda *_a, **_k: [{"topic": "Formelzettel", "documentIds": [document_id]}],
+    )
+    monkeypatch.setattr(stream, "course_revision_hash", lambda *_a, **_k: "rev-hash-1")
+    monkeypatch.setattr(stream, "find_existing_lesson", lambda **_k: None)
+
+    def fake_stream_answer(**_kwargs):
+        yield b'data: {"meta": true}\n\n'
+        yield b'data: {"t": "first "}\n\n'
+        aids_can_resolve.set()
+        # Real (short) sleeps so the GIL is actually released between
+        # iterations, giving the now-unblocked background thread a chance
+        # to finish and be picked up by _poll_decoration_ready() before done.
+        for i in range(8):
+            time_module.sleep(0.01)
+            yield ("data: " + json.dumps({"t": f"chunk{i} "}) + "\n\n").encode()
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=document_id,
+            question="Explain the formulas on this sheet.",
+            visiblePage=1,
+            sourceMode="course_files",
+            openFileContext="[CURRENTLY VISIBLE PDF PAGE]\nFile: formelzettel.pdf\nPage: 1 of 2\n\n",
+            conversationId=conversation_id,
+            conversationGeneration=1,
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    decoded = [json.loads(line[6:]) for e in events for line in e.decode().splitlines() if line.startswith("data: ")]
+
+    token_index = next(i for i, e in enumerate(decoded) if e.get("event") == "answer.delta")
+    ready_index = next(i for i, e in enumerate(decoded) if e.get("event") == "visual_aids.ready")
+    done_index = next(i for i, e in enumerate(decoded) if e.get("event") == "answer.completed")
+    assert token_index < ready_index < done_index, decoded
+
+    done_event = decoded[done_index]
+    assert done_event["visualAids"] == [{"sourceType": "course_file", "visualId": "visual-1", "title": "Diagram"}]
+    assert done_event["learningRecommendations"][0]["topic"] == "Formelzettel"
