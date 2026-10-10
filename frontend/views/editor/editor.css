@@ -89,6 +89,7 @@
   min-width: 0;
   flex: 1;
   cursor: default;
+  padding-left: 14px;
 }
 .editor-title-input:not([disabled]) {
   cursor: text;
@@ -747,8 +748,15 @@ body:not(.night) .ed-course-modal-cancel {
 }
 .ed-home-title {
   font-size: 1.15rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
+  font-weight: 800;
+  color: #f8fafc !important;
+  opacity: 1 !important;
+}
+body.night .ed-home-title,
+body.night .ed-home-bar .ed-home-title {
+  color: #ffffff !important;
+  opacity: 1 !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
 }
 .ed-home-bar-right {
   display: flex;
@@ -1963,4 +1971,45 @@ body:not(.night) .editor-wordcount {
       0 10px 28px rgba(0, 0, 0, 0.35),
       inset 0 1px 0 rgba(255, 255, 255, 0.10);
   }
+}
+
+/* When the writer dashboard (editorEmptyState) is visible, hide the
+ * editor topbar so the "Untitled" title input + "+ New" button only
+ * appear once a document is actually open. */
+.editor-card:has(#editorEmptyState:not([style*="display: none"])) .editor-topbar {
+  display: none !important;
+}
+
+/* Back button on the writer dashboard (My Documents view). Sits inside
+ * ed-home-bar-left, before the document icon. Mirrors the editor-topbar
+ * back button styling so the affordance is familiar. */
+.ed-home-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 6px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.ed-home-back-btn:hover {
+  background: rgba(96, 165, 250, 0.14);
+  border-color: rgba(96, 165, 250, 0.45);
+  color: #fff;
+}
+body:not(.night) .ed-home-back-btn {
+  border: 1px solid var(--lm-card-border);
+  background: var(--lm-card-bg);
+  color: var(--lm-text);
+}
+body:not(.night) .ed-home-back-btn:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--lm-card-border-strong);
 }

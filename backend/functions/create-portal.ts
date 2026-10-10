@@ -6,7 +6,7 @@ import { requireEnv } from '../lib/env';
 import type { LambdaResponse, NetlifyEvent } from '../lib/types';
 
 interface StripeResponse { url?: string; error?: { message?: string } }
-interface ProfileRow { stripe_customer_id?: string }
+interface SubscriptionRow { stripe_customer_id?: string | null }
 
 export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (event.httpMethod === 'OPTIONS') return handleOptions();
@@ -21,19 +21,23 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   if (!user || !user.id) return fail(401, 'Invalid or expired session');
 
   const serviceKey = requireEnv('SUPABASE_SERVICE_ROLE_KEY');
-  const profileRes = await supaRequest<ProfileRow[]>(
+  const subRes = await supaRequest<SubscriptionRow[]>(
     'GET',
-    'profiles?id=eq.' + encodeURIComponent(user.id) + '&select=stripe_customer_id',
+    'subscriptions?user_id=eq.' + encodeURIComponent(user.id) +
+      '&select=stripe_customer_id&stripe_customer_id=not.is.null&limit=1',
     null, serviceKey, { Accept: 'application/json' }
   );
-  const profile = Array.isArray(profileRes.body) ? profileRes.body[0] : null;
-  const customerId = profile && profile.stripe_customer_id;
+  const subscription = Array.isArray(subRes.body) ? subRes.body[0] : null;
+  const customerId = subscription && subscription.stripe_customer_id;
   if (!customerId) return fail(400, 'No Stripe account found for this user');
 
   try {
     const params = new URLSearchParams();
     params.append('customer', customerId);
-    params.append('return_url', allowedOrigin + '?section=subscription');
+    // /app/ is the authenticated app shell; / is now a static marketing
+    // page with no router to read ?section=. Billing portal is only
+    // reachable from inside the app, so the user already has a session.
+    params.append('return_url', allowedOrigin + '/app/?section=subscription');
     const result = await stripePost<StripeResponse>('/v1/billing_portal/sessions', params);
     if (result.status !== 200) return fail(result.status, result.body.error?.message || 'Stripe error');
     return jsonResponse(200, { url: result.body.url });

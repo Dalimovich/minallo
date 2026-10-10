@@ -1,7 +1,8 @@
 import { test as setup, expect } from '@playwright/test';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const AUTH_FILE = path.join(__dirname, '.auth/user.json');
+const AUTH_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '.auth/user.json');
 
 setup('authenticate', async ({ page }) => {
   const email = process.env.E2E_EMAIL || '';
@@ -43,6 +44,8 @@ setup('authenticate', async ({ page }) => {
       return (
         !!document.querySelector('#authEmail') ||
         !!document.querySelector('#authModal') ||
+        !!document.querySelector('#nlNavSignIn') ||
+        !!document.querySelector('#nlNavStartFree') ||
         !!document.querySelector('#landingLoginBtn') ||
         !!document.querySelector('[data-i18n="landing_nav_login"]') ||
         sessionStorage.getItem('ss_logged_in') === 'true' ||
@@ -68,7 +71,7 @@ setup('authenticate', async ({ page }) => {
   if (!isLoggedIn) {
     const loginBtn = page
       .locator(
-        '[data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
+        '#nlNavSignIn, [data-i18n="nav.signIn"], [data-i18n="landing_nav_login"], #landingLoginBtn, button:has-text("Login"), button:has-text("Sign in")'
       )
       .first();
 

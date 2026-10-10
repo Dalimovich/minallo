@@ -323,38 +323,99 @@
     hardDrop();
   });
 
+  // Tetris key handling — DAS (Delayed Auto Shift) + ARR (Auto Repeat Rate).
+  //
+  // The OS auto-repeat fires `keydown` events at its own rate (~30 Hz on
+  // some Windows defaults, ~80+ Hz with accessibility tweaks, faster on
+  // some Linux desktops). When ArrowDown / ArrowLeft / ArrowRight were
+  // wired straight to drop()/move, the piece sped across the board at
+  // whatever rate the user's OS happened to be set to — that's the
+  // "tetris is too fast on some PCs" report.
+  //
+  // We now IGNORE every OS-repeat keydown (e.repeat === true) and run
+  // our own auto-repeat: the move fires once immediately, waits DAS_MS,
+  // then repeats every ARR_MS until the key is released. Rotate and hard
+  // drop intentionally don't auto-repeat — they're single-shot actions.
+  var DAS_MS = 170;    // delay before auto-shift kicks in
+  var ARR_MS = 55;     // interval between repeats once auto-shifting
+  var SOFT_DROP_MS = 50;
+  var _keyTimers = {}; // key → { das, arr } setTimeout/setInterval ids
+
+  function _stopKey(key) {
+    var t = _keyTimers[key];
+    if (!t) return;
+    if (t.das) clearTimeout(t.das);
+    if (t.arr) clearInterval(t.arr);
+    delete _keyTimers[key];
+  }
+  function _startKey(key, fn, repeatMs) {
+    _stopKey(key);
+    fn();
+    var t = { das: 0, arr: 0 };
+    t.das = setTimeout(function () {
+      t.arr = setInterval(function () {
+        if (!_keyTimers[key]) return; // released between ticks
+        fn();
+      }, repeatMs);
+    }, DAS_MS);
+    _keyTimers[key] = t;
+  }
+
+  function _tetrisVisible() {
+    var screen = document.getElementById('gamesPlayTetris');
+    return screen && screen.style.display !== 'none';
+  }
+
   document.addEventListener('keydown', function (e) {
-    if (
-      !document.getElementById('gamesPlayTetris') ||
-      document.getElementById('gamesPlayTetris').style.display === 'none'
-    )
+    if (!_tetrisVisible() || !running) return;
+    // Ignore OS-driven repeats — we run our own.
+    if (e.repeat) {
+      // Still preventDefault on arrow/space so the page doesn't scroll.
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === ' ') {
+        e.preventDefault();
+      }
       return;
-    if (!running) return;
+    }
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      if (!collide(piece, pieceX - 1, pieceY)) {
-        pieceX--;
-        drawBoard();
-      }
-    }
-    if (e.key === 'ArrowRight') {
+      _startKey('ArrowLeft', function () {
+        if (running && !collide(piece, pieceX - 1, pieceY)) {
+          pieceX--;
+          drawBoard();
+        }
+      }, ARR_MS);
+    } else if (e.key === 'ArrowRight') {
       e.preventDefault();
-      if (!collide(piece, pieceX + 1, pieceY)) {
-        pieceX++;
-        drawBoard();
-      }
-    }
-    if (e.key === 'ArrowDown') {
+      _startKey('ArrowRight', function () {
+        if (running && !collide(piece, pieceX + 1, pieceY)) {
+          pieceX++;
+          drawBoard();
+        }
+      }, ARR_MS);
+    } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      drop();
-    }
-    if (e.key === 'ArrowUp') {
+      _startKey('ArrowDown', function () {
+        if (running) drop();
+      }, SOFT_DROP_MS);
+    } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      tryRotate();
-    }
-    if (e.key === ' ') {
+      if (running) tryRotate();
+    } else if (e.key === ' ') {
       e.preventDefault();
-      hardDrop();
+      if (running) hardDrop();
     }
+  });
+
+  document.addEventListener('keyup', function (e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      _stopKey(e.key);
+    }
+  });
+
+  // If the window loses focus while a key is held, the keyup never fires.
+  // Stop every active auto-repeat so the piece doesn't keep sliding when
+  // the user comes back.
+  window.addEventListener('blur', function () {
+    Object.keys(_keyTimers).forEach(_stopKey);
   });
 })();

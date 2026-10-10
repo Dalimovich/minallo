@@ -1,0 +1,6 @@
+{
+  "description": "Pure image-only / scanned formula sheet — pdfminer extracts ZERO text on every page. This is THE Mathpix/OCR candidate: offline extraction cannot recover anything, so we only assert the doc is correctly flagged for OCR.",
+  "document_type": "formula_sheet",
+  "min_pages": 2,
+  "expect_ocr_recommended": true
+}

@@ -1,0 +1,122 @@
+{
+  "$schema": "see math_eval_cases.schema in this directory",
+  "version": 1,
+  "notes": "Phase 3 of the AI/RAG plan. Real course/document/page values should replace the 'TODO_*' placeholders for live evaluation. The detector tests (test_math_eval_fixture.py) run regardless and verify question-shape behavior.",
+  "cases": [
+    {
+      "id": "exercise-exact-bare-number",
+      "question": "Aufgabe 1.2",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "1.2", "subpart": null },
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_EXERCISE_SHEET.pdf", "pages": [3, 3] },
+      "expectedBehavior": "Return the exact statement of Aufgabe 1.2 as the top context. Include solution if present.",
+      "missingContextBehavior": "Say no exercise 1.2 was found in the active course."
+    },
+    {
+      "id": "exercise-exact-with-subpart",
+      "question": "Do exercise 3 (b) for me step by step",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "3", "subpart": "b" },
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_EXERCISE_SHEET.pdf", "pages": [5, 6] },
+      "expectedBehavior": "Statement of 3(b) at the top, then formula/method chunks. Boxed final answer.",
+      "missingContextBehavior": "Say 3(b) was not found."
+    },
+    {
+      "id": "exercise-uebung-german",
+      "question": "Übung 4.1 a bitte lösen",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "4.1", "subpart": "a" },
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_EXERCISE_SHEET.pdf", "pages": [7, 7] },
+      "expectedBehavior": "Answer in German if the source is German.",
+      "missingContextBehavior": "Sage dass Übung 4.1 a nicht gefunden wurde."
+    },
+    {
+      "id": "exercise-problem-keyword",
+      "question": "Solve Problem 2",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "2", "subpart": null },
+      "expectedBehavior": "Detector keyword variant check — should resolve to Problem 2's statement."
+    },
+    {
+      "id": "exercise-task-keyword",
+      "question": "Task 1.1.3 please",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "1.1.3", "subpart": null },
+      "expectedBehavior": "Three-level numbering check — detector must keep the full '1.1.3'."
+    },
+    {
+      "id": "exercise-beispiel-keyword",
+      "question": "Beispiel 7",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "7", "subpart": null },
+      "expectedBehavior": "Worked-example keyword variant — resolve to Beispiel 7 if present."
+    },
+    {
+      "id": "exercise-non-reference-control",
+      "question": "What is the bending moment formula?",
+      "category": "formula_lookup",
+      "expectedDetector": null,
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_FORMULA_SHEET.pdf", "pages": [4, 4] },
+      "expectedBehavior": "Top-priority chunk is the formula entry, with symbols and units."
+    },
+    {
+      "id": "formula-by-name",
+      "question": "Give me the formula for shear force",
+      "category": "formula_lookup",
+      "expectedDetector": null,
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_FORMULA_SHEET.pdf", "pages": [5, 5] },
+      "expectedBehavior": "Return formula with $$...$$ block, list symbols, give unit."
+    },
+    {
+      "id": "solve-with-given-values",
+      "question": "Calculate the bending moment when F = 200 N and l = 0.5 m",
+      "category": "solve_with_values",
+      "expectedDetector": null,
+      "expectedBehavior": "Use the math answer format (given/required/formula/sub/calc/unit/boxed). Cite the formula source."
+    },
+    {
+      "id": "derive-formula",
+      "question": "Derive the formula for the deflection of a cantilever beam",
+      "category": "derivation",
+      "expectedDetector": null,
+      "expectedBehavior": "Step-by-step derivation grounded in lecture chunks. If derivation steps aren't in retrieved sources, mark as partially_verified."
+    },
+    {
+      "id": "prove-statement",
+      "question": "Prove that the integral of cos(x) from 0 to pi is 0",
+      "category": "proof",
+      "expectedDetector": null,
+      "expectedBehavior": "Step-by-step proof. If no proof chunk is found, fall back to first-principles with a low-confidence note."
+    },
+    {
+      "id": "definition-lookup",
+      "question": "What is a moment of inertia?",
+      "category": "definition",
+      "expectedDetector": null,
+      "expectedSources": { "courseId": "TODO_COURSE", "fileName": "TODO_LECTURE.pdf", "pages": [12, 13] },
+      "expectedBehavior": "Concise definition + symbol + unit. Cite the lecture chunk."
+    },
+    {
+      "id": "missing-exercise-graceful",
+      "question": "Do exercise 99",
+      "category": "exact_exercise_reference",
+      "expectedDetector": { "exerciseNumber": "99", "subpart": null },
+      "expectedBehavior": "Exercise not found.",
+      "missingContextBehavior": "Say 'Exercise 99 wasn't found in this course.' Do not invent one."
+    },
+    {
+      "id": "non-math-question",
+      "question": "Summarize chapter 2",
+      "category": "non_math",
+      "expectedDetector": null,
+      "expectedBehavior": "Standard answer format. Do NOT apply math expansion or math-answer template."
+    },
+    {
+      "id": "off-topic-control",
+      "question": "What's the weather today?",
+      "category": "off_topic",
+      "expectedDetector": null,
+      "expectedBehavior": "Refuse politely, say it isn't in the course."
+    }
+  ]
+}

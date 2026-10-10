@@ -1,0 +1,29 @@
+{
+  "generatedBy": "audit/exam-correctness Phase 2",
+  "note": "Machine-readable companion to PROFILE_AUDIT.md. status in {PASS, MISMATCH, MISSING, UNVERIFIED, EXCLUDED}",
+  "rows": [
+    {"exam": "telc_c1_hochschule", "module": "reading+language_elements", "part": "shared_block", "field": "duration_minutes_90", "status": "PASS"},
+    {"exam": "telc_c1_hochschule", "module": "writing", "part": "schreiben_1", "field": "duration_minutes_70", "status": "PASS"},
+    {"exam": "telc_c1_hochschule", "module": "writing", "part": "schreiben_1", "field": "word_count_min_350", "status": "PASS"},
+    {"exam": "telc_c1_hochschule", "module": "writing", "part": "schreiben_1", "field": "max_points_48", "status": "UNVERIFIED"},
+    {"exam": "telc_c1_hochschule", "module": "listening", "part": "hv1", "field": "item_count_10_points_8", "status": "UNVERIFIED"},
+    {"exam": "telc_c1_hochschule", "module": "listening", "part": "hv2", "field": "item_count_10_points_20", "status": "UNVERIFIED"},
+    {"exam": "telc_c1_hochschule", "module": "listening", "part": "hv3", "field": "item_count_10_points_20", "status": "UNVERIFIED"},
+    {"exam": "telc_c1_hochschule", "module": "speaking", "part": "module", "field": "preparation_minutes_20", "status": "MISSING", "detail": "official fact PASS but not represented as a ModuleSpec.preparation_seconds anywhere in the profile"},
+    {"exam": "telc_c1_hochschule", "module": "speaking", "part": "sprechen_1_2", "field": "total_speaking_minutes_16_vs_11", "status": "MISMATCH", "detail": "secondary source says ~16 min total; part-level seconds sum to 11 min; unresolved, routed to MANUAL_REVIEW"},
+    {"exam": "telc_c1_hochschule", "module": "module", "part": "pass_mark", "field": "60pct_written_60pct_oral_separate", "status": "MISSING", "detail": "no pass_points constant exists in telc_c1_hochschule.py, unlike Goethe's MODULE_PASS_POINTS"},
+    {"exam": "telc_c1_hochschule", "module": "language_elements", "part": "sprachbausteine_1", "field": "all", "status": "EXCLUDED", "detail": "out of scope per task instructions"},
+    {"exam": "goethe_c1", "module": "reading", "part": "all", "field": "raw_to_result_table_integrity", "status": "PASS"},
+    {"exam": "goethe_c1", "module": "reading", "part": "all", "field": "item_count_sum_30", "status": "PASS"},
+    {"exam": "goethe_c1", "module": "listening", "part": "all", "field": "item_count_sum_30", "status": "PASS"},
+    {"exam": "goethe_c1", "module": "writing", "part": "all", "field": "points_sum_100_and_criteria_sum", "status": "PASS"},
+    {"exam": "goethe_c1", "module": "speaking", "part": "all", "field": "per_criterion_weights", "status": "UNVERIFIED", "detail": "honestly absent, not fabricated"},
+    {"exam": "goethe_c1", "module": "module", "part": "all", "field": "no_language_elements_module", "status": "PASS"},
+    {"exam": "testdaf_digital", "module": "reading", "part": "lesen_2", "field": "item_count_5", "status": "PASS", "detail": "previously corrected from 4, confirmed consistent"},
+    {"exam": "testdaf_digital", "module": "reading", "part": "lesen_7", "field": "required_source_kinds_text_graphic", "status": "PASS"},
+    {"exam": "testdaf_digital", "module": "reading", "part": "module", "field": "item_count_sum_35", "status": "PASS"},
+    {"exam": "testdaf_digital", "module": "speaking", "part": "sprechen_4", "field": "preparation_seconds_90", "status": "PASS"},
+    {"exam": "testdaf_digital", "module": "module", "part": "all", "field": "raw_to_scaled_conversion_honestly_absent", "status": "PASS"},
+    {"exam": "testdaf_digital", "module": "module", "part": "all", "field": "every_part_available_false", "status": "PASS"}
+  ]
+}

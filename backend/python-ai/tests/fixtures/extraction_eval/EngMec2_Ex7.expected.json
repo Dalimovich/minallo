@@ -1,0 +1,7 @@
+{
+  "description": "Diagram-heavy exercise PDF (18 pages). Sparse/scanned enough that the OCR-need detector recommends OCR; exercise number 3.1 is detected.",
+  "document_type": "exercise_sheet",
+  "min_pages": 18,
+  "must_have_exercises": ["3.1"],
+  "expect_ocr_recommended": true
+}

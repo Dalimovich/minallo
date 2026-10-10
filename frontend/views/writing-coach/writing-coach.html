@@ -1,0 +1,74 @@
+<!-- Writing Coach — entry card (appended into #glHome after the skill grid) -->
+<button id="wcCard" class="wc-feature-card" type="button">
+  <div class="wc-feature-card-left">
+    <span class="wc-feature-card-icon">&#x270F;&#xFE0F;</span>
+    <div class="wc-feature-card-text">
+      <div class="wc-feature-card-title" data-i18n="wc_card_title">Deutsch Schreibtrainer</div>
+      <div class="wc-feature-card-sub" data-i18n="wc_card_sub">German Writing Coach &middot; write a paragraph, get AI feedback adapted to your level</div>
+    </div>
+  </div>
+  <span class="wc-feature-card-badge">AI</span>
+</button>
+
+<!-- Writing Coach — detail view (sibling of #glHome inside #psec-german) -->
+<div id="wcView" style="display: none">
+  <div class="wc-view-header">
+    <button id="wcBack" class="wc-back-btn" type="button" data-i18n="wc_back">&#x2190; Back</button>
+    <div class="wc-view-title-block">
+      <div class="wc-view-title" data-i18n="wc_card_title">Deutsch Schreibtrainer</div>
+      <div class="wc-view-sub" data-i18n="wc_view_sub">Write a German paragraph and get AI feedback adapted to your level.</div>
+    </div>
+  </div>
+
+  <!-- Empty state shown when the user's profile has no German level yet.
+       The Schreibtrainer can't grade without a target level, so we block
+       analysis and route them to Profile, which is the single editable
+       surface for this field. -->
+  <div id="wcNoLevel" class="wc-card-glass wc-no-level" style="display: none">
+    <div class="wc-no-level-title" data-i18n="wc_no_level_title">Set your German level in Profile first</div>
+    <div class="wc-no-level-sub" data-i18n="wc_no_level_sub">
+      The Schreibtrainer grades your text against the level on your profile.
+      Open Profile, set your level (e.g. B2 or C1 Hochschule), then come back here.
+    </div>
+    <button id="wcGoProfile" class="wc-btn-primary" type="button" data-i18n="wc_go_profile">Go to Profile</button>
+  </div>
+
+  <div id="wcWriter" class="wc-card-glass">
+    <div class="wc-level-row-input">
+      <span class="wc-label" data-i18n="wc_feedback_level">Feedback level</span>
+      <span class="wc-level-badge" id="wcLevelBadge" data-i18n-title="wc_level_title" title="Edit your level in Profile">
+        <span class="wc-level-badge-value" id="wcLevelValue">&ndash;</span>
+        <span class="wc-level-badge-source" data-i18n="wc_level_source">Imported from Profile</span>
+      </span>
+    </div>
+    <div class="wc-task-row">
+      <label for="wcTaskType" class="wc-label" data-i18n="wc_text_type">Text type</label>
+      <select id="wcTaskType" class="wc-task-select">
+        <option value="freier_text">Freier Text &middot; Free writing</option>
+        <option value="email">E-Mail</option>
+        <option value="stellungnahme">Stellungnahme &middot; Opinion piece</option>
+        <option value="argumentation">Argumentation &middot; Argument</option>
+        <option value="zusammenfassung">Zusammenfassung &middot; Summary</option>
+        <option value="bericht">Bericht &middot; Report</option>
+        <option value="motivationsschreiben">Motivationsschreiben &middot; Cover letter</option>
+      </select>
+    </div>
+    <textarea
+      id="wcInput"
+      class="wc-textarea"
+      rows="10"
+      data-i18n-ph="wc_input_ph"
+      placeholder="Write your German paragraph here&hellip;"
+    ></textarea>
+    <div class="wc-input-actions">
+      <button id="wcAnalyze" class="wc-btn-primary" type="button" data-i18n="wc_analyze" disabled>Analyze with AI</button>
+    </div>
+  </div>
+
+  <div id="wcLoading" class="wc-loading" style="display: none">
+    <div class="wc-spinner"></div>
+    <div class="wc-loading-text" data-i18n="wc_analyzing">Analyzing&hellip;</div>
+  </div>
+
+  <div id="wcResults" class="wc-results" style="display: none"></div>
+</div>

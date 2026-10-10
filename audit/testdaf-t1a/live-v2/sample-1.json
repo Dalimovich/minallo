@@ -1,0 +1,722 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Wenn Geräte nicht mehr nur einer Arbeitsgruppe gehören",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "An vielen Hochschulen verändert sich derzeit unauffällig, aber grundlegend, wie wissenschaftliche Infrastruktur organisiert wird. Geräte, die früher selbstverständlich einem Lehrstuhl oder einer einzelnen Arbeitsgruppe zugeordnet waren, werden zunehmend in gemeinsamen Zentren gebündelt. Ein Grund dafür sind die hohen Anschaffungs- und Wartungskosten moderner Instrumente; ein anderer ist, dass Forschungsfragen heute oft mehrere Fächer verbinden. Wenn Biologinnen, Materialforscher und Mediziner ähnliche Messverfahren benötigen, wirkt es zunächst vernünftig, nicht dreimal dieselbe Technik zu kaufen. Doch mit der Verlagerung von Geräten in gemeinsame Nutzung verändert sich mehr als nur der Standort einer Maschine: Auch Arbeitsrhythmen, Zuständigkeiten und Erwartungen an Zusammenarbeit werden neu verhandelt."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "Die Befürworter solcher Modelle verweisen vor allem auf zwei Vorteile. Erstens steigt die Auslastung teurer Geräte, weil Leerlaufzeiten sinken. Ein Apparat, der in einer einzelnen Gruppe nur an zwei Tagen pro Woche gebraucht wird, kann in einer zentralen Einrichtung nahezu durchgehend genutzt werden. Zweitens lässt sich Fachwissen bündeln. Statt dass jede Arbeitsgruppe versucht, ihre Mitglieder nebenbei in Bedienung und Wartung einzuarbeiten, können spezialisierte technische Mitarbeitende Schulungen anbieten, Messfehler früh erkennen und einheitliche Qualitätsstandards sichern. Für Studierende und Promovierende ist das oft hilfreich: Sie sind weniger davon abhängig, ob gerade in ihrer unmittelbaren Umgebung zufällig jemand Erfahrung mit einem bestimmten Verfahren hat."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Trotzdem stößt die gemeinschaftliche Nutzung nicht überall auf Begeisterung. Besonders in frühen Projektphasen möchten Forschende oft kurzfristig etwas ausprobieren, Einstellungen mehrfach verändern oder eine Messreihe unerwartet verlängern. Sobald ein Gerät über ein Buchungssystem vergeben wird, scheint diese Spontaneität bedroht. Dahinter steckt nicht nur Gewohnheit, sondern ein reales Problem: Manche Experimente lassen sich zeitlich schwer planen, weil Proben verderben, Partnerlabore verspätet liefern oder Zwischenergebnisse sofort überprüft werden müssen. Allerdings hat auch das alte Modell Nachteile, die im Alltag leicht übersehen werden. Geräte in einzelnen Laboren stehen häufig stunden- oder tagelang ungenutzt, und aus Sorge vor Abhängigkeit werden mitunter ähnliche Apparate mehrfach angeschafft, obwohl ihre Kapazität insgesamt ausreichen würde."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Ob gemeinsame Nutzung funktioniert, entscheidet sich daher weniger an der Technik als an den Regeln. Eine digitale Reservierungsplattform ist nur das sichtbarste Element. Ebenso wichtig sind klare Kriterien dafür, wer bei Engpässen Vorrang erhält, wie Betriebskosten verteilt werden und was geschieht, wenn ein Gerät ausfällt. Gerade in konfliktträchtigen Situationen zeigt sich der Wert solcher Absprachen. Wenn etwa vor einer Abgabefrist mehrere Doktorandinnen dringend Messzeit benötigen und zugleich Lehrveranstaltungen feste Praktikumstermine haben, reicht guter Wille allein nicht aus. Transparente Regeln ersetzen dann nicht Zusammenarbeit, aber sie verhindern, dass jeden Tag neu über Grundsatzfragen gestritten werden muss."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Hinzu kommt ein Aspekt, der in Debatten über Geräte oft unterschätzt wird: Gemeinsame Nutzung betrifft nicht nur Hardware, sondern auch Daten. Wer in einer zentralen Einrichtung misst, hinterlässt Dateien, Protokolle und Kalibrierungsinformationen, die für andere nachvollziehbar sein müssen. Ohne gemeinsame Standards bei Benennung, Dokumentation und Speicherung sinkt der Nutzen der geteilten Infrastruktur erheblich. Zugleich kann ein offener Zugang kleinere Arbeitsgruppen stärken, die sich eigene Großgeräte nie leisten könnten. Doch nicht jedes Fach profitiert im gleichen Maß. Werden Nutzungskosten ausschließlich nach gebuchten Stunden berechnet, geraten Disziplinen mit langen Vorbereitungszeiten oder komplexem Probenwechsel leicht ins Hintertreffen, obwohl sie das Gerät während der eigentlichen Messung nicht intensiver beanspruchen."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Die gemeinsame Nutzung wissenschaftlicher Geräte ist deshalb weder automatisch ein Sparmodell noch von selbst ein Fortschritt. Sie kann Forschung offener und verlässlicher machen, wenn Hochschulen nicht nur in Apparate, sondern auch in Personal, Koordination und Anerkennung investieren. Wer etwa die Betreuung einer zentralen Infrastruktur übernimmt, braucht Zeit und institutionellen Rückhalt; andernfalls wird diese Arbeit nebenbei erledigt und im Karriereverlauf kaum sichtbar. Dann entstehen leicht Engpässe, Frust und der Eindruck, Zusammenarbeit bestehe nur auf dem Papier. Gelingen jedoch faire Regeln und verlässliche Unterstützung, wird aus dem Teilen von Geräten mehr als Verwaltungseffizienz: Es entsteht eine Praxis, in der Wissen, Verantwortung und Zugang tatsächlich breiter verteilt sind."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "paraphrase_mapping",
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Aussage gibt den Gedankengang des ersten Absatzes am besten wieder?",
+              "options": [
+                "Gemeinsame Gerätezentren entstehen vor allem, weil Hochschulen Laborräume anders nutzen wollen als früher.",
+                "Die Bündelung von Geräten ergibt sich aus Kosten und fachübergreifender Forschung, hat aber auch Folgen für Arbeitsabläufe.",
+                "Forschungsgeräte werden heute zentral aufgestellt, obwohl sie in den meisten Fächern kaum gemeinsam verwendet werden.",
+                "Die neue Organisation von Infrastruktur löst vor allem das Problem, dass einzelne Lehrstühle zu viele Geräte besitzen."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "detail_comprehension",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welcher Nutzen zentraler Einrichtungen für Nachwuchsforschende wird im zweiten Absatz besonders hervorgehoben?",
+              "options": [
+                "Sie erhalten häufiger Zugang zu Geräten, weil Lehrende ihre eigenen Projekte zugunsten der Ausbildung zurückstellen.",
+                "Sie müssen sich seltener auf zufällig vorhandenes Wissen im eigenen Umfeld verlassen.",
+                "Sie können Wartungsarbeiten selbstständig übernehmen und dadurch unabhängiger von Technikpersonal werden.",
+                "Sie brauchen weniger methodische Einarbeitung, weil Geräte dort weitgehend automatisch arbeiten."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "inference",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum begegnen manche Forschende der gemeinsamen Nutzung laut dem dritten Absatz mit Zurückhaltung?",
+              "options": [
+                "Sie befürchten, dass schwer planbare Versuchsschritte in festen Reservierungssystemen schlechter unterzubringen sind.",
+                "Sie gehen davon aus, dass zentrale Geräte grundsätzlich häufiger defekt sind als Apparate in Einzellaboren.",
+                "Sie wollen vermeiden, dass ähnliche Geräte an verschiedenen Standorten unnötig mehrfach gekauft werden.",
+                "Sie rechnen damit, dass Partnerlabore bei gemeinsamer Infrastruktur ihre Proben noch später liefern werden."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "text_structure",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient das Beispiel mit Abgabefristen und Praktikumsterminen im vierten Absatz?",
+              "options": [
+                "Es soll zeigen, dass Lehrveranstaltungen bei der Gerätevergabe grundsätzlich Vorrang bekommen sollten.",
+                "Es soll verdeutlichen, warum bloße Kooperationsbereitschaft ohne festgelegte Verfahren schnell an Grenzen stößt.",
+                "Es soll belegen, dass digitale Buchungssysteme Konflikte im Hochschulalltag meist schon vollständig lösen.",
+                "Es soll erläutern, weshalb Ausfälle von Geräten häufiger sind als Schwierigkeiten bei der Terminplanung."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "inference",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was lässt sich aus dem fünften Absatz über eine Abrechnung nur nach reservierten Stunden folgern?",
+              "options": [
+                "Sie kann bestimmte Fächer benachteiligen, weil deren aufwendige Vorbereitung darin kaum berücksichtigt wird.",
+                "Sie erleichtert kleineren Arbeitsgruppen den Zugang, weil sie nur die eigentliche Messzeit bezahlen müssen.",
+                "Sie macht gemeinsame Standards für Dateien und Protokolle weitgehend überflüssig.",
+                "Sie verhindert, dass zentrale Einrichtungen kleinere Gruppen bei der Nutzung bevorzugen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "author_intention",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Schlussfolgerung zieht der Autor im sechsten Absatz?",
+              "options": [
+                "Geteilte Infrastruktur lohnt sich nur dann, wenn Hochschulen auf zusätzliche Koordination bewusst verzichten.",
+                "Gemeinsame Gerätenutzung verbessert Forschung von selbst, sobald die technische Ausstattung modern genug ist.",
+                "Der Nutzen gemeinsamer Geräte hängt davon ab, ob auch Betreuung und institutionelle Anerkennung mitgedacht werden.",
+                "Konflikte um zentrale Geräte entstehen vor allem deshalb, weil Forschende Verwaltungsaufgaben grundsätzlich ablehnen."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "author_intention",
+              "text_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welches Ziel verfolgt der gesamte Text vor allem?",
+              "options": [
+                "Er beschreibt ausgewogen, unter welchen organisatorischen Bedingungen geteilte Geräte an Hochschulen sinnvoll funktionieren können.",
+                "Er fordert Hochschulen dazu auf, dezentrale Labore durch wenige große Zentren vollständig zu ersetzen.",
+                "Er berichtet hauptsächlich über technische Neuerungen bei wissenschaftlichen Apparaten in verschiedenen Disziplinen.",
+                "Er zeigt anhand einzelner Konflikte, dass gemeinschaftliche Nutzung im Forschungsalltag meist unrealistisch bleibt."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": false,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "implausible_wrong",
+                "supported",
+                "implausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Options 0 and 2 introduce unsupported themes rather than plausible misreadings of paragraph 1.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1"
+                  ],
+                  "questionIds": [
+                    "q1"
+                  ],
+                  "optionIndexes": [
+                    0,
+                    2
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "implausible_wrong",
+                "plausible_wrong",
+                "implausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Options 1 and 3 depend on unstated ideas about teachers yielding access or devices being automatic, which paragraph 2 does not support.",
+                "evidence": {
+                  "segmentIds": [
+                    "p2"
+                  ],
+                  "questionIds": [
+                    "q2"
+                  ],
+                  "optionIndexes": [
+                    1,
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "implausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 1 claims central devices are generally more prone to defects, a point not raised in paragraph 3.",
+                "evidence": {
+                  "segmentIds": [
+                    "p3"
+                  ],
+                  "questionIds": [
+                    "q3"
+                  ],
+                  "optionIndexes": [
+                    1
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "implausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 3 invents a comparison about failure frequency versus scheduling problems that paragraph 4 never suggests.",
+                "evidence": {
+                  "segmentIds": [
+                    "p4"
+                  ],
+                  "questionIds": [
+                    "q4"
+                  ],
+                  "optionIndexes": [
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "implausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 2 attributes conflicts mainly to researchers' general rejection of administration, which paragraph 6 does not discuss.",
+                "evidence": {
+                  "segmentIds": [
+                    "p6"
+                  ],
+                  "questionIds": [
+                    "q6"
+                  ],
+                  "optionIndexes": [
+                    2
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "implausible_wrong",
+                "supported",
+                "implausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Options 0 and 2 are extreme or off-topic summaries rather than plausible alternatives for the text's overall purpose.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1",
+                    "p2",
+                    "p3",
+                    "p4",
+                    "p5",
+                    "p6"
+                  ],
+                  "questionIds": [
+                    "q7"
+                  ],
+                  "optionIndexes": [
+                    0,
+                    2
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q3",
+        "skillTags": [
+          "inference",
+          "argument_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Warum begegnen manche Forschende der gemeinsamen Nutzung laut dem dritten Absatz mit Zurückhaltung?",
+          "options": [
+            "Sie befürchten, dass schwer planbare Versuchsschritte in festen Reservierungssystemen schlechter unterzubringen sind.",
+            "Sie sehen die Gefahr, dass sie bei zentraler Buchung nicht mehr spontan auf unerwartete Zwischenergebnisse reagieren können.",
+            "Sie wollen vermeiden, dass ähnliche Geräte an verschiedenen Standorten unnötig mehrfach gekauft werden.",
+            "Sie rechnen damit, dass Partnerlabore bei gemeinsamer Infrastruktur ihre Proben noch später liefern werden."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p3"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q2",
+        "skillTags": [
+          "detail_comprehension",
+          "argument_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welcher Nutzen zentraler Einrichtungen für Nachwuchsforschende wird im zweiten Absatz besonders hervorgehoben?",
+          "options": [
+            "Sie müssen sich seltener auf zufällig vorhandenes Wissen im eigenen Umfeld verlassen.",
+            "Sie profitieren von Schulungen und einheitlichen Qualitätsstandards durch spezialisiertes technisches Personal.",
+            "Sie können Wartungsarbeiten selbstständig übernehmen und dadurch unabhängiger von Technikpersonal werden.",
+            "Sie erhalten dort Unterstützung, wenn Messfehler früh erkannt und Verfahren nachvollziehbar angewendet werden sollen."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p2"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q1",
+        "skillTags": [
+          "paraphrase_mapping",
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Aussage gibt den Gedankengang des ersten Absatzes am besten wieder?",
+          "options": [
+            "Gemeinsame Gerätezentren entstehen vor allem, weil moderne Instrumente zu teuer in Anschaffung und Wartung geworden sind.",
+            "Die Bündelung von Geräten ergibt sich aus Kosten und fachübergreifender Forschung, hat aber auch Folgen für Arbeitsabläufe.",
+            "Forschungsgeräte werden heute zunehmend gemeinsam genutzt, weil verschiedene Fächer oft dieselben Messverfahren brauchen.",
+            "Die neue Organisation von Infrastruktur löst vor allem das Problem, dass einzelne Lehrstühle zu viele Geräte besitzen."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q4",
+        "skillTags": [
+          "text_structure",
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Wozu dient das Beispiel mit Abgabefristen und Praktikumsterminen im vierten Absatz?",
+          "options": [
+            "Es soll zeigen, dass Lehrveranstaltungen bei der Gerätevergabe grundsätzlich Vorrang bekommen sollten.",
+            "Es soll belegen, dass digitale Buchungssysteme Konflikte im Hochschulalltag meist schon vollständig lösen.",
+            "Es soll verdeutlichen, warum bloße Kooperationsbereitschaft ohne festgelegte Verfahren schnell an Grenzen stößt.",
+            "Es soll veranschaulichen, warum in Engpasssituationen vorher vereinbarte Prioritäten und Zuständigkeiten nötig sind."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p4"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q6",
+        "skillTags": [
+          "author_intention",
+          "argument_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Schlussfolgerung zieht der Autor im sechsten Absatz?",
+          "options": [
+            "Geteilte Infrastruktur lohnt sich nur dann, wenn Hochschulen auf zusätzliche Koordination bewusst verzichten.",
+            "Gemeinsame Gerätenutzung verbessert Forschung von selbst, sobald die technische Ausstattung modern genug ist.",
+            "Probleme bei zentralen Geräten entstehen vor allem dann, wenn Betreuung nur nebenbei erfolgt und institutionelle Unterstützung fehlt.",
+            "Der Nutzen gemeinsamer Geräte hängt davon ab, ob auch Betreuung und institutionelle Anerkennung mitgedacht werden."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p6"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q7",
+        "skillTags": [
+          "author_intention",
+          "text_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welches Ziel verfolgt der gesamte Text vor allem?",
+          "options": [
+            "Er diskutiert, warum Hochschulen wissenschaftliche Geräte zunehmend gemeinsam organisieren und welche Voraussetzungen dafür erfüllt sein müssen.",
+            "Er beschreibt ausgewogen, unter welchen organisatorischen Bedingungen geteilte Geräte an Hochschulen sinnvoll funktionieren können.",
+            "Er vergleicht verschiedene Modelle der Gerätenutzung danach, wie sie sich auf Arbeitsabläufe und den Zugang kleinerer Gruppen auswirken.",
+            "Er zeigt anhand einzelner Konflikte, dass gemeinschaftliche Nutzung im Forschungsalltag meist unrealistisch bleibt."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    }
+  ],
+  "status": "fail",
+  "error": "GenerationBudgetExceeded: generation time budget exhausted",
+  "diagnostics": {
+    "requestId": "2ad1fd8affe1",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "fail",
+    "totalMs": 95036,
+    "budgetS": 95.0,
+    "llmCalls": 9,
+    "providerMsSum": 102342,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 33637,
+    "promptTokens": 20083,
+    "cachedTokens": 0,
+    "completionTokens": 7390,
+    "reasoningTokens": 3324,
+    "estimatedCostUsd": 0.0,
+    "unpricedModels": [
+      "gpt-5.4"
+    ],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 9,
+        "models": [
+          "gpt-5.4:default",
+          "gpt-5.4:medium"
+        ],
+        "providerMs": 102342,
+        "slotWaitMs": 0,
+        "promptTokens": 20083,
+        "cachedTokens": 0,
+        "completionTokens": 7390,
+        "reasoningTokens": 3324,
+        "estimatedCostUsd": 0.0
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 33637,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 945,
+        "cachedTokens": 0,
+        "completionTokens": 2900,
+        "reasoningTokens": 512,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 28311,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 4148,
+        "cachedTokens": 0,
+        "completionTokens": 3529,
+        "reasoningTokens": 2812,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1938,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2493,
+        "cachedTokens": 0,
+        "completionTokens": 157,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1943,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2502,
+        "cachedTokens": 0,
+        "completionTokens": 151,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1999,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2494,
+        "cachedTokens": 0,
+        "completionTokens": 167,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 2040,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2491,
+        "cachedTokens": 0,
+        "completionTokens": 169,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1725,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2493,
+        "cachedTokens": 0,
+        "completionTokens": 146,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 2000,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2517,
+        "cachedTokens": 0,
+        "completionTokens": 171,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 28749,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      }
+    ],
+    "models": [
+      "gpt-5.4:default",
+      "gpt-5.4:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 95.036
+}

@@ -11,6 +11,17 @@
   var canvas, ctx, raf, running, started, dead;
   var bird, pipes, score, bestScore, frame, particles;
 
+  // Fixed-timestep accumulator. Without this, update() ran once per
+  // requestAnimationFrame tick — fine on 60Hz monitors but on 120/144/240Hz
+  // displays the bird, pipes, and particles all moved at 2×–4× speed and
+  // the game became unplayable. We now step physics at a constant 60Hz
+  // (TARGET_DT_MS), and just render whatever the monitor wants.
+  var TARGET_DT_MS = 1000 / 60;
+  var MAX_FRAME_DT_MS = 100;   // cap so a backgrounded tab doesn't fast-forward
+  var MAX_STEPS_PER_FRAME = 5; // belt-and-braces spiral-of-death guard
+  var _lastTs = 0;
+  var _accumulator = 0;
+
   // ── Sound ──
   function beep(freq, dur, vol, type) {
     try {
@@ -371,9 +382,26 @@
     if (!started || dead) drawOverlay();
   }
 
-  function loop() {
+  function loop(ts) {
     if (!canvas) return;
-    update();
+    if (!_lastTs) _lastTs = ts || performance.now();
+    var now = ts || performance.now();
+    var frameDt = Math.min(now - _lastTs, MAX_FRAME_DT_MS);
+    _lastTs = now;
+    _accumulator += frameDt;
+    // Fixed-timestep physics: run update() one or more times until we've
+    // caught up to the elapsed wall time, then render once. Identical
+    // motion on 60Hz, 120Hz, 144Hz, 240Hz displays.
+    var steps = 0;
+    while (_accumulator >= TARGET_DT_MS && steps < MAX_STEPS_PER_FRAME) {
+      update();
+      _accumulator -= TARGET_DT_MS;
+      steps++;
+    }
+    // If we hit the step cap (e.g. the tab was inactive for several seconds),
+    // drop the leftover so the bird doesn't fast-forward through a wall of
+    // pipes the moment focus returns.
+    if (steps >= MAX_STEPS_PER_FRAME) _accumulator = 0;
     draw();
     raf = requestAnimationFrame(loop);
   }
@@ -401,6 +429,11 @@
     initStars();
     initGame();
     if (raf) cancelAnimationFrame(raf);
+    // Reset the fixed-timestep clock so re-entering the game (e.g. closing
+    // and reopening the modal) doesn't dump accumulated wall time into the
+    // first frame and instantly skip the bird halfway across the screen.
+    _lastTs = 0;
+    _accumulator = 0;
     loop();
     if (!canvas._birdWired) {
       canvas._birdWired = true;

@@ -2,10 +2,10 @@
 <div id="psec-notes" class="portal-section" style="display: none">
   <div class="ln-section">
     <div class="ln-header">
-      <div class="ln-title">&#x1F4DD; Lecture Notes</div>
+      <div class="ln-title" data-i18n="ln_title_short">&#x1F4DD; Lecture Notes</div>
       <button class="ln-sync-btn" id="lnSyncBtn">
         <span class="ln-sync-dot" id="lnSyncDot"></span>
-        <span id="lnSyncLabel">Sync notes</span>
+        <span id="lnSyncLabel" data-i18n="ln_sync_label">Sync notes</span>
       </button>
     </div>
 
@@ -17,13 +17,14 @@
           border: 1px solid rgba(59, 130, 246, 0.25);
           border-radius: 20px;
           padding: 6px 14px;
-          font-family: 'Nunito', sans-serif;
+          font-family: var(--font-main);
           font-weight: 800;
           font-size: 0.76rem;
           color: rgba(59, 130, 246, 0.8);
           cursor: pointer;
         "
         id="extHowToBtn"
+        data-i18n="ln_how_to_install"
       >
         How to install
       </button>
@@ -41,11 +42,10 @@
           line-height: 1.9;
         "
       >
-        <strong style="color: #3b82f6">Install the Minallo Extension:</strong><br />
-        1. Open YouTube or Opencast and start a lecture<br />
-        2. Click the Minallo icon in your browser toolbar<br />
-        3. Press <strong style="color: #3b82f6">✨ Summarize</strong> — your notes appear here
-        automatically
+        <strong style="color: #3b82f6" data-i18n="ln_install_title">Install the Minallo Extension:</strong><br />
+        <span data-i18n="ln_install_step1">1. Open YouTube or Opencast and start a lecture</span><br />
+        <span data-i18n="ln_install_step2">2. Click the Minallo icon in your browser toolbar</span><br />
+        <span data-i18n="ln_install_step3">3. Press</span> <strong style="color: #3b82f6" data-i18n="ln_install_summarize">✨ Summarize</strong> <span data-i18n="ln_install_step3_tail">— your notes appear here automatically</span>
       </div>
     </div>
 

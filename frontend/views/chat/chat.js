@@ -1,13 +1,30 @@
 (function () {
   var container = document.getElementById('psec-chat');
   if (!container) return;
-  fetch('views/chat/chat.html')
-    .then(function (r) {
+  // Retry the markup fetch a couple of times: this dispatcher only runs once
+  // (the loader won't re-inject the script on re-navigation), so a single
+  // transient network failure here would leave the page blank until a full
+  // reload. Retrying self-heals the common flaky-connection case.
+  function _ssFetchText(url, tries) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
-    })
+    }).catch(function (err) {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 400); }).then(function () {
+          return _ssFetchText(url, tries - 1);
+        });
+      }
+      throw err;
+    });
+  }
+  _ssFetchText('views/chat/chat.html', 2)
     .then(function (html) {
       container.innerHTML = html;
       _init();
+    })
+    .catch(function (err) {
+      console.error('chat.html load failed:', err);
     });
   function _init() {
     // aiMsgs is module-scoped inside app.js (an ES module) so it doesn't leak
@@ -49,14 +66,19 @@
         if (wrap.classList.contains('typing-wrap')) return;
         var bubble = wrap.querySelector('.ai-bubble');
         if (!bubble) return;
+        // Skip bubbles that are still streaming so an in-progress save (panel
+        // close, course switch, refresh) doesn't persist a cropped half-stream
+        // on top of the prior complete answer. finalize() removes the flag.
+        if (bubble.getAttribute('data-streaming') === 'true') return;
         var isUser = bubble.classList.contains('user');
         // For user messages store plain text (stored in data-q on the wrap or inner text)
         if (isUser) {
           var txt = wrap.getAttribute('data-q') || bubble.textContent || '';
           out.push({ role: 'user', text: txt.trim() });
         } else {
-          // Bot: store only raw text; re-render on load to avoid XSS from stored HTML
-          out.push({ role: 'bot', text: bubble.textContent || '' });
+          // Bot: store the raw markdown source (set on data-raw at write time).
+          // textContent flattens KaTeX + rendered HTML into a corrupted glob.
+          out.push({ role: 'bot', text: bubble.getAttribute('data-raw') || bubble.textContent || '' });
         }
       });
       return out;
@@ -67,7 +89,6 @@
       if (!fileKey) return;
       try {
         var msgs = serializeChatDOM();
-        console.log('[Chat] saveChatForFile key=', fileKey, 'msgs=', msgs.length);
         if (msgs.length === 0) {
           localStorage.removeItem(CHAT_PREFIX + fileKey);
         } else {
@@ -79,6 +100,32 @@
     }
 
     // Load and re-render saved chat; returns true if history was found
+    function renderRestoredBotBubble(botBubble, text) {
+      if (!botBubble) return;
+      botBubble.setAttribute('data-raw', text || '');
+      var doRender = function () {
+        if (typeof window.renderMarkdown === 'function') {
+          botBubble.innerHTML = window.renderMarkdown(text || '');
+        } else {
+          botBubble.textContent = text || '';
+        }
+        var doMath = function () {
+          if (typeof window._renderMath === 'function') window._renderMath(botBubble);
+          if (typeof window._renderCode === 'function') window._renderCode(botBubble);
+        };
+        if (typeof window._ssEnsureKatex === 'function') {
+          window._ssEnsureKatex().then(doMath).catch(doMath);
+        } else {
+          doMath();
+        }
+      };
+      if (!window._minalloRenderMarkdownReady && typeof window._ensureAiRenderBridge === 'function') {
+        window._ensureAiRenderBridge().then(doRender).catch(doRender);
+      } else {
+        doRender();
+      }
+    }
+
     function loadChatForFile(fileKey) {
       if (!fileKey) return false;
       try {
@@ -95,6 +142,9 @@
             // Rebuild user bubble
             var wrap = document.createElement('div');
             wrap.className = 'ai-msg-wrap user';
+            // Restored history must not re-pop interactive forms (see
+            // promoteAiInputToModal's [data-restored] guard in ai-markdown.ts).
+            wrap.setAttribute('data-restored', 'true');
             var safe = (m.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             wrap.setAttribute('data-q', m.text || '');
             wrap.innerHTML =
@@ -128,6 +178,9 @@
             // Rebuild bot bubble — render from raw text, never inject stored HTML
             var wrap = document.createElement('div');
             wrap.className = 'ai-msg-wrap';
+            // Keep restored minallo-input forms inline in the side panel
+            // instead of re-popping the modal on every file open.
+            wrap.setAttribute('data-restored', 'true');
             wrap.innerHTML =
               '<div class="msg-sender bot-sender"><span class="msg-sender-dot"></span>Minallo AI</div>' +
               '<div class="msg-body">' +
@@ -142,11 +195,7 @@
               '</div>' +
               '</div>';
             var botBubble = wrap.querySelector('.ai-bubble.bot');
-            if (typeof renderMarkdown === 'function') {
-              botBubble.innerHTML = renderMarkdown(m.text || '');
-            } else {
-              botBubble.textContent = m.text || '';
-            }
+            renderRestoredBotBubble(botBubble, m.text || '');
             var msgBody = wrap.querySelector('.msg-body');
             if (typeof window._aiResponseActions === 'function') {
               msgBody.appendChild(window._aiResponseActions(m.text || '', 'panel'));
@@ -156,7 +205,6 @@
                 if (typeof window.copyBubble === 'function') window.copyBubble(btn);
               });
             });
-            if (typeof window._renderMath === 'function') window._renderMath(botBubble);
             _m.appendChild(wrap);
           }
         });
@@ -274,6 +322,16 @@
       var _mc = _msgs();
       if (_mc) _mc.innerHTML = '';
       if (_prevChatKey) deleteChatForFile(_prevChatKey);
+      // Also clear the course-scoped Q&A history (localStorage + the synced
+      // chat_history rows). Without this the PDF AI panel restores the old
+      // answers from Supabase on the next refresh, so "Clear chat" looked
+      // like it did nothing.
+      if (typeof window.clearCourseHistory === 'function') {
+        window.clearCourseHistory(
+          window.activeCourseId || window.currentCourseId || '',
+          window.activeRagDocumentId || null
+        );
+      }
       if (typeof window.addBotMsg === 'function') {
         window.addBotMsg(window._t ? window._t('ai_chat_cleared_msg') : 'Chat cleared');
       }
@@ -479,7 +537,7 @@
         var isAdded = existingMemberIds && existingMemberIds.indexOf(f.otherId) !== -1;
         var row = document.createElement('label');
         row.style.cssText =
-          "display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;cursor:pointer;font-family:'Nunito',sans-serif;font-size:.82rem;font-weight:700;color:var(--on-glass)";
+          "display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:8px;cursor:pointer;font-family: var(--font-main);font-size:.82rem;font-weight:700;color:var(--on-glass)";
         row.innerHTML =
           '<input type="checkbox" data-friend-id="' +
           f.otherId +
@@ -1096,11 +1154,79 @@
 
       await _chatLoad(true);
       if (_chatRoomId !== roomId) return; // another room opened while this one was loading
+      var _reconcileTick = 0;
       _chatPollTimer = setInterval(function () {
         _chatLoad(false);
         _chatPollTyping();
+        // Reconcile deletions/edits every ~9s. _chatLoad only fetches NEWER
+        // rows, so without this a message another user deleted or edited would
+        // linger in this view until a full reload.
+        if (++_reconcileTick % 3 === 0) _chatReconcileRendered();
       }, 3000);
     }
+
+    // Compares the messages currently on screen against the server and applies
+    // deletions (row gone → remove from view) and edits (edited_at changed →
+    // re-render the bubble). Scoped to the rendered ids so the query stays small.
+    async function _chatReconcileRendered() {
+      if (!_chatRoomId || !_currentUser) return;
+      var msgsEl = document.getElementById('chatMsgs');
+      if (!msgsEl) return;
+      var els = Array.prototype.slice.call(msgsEl.querySelectorAll('.chat-msg[data-mid]'));
+      if (!els.length) return;
+      var ids = els
+        .map(function (el) { return el.dataset.mid; })
+        .filter(function (id) { return id; });
+      if (!ids.length) return;
+      try {
+        var res = await fetch(
+          SUPA_URL +
+            '/rest/v1/messages?id=in.(' +
+            ids.map(encodeURIComponent).join(',') +
+            ')&select=id,content,edited_at',
+          { headers: _sbHeaders() }
+        );
+        if (!res.ok) return;
+        var rows = await res.json();
+        if (!Array.isArray(rows)) return;
+        var byId = {};
+        rows.forEach(function (r) { byId[r.id] = r; });
+        els.forEach(function (el) {
+          var id = el.dataset.mid;
+          var row = byId[id];
+          if (!row) {
+            // Deleted on the server by its author — drop it from this view too.
+            el.remove();
+            return;
+          }
+          var serverEdited = row.edited_at || '';
+          if (serverEdited !== (el.dataset.editedAt || '')) {
+            el.dataset.editedAt = serverEdited;
+            var bubble = el.querySelector('.chat-msg-bubble');
+            if (bubble) {
+              bubble.innerHTML =
+                _chatContentHTML(row.content || '') + (serverEdited ? _CHAT_EDITED_MARK : '');
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
+    // Renders message text → safe HTML with clickable links.
+    // The URL regex must exclude characters that could break out of the href
+    // attribute after entity decoding (because _chatMd already ran _chatEsc, a
+    // raw `"` is now `&quot;`, which would decode back inside the attribute and
+    // enable injection). Stopping at `&`, `"`, `'`, `<`, `>` blocks that path.
+    function _chatContentHTML(content) {
+      return content
+        ? _chatMd(content).replace(
+            /(https?:\/\/[^\s<>&"']+)/g,
+            '<a href="$1" target="_blank" rel="noopener" style="color:#3b82f6;text-decoration:underline;word-break:break-all">$1</a>'
+          )
+        : '';
+    }
+
+    var _CHAT_EDITED_MARK = ' <span style="font-size:.65rem;opacity:.5">(edited)</span>';
 
     // ── Message rendering ──────────────────────────────────────────────────────
     function _chatRenderMsg(m, msgs) {
@@ -1111,12 +1237,11 @@
       wrap.className = 'chat-msg' + (isMe ? ' chat-msg-me' : '');
       wrap.dataset.mid = m.id;
       wrap.dataset.senderId = m.user_id;
+      wrap.dataset.editedAt = m.edited_at || '';
 
       var d = new Date(m.created_at);
       var time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      var editedMark = m.edited_at
-        ? ' <span style="font-size:.65rem;opacity:.5">(edited)</span>'
-        : '';
+      var editedMark = m.edited_at ? _CHAT_EDITED_MARK : '';
 
       // Reply reference
       var replyHTML = '';
@@ -1177,13 +1302,7 @@
         }
       }
 
-      // Make URLs clickable in content
-      var contentHTML = m.content
-        ? _chatMd(m.content).replace(
-            /(https?:\/\/[^\s<]+)/g,
-            '<a href="$1" target="_blank" rel="noopener" style="color:#3b82f6;text-decoration:underline;word-break:break-all">$1</a>'
-          )
-        : '';
+      var contentHTML = _chatContentHTML(m.content);
 
       var escName = _chatEsc(m.display_name || 'Student');
       var escContent = _chatEsc(m.content || '');
@@ -1250,7 +1369,6 @@
           }
         }
       }
-      _chatLoadReactions(m.id);
     }
 
     async function _chatLoad(initial) {
@@ -1331,6 +1449,11 @@
           _chatRenderMsg(m, msgs);
         });
 
+        // One batched reaction fetch for the whole page instead of one request
+        // per message — this is what made opening a conversation crawl.
+        var _reactIds = data.map(function (mm) { return mm.id; }).filter(Boolean);
+        if (_reactIds.length) _chatLoadReactionsBatch(_reactIds);
+
         if (initial || atBottom) msgs.scrollTop = msgs.scrollHeight;
       } catch (e) {
         console.warn('Chat load error:', e);
@@ -1340,6 +1463,28 @@
     }
 
     // ── Reactions ──────────────────────────────────────────────────────────────
+    function _chatRenderReactions(msgId, rows) {
+      var el = document.getElementById('reactions-' + msgId);
+      if (!el) return;
+      var counts = {};
+      var mine = {};
+      (rows || []).forEach(function (r) {
+        counts[r.emoji] = (counts[r.emoji] || 0) + 1;
+        if (r.user_id === _currentUser.id) mine[r.emoji] = true;
+      });
+      el.innerHTML = '';
+      Object.keys(counts).forEach(function (emoji) {
+        var btn = document.createElement('button');
+        btn.className = 'chat-reaction-pill' + (mine[emoji] ? ' mine' : '');
+        btn.textContent = emoji + ' ' + counts[emoji];
+        btn.addEventListener('click', function () {
+          _chatToggleReaction(msgId, emoji);
+        });
+        el.appendChild(btn);
+      });
+    }
+
+    // Single-message refresh — used after the current user toggles a reaction.
     async function _chatLoadReactions(msgId) {
       try {
         var res = await fetch(
@@ -1347,24 +1492,31 @@
           { headers: _sbHeaders() }
         );
         var data = await res.json();
+        if (Array.isArray(data)) _chatRenderReactions(msgId, data);
+      } catch (e) {}
+    }
+
+    // Batched load for a whole page of messages — one request that fetches every
+    // message's reactions at once, then distributes them, instead of a fetch per
+    // message (opening a 60-message chat used to fire 60 requests).
+    async function _chatLoadReactionsBatch(ids) {
+      if (!ids || !ids.length) return;
+      try {
+        var res = await fetch(
+          SUPA_URL +
+            '/rest/v1/message_reactions?message_id=in.(' +
+            ids.map(encodeURIComponent).join(',') +
+            ')',
+          { headers: _sbHeaders() }
+        );
+        var data = await res.json();
         if (!Array.isArray(data)) return;
-        var el = document.getElementById('reactions-' + msgId);
-        if (!el) return;
-        var counts = {};
-        var mine = {};
+        var byMsg = {};
         data.forEach(function (r) {
-          counts[r.emoji] = (counts[r.emoji] || 0) + 1;
-          if (r.user_id === _currentUser.id) mine[r.emoji] = true;
+          (byMsg[r.message_id] = byMsg[r.message_id] || []).push(r);
         });
-        el.innerHTML = '';
-        Object.keys(counts).forEach(function (emoji) {
-          var btn = document.createElement('button');
-          btn.className = 'chat-reaction-pill' + (mine[emoji] ? ' mine' : '');
-          btn.textContent = emoji + ' ' + counts[emoji];
-          btn.addEventListener('click', function () {
-            _chatToggleReaction(msgId, emoji);
-          });
-          el.appendChild(btn);
+        ids.forEach(function (id) {
+          _chatRenderReactions(id, byMsg[id] || []);
         });
       } catch (e) {}
     }
@@ -1597,6 +1749,22 @@
       if (gate) gate.style.display = 'none';
     });
 
+    // ── Members panel toggle ───────────────────────────────────────────────────
+    // The members panel (#chatMembersPanel) is rendered alongside the chat by
+    // default. The header 👥 icon toggles its visibility — useful on narrow
+    // viewports where the right rail crowds the message list, and as a
+    // privacy nudge for shared screens.
+    (
+      document.getElementById('chatMembersToggleBtn') || { addEventListener: function () {} }
+    ).addEventListener('click', function () {
+      var panel = document.getElementById('chatMembersPanel');
+      if (!panel) return;
+      var hidden = panel.style.display === 'none';
+      panel.style.display = hidden ? '' : 'none';
+      var btn = document.getElementById('chatMembersToggleBtn');
+      if (btn) btn.classList.toggle('is-active', hidden);
+    });
+
     // ── Room settings button ───────────────────────────────────────────────────
     (
       document.getElementById('chatRoomSettingsBtn') || { addEventListener: function () {} }
@@ -1720,7 +1888,7 @@
               '</div>' +
               '<button style="flex-shrink:0;padding:5px 14px;background:' +
               (alreadyIn ? 'rgba(34,197,94,.15)' : 'linear-gradient(135deg,#3b82f6,#0ea5e9)') +
-              ";border:none;border-radius:20px;font-family:'Nunito',sans-serif;font-weight:800;font-size:.75rem;color:" +
+              ";border:none;border-radius:20px;font-family: var(--font-main);font-weight:800;font-size:.75rem;color:" +
               (alreadyIn ? '#22c55e' : '#fff') +
               ';cursor:pointer">' +
               (alreadyIn ? '✅ Joined' : 'Join') +
@@ -1789,7 +1957,11 @@
       var inp = document.getElementById('chatInput');
       if (!inp) return;
       var content = inp.value.trim();
-      if (!content) return;
+      // Allow sending a bare attachment with no caption. The backend accepts an
+      // empty content as long as attachment_url is present; without this guard a
+      // file added with no text was silently dropped here before it was ever
+      // uploaded — "upload works but sending doesn't".
+      if (!content && !_chatPendingFile) return;
 
       // Edit mode
       if (inp.dataset.editingMsgId) {
@@ -1803,10 +1975,16 @@
             headers: Object.assign(_sbHeaders(), { Prefer: 'return=minimal' }),
             body: JSON.stringify({ content: content, edited_at: new Date().toISOString() })
           });
-          // Re-render that message
+          // Update the message in place. The poll's _chatLoad is incremental
+          // (only fetches rows newer than the last timestamp), so removing +
+          // reloading would make the edited message vanish until a full
+          // refresh. Other users pick up the edit via _chatReconcileRendered.
           var msgEl = document.querySelector('[data-mid="' + editId + '"]');
-          if (msgEl) msgEl.remove();
-          await _chatLoad(false);
+          if (msgEl) {
+            msgEl.dataset.editedAt = new Date().toISOString();
+            var b = msgEl.querySelector('.chat-msg-bubble');
+            if (b) b.innerHTML = _chatContentHTML(content) + _CHAT_EDITED_MARK;
+          }
         } catch (e) {
           console.warn('Edit error:', e);
         }
@@ -1922,8 +2100,16 @@
     document.addEventListener('click', async function (e) {
       var btn = e.target.closest('[data-act="delete"]');
       if (!btn) return;
-      if (!confirm('Delete this message?')) return;
+      // This listener is scoped to chat-room MESSAGE delete buttons, which
+      // carry the row id in `data-mid`. The chatbot sidebar also emits
+      // `data-act="delete"` (to delete a CHAT, not a message), and that
+      // button has no `data-mid` — without this guard, the chatbot's
+      // delete click would fall through here and DELETE
+      // /rest/v1/messages?id=eq.undefined, surfacing as
+      // "Could not delete — Permission denied or server error" (400 22P02).
       var msgId = btn.dataset.mid;
+      if (!msgId) return;
+      if (!confirm('Delete this message?')) return;
       try {
         var res = await fetch(SUPA_URL + '/rest/v1/messages?id=eq.' + encodeURIComponent(msgId), {
           method: 'DELETE',
@@ -2142,7 +2328,7 @@
       var file = e.target.files[0];
       if (!file) return;
       try {
-        if (window._ssValidateUploadFile) window._ssValidateUploadFile(file);
+        _chatValidateFile(file);
       } catch (err) {
         showToast('File blocked', file.name + ': ' + err.message);
         e.target.value = '';
@@ -2170,8 +2356,34 @@
       if (bar) bar.style.display = 'none';
     });
 
+    // Chat attachments are downloaded by the recipient, not indexed like course
+    // uploads — so we don't use the strict course whitelist (which blocks .zip
+    // and only allows pdf/txt/docx/images). Allow any file friends want to share
+    // (pdf, zip, photos, docs, audio, video…) but still block active/executable
+    // content that could run when opened from the signed storage URL.
+    function _chatValidateFile(file) {
+      if (!file) throw new Error('No file selected');
+      var MAX = 25 * 1024 * 1024;
+      if (file.size > MAX) throw new Error('File is too large. Max 25 MB.');
+      var name = String(file.name || '').toLowerCase();
+      var dot = name.lastIndexOf('.');
+      var ext = dot >= 0 ? name.slice(dot) : '';
+      var blocked = [
+        '.html', '.htm', '.js', '.mjs', '.svg', '.exe', '.bat', '.cmd',
+        '.sh', '.php', '.ps1', '.vbs', '.msi', '.jar', '.com', '.scr'
+      ];
+      if (blocked.indexOf(ext) !== -1) throw new Error("This file type can't be shared in chat.");
+      return true;
+    }
+
     async function _chatUploadFile(file) {
-      if (window._ssValidateUploadFile) window._ssValidateUploadFile(file);
+      _chatValidateFile(file);
+      // Long-lived tabs burn through the 1-hour Supabase JWT; refresh it first
+      // so the storage write isn't rejected with a 403 surfaced as a generic
+      // "Upload failed".
+      if (typeof _ufEnsureFreshToken === 'function') {
+        try { await _ufEnsureFreshToken(); } catch (e) {}
+      }
       var safeName = _chatSafeStoragePart(file.name) || 'attachment';
       var path =
         _chatSafeStoragePart(_chatStorageRoomId(_chatRoomId)) +
@@ -2189,12 +2401,27 @@
           headers: {
             apikey: SUPA_KEY,
             Authorization: 'Bearer ' + token,
+            'x-upsert': 'true',
             'Content-Type': file.type || 'application/octet-stream'
           },
           body: file
         }
       );
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        // Surface the real reason (status + Supabase message) instead of a
+        // generic toast — e.g. a 403 here means the chat-attachments bucket is
+        // missing an INSERT policy for authenticated users.
+        var detail = '';
+        try { detail = (await res.text()) || ''; } catch (e) {}
+        var msg = 'HTTP ' + res.status;
+        try {
+          var j = JSON.parse(detail);
+          if (j && (j.message || j.error)) msg += ' — ' + (j.message || j.error);
+        } catch (e) {
+          if (detail) msg += ' — ' + detail.slice(0, 140);
+        }
+        throw new Error(msg);
+      }
       return { url: path, type: file.type, name: file.name };
     }
 
@@ -2710,14 +2937,34 @@
       });
     })();
 
-    // Stop polling when leaving chat section
+    // Stop polling when leaving chat section. Both pollers must be cleared:
+    // the 3s message poll (_chatPollTimer) AND the 90s presence poll
+    // (window._presencePollTimer). The presence poll used to be left running,
+    // so it kept hitting the network/DB every 90s forever on every other page.
+    // _chatInit() re-creates both on re-entry, so clearing here is safe.
     var _origShowPortalSectionForChat = window.showPortalSection;
     window.showPortalSection = function (sec) {
-      if (sec !== 'chat' && _chatPollTimer) {
-        clearInterval(_chatPollTimer);
-        _chatPollTimer = null;
+      if (sec !== 'chat') {
+        if (_chatPollTimer) {
+          clearInterval(_chatPollTimer);
+          _chatPollTimer = null;
+        }
+        if (window._presencePollTimer) {
+          clearInterval(window._presencePollTimer);
+          window._presencePollTimer = null;
+        }
       }
       if (typeof _origShowPortalSectionForChat === 'function') _origShowPortalSectionForChat(sec);
     };
+
+    // First-click init. This script is lazy-loaded, and the router's
+    // _ssAfterFeature('chat', …) callback that calls window._chatInit fires on
+    // script load — which is BEFORE this async fetch resolves and _chatInit
+    // exists, so the first click used to leave the panel blank until a second
+    // click. If the user is already on the Chat section now (the section is
+    // visible), initialise immediately. When chat.js is merely prewarmed in the
+    // background the section is hidden, so we skip and let the navigation call.
+    var _chatSec = document.getElementById('psec-chat');
+    if (_chatSec && _chatSec.style.display !== 'none') _chatInit();
   } // end _init
 })();

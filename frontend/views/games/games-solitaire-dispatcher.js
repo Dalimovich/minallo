@@ -1,4 +1,4 @@
-﻿// â”€â”€ SOLITAIRE VARIANT DISPATCHER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+﻿// -- SOLITAIRE VARIANT DISPATCHER -----------------------------------------
 (function () {
   var currentVariant = null;
   var VARIANTS = {
@@ -202,76 +202,84 @@
   window._solStop = function () {
     stopCurrent();
   };
-  // Wire variant picker cards
-  var grid = document.getElementById('solVariantPicker');
-  if (grid) {
-    grid.querySelectorAll('.sol-vc').forEach(function (el) {
-      el.addEventListener('click', function () {
-        if (el.id === 'solSpiderMenuBtn') {
-          window._solShowSpiderPicker();
-        } else {
+  // Picker/game-area UI wiring. Must run AFTER games.html has been injected
+  // into #psec-games; games.js _init() calls this once the DOM is in place.
+  // Idempotent: re-running it would double-bind listeners, so we guard with a flag.
+  var _solUIWired = false;
+  window._solInitUI = function () {
+    if (_solUIWired) return;
+    // Wire variant picker cards
+    var grid = document.getElementById('solVariantPicker');
+    if (grid) {
+      grid.querySelectorAll('.sol-vc').forEach(function (el) {
+        el.addEventListener('click', function () {
+          if (el.id === 'solSpiderMenuBtn') {
+            window._solShowSpiderPicker();
+          } else {
+            window._solStartVariant(el.dataset.variant);
+          }
+        });
+      });
+    }
+    // Spider sub-picker
+    var spGrid = document.getElementById('solSpiderPicker');
+    if (spGrid) {
+      spGrid.querySelectorAll('.sol-spc').forEach(function (el) {
+        el.addEventListener('click', function () {
           window._solStartVariant(el.dataset.variant);
-        }
+        });
       });
-    });
-  }
-  // Spider sub-picker
-  var spGrid = document.getElementById('solSpiderPicker');
-  if (spGrid) {
-    spGrid.querySelectorAll('.sol-spc').forEach(function (el) {
-      el.addEventListener('click', function () {
-        window._solStartVariant(el.dataset.variant);
+      var spBack = document.getElementById('solSpiderPickerBack');
+      if (spBack)
+        spBack.addEventListener('click', function () {
+          window._solShowPicker();
+        });
+    }
+    // Back button in picker → hub
+    var pb = document.getElementById('solPickerBack');
+    if (pb)
+      pb.addEventListener('click', function () {
+        var sga = document.getElementById('gamesPlaySolitaire');
+        if (sga) sga.style.display = 'none';
+        var hub = document.getElementById('gamesHub');
+        if (hub) hub.style.display = '';
       });
-    });
-    var spBack = document.getElementById('solSpiderPickerBack');
-    if (spBack)
-      spBack.addEventListener('click', function () {
-        window._solShowPicker();
+    // Game area buttons
+    var sng = document.getElementById('solitaireNewGame');
+    if (sng)
+      sng.addEventListener('click', function () {
+        if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].newGame();
       });
-  }
-  // Back button in picker â†’ hub
-  var pb = document.getElementById('solPickerBack');
-  if (pb)
-    pb.addEventListener('click', function () {
-      var sga = document.getElementById('gamesPlaySolitaire');
-      if (sga) sga.style.display = 'none';
-      var hub = document.getElementById('gamesHub');
-      if (hub) hub.style.display = '';
-    });
-  // Game area buttons
-  var sng = document.getElementById('solitaireNewGame');
-  if (sng)
-    sng.addEventListener('click', function () {
-      if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].newGame();
-    });
-  var snmb = document.getElementById('solNoMovesNewGame');
-  if (snmb)
-    snmb.addEventListener('click', function () {
-      if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].newGame();
-    });
-  var sub = document.getElementById('solitaireUndo');
-  if (sub) {
-    sub.addEventListener('click', function () {
-      if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].undo();
-    });
-    sub.disabled = true;
-    sub.style.opacity = '.4';
-  }
-  var shb = document.getElementById('solitaireHint');
-  if (shb)
-    shb.addEventListener('click', function () {
-      var hintFns = {
-        klondike: window._klondikeHint,
-        spider: window._spiderHint,
-        spider1: window._spiderHint,
-        spider2: window._spiderHint,
-        spider4: window._spiderHint,
-        scorpion: window._scorpionHint
-      };
-      var fn = hintFns[currentVariant];
-      if (typeof fn === 'function') fn();
-    });
-  // Single capture-phase click dispatcher â€” fires before any element handlers, can't be double-called
+    var snmb = document.getElementById('solNoMovesNewGame');
+    if (snmb)
+      snmb.addEventListener('click', function () {
+        if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].newGame();
+      });
+    var sub = document.getElementById('solitaireUndo');
+    if (sub) {
+      sub.addEventListener('click', function () {
+        if (currentVariant && VARIANTS[currentVariant]) VARIANTS[currentVariant].undo();
+      });
+      sub.disabled = true;
+      sub.style.opacity = '.4';
+    }
+    var shb = document.getElementById('solitaireHint');
+    if (shb)
+      shb.addEventListener('click', function () {
+        var hintFns = {
+          klondike: window._klondikeHint,
+          spider: window._spiderHint,
+          spider1: window._spiderHint,
+          spider2: window._spiderHint,
+          spider4: window._spiderHint,
+          scorpion: window._scorpionHint
+        };
+        var fn = hintFns[currentVariant];
+        if (typeof fn === 'function') fn();
+      });
+    _solUIWired = true;
+  };
+  // Single capture-phase click dispatcher — fires before any element handlers, can't be double-called
   var _solLastClick = 0;
   document.addEventListener(
     'click',

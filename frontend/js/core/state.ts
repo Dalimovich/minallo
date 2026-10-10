@@ -29,7 +29,7 @@ type Listener = (state: AppStoreState) => void;
 
 const state: AppStoreState = {
   user: null,
-  activeSemesterId: 'ws2526',
+  activeSemesterId: 'ss2526',
   activeCourse: null,
   activeFile: null,
   activeCourseSection: 'files',

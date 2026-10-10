@@ -175,9 +175,12 @@ to verify the service can reach Postgres.
 ## Deploy
 
 ```
-flyctl deploy -a python-ai -c backend/python-ai/fly.toml
-flyctl logs -a python-ai
-flyctl status -a python-ai
+ssh deploy@ai.minallo.de
+cd /opt/minallo/backend/python-ai
+./deploy/update.sh
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail=100 api caddy
 ```
 
-Two HA machines in `fra`. Auto-stop on idle — first request after idle has ~3–5s cold-start.
+The backend runs continuously on Hetzner behind Caddy. Never deploy it to
+Fly.io; the legacy Fly instance is rollback-only until decommissioned.

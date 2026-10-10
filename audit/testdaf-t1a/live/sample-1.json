@@ -1,0 +1,1028 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Wenn Geräte gemeinsam genutzt werden",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "An vielen Hochschulen stehen heute Geräte, deren Anschaffung den Etat einer einzelnen Arbeitsgruppe überfordern würde: Hochleistungsmikroskope, Massenspektrometer, 3D-Drucker für Prototypen oder Anlagen zur Materialprüfung. Statt jedes Labor mit einer eigenen, oft nur zeitweise ausgelasteten Maschine auszustatten, richten Universitäten deshalb zentrale Plattformen ein. Dort können mehrere Institute dieselben Geräte buchen, die Wartung wird gebündelt, und die Nutzung soll nach transparenten Regeln erfolgen. Das klingt zunächst nach einer rein ökonomischen Lösung. In der Praxis verändert es jedoch auch die Art, wie Forschung organisiert wird und wie offen eine Hochschule mit ihren Ressourcen umgeht."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "Der wichtigste Vorteil liegt auf der Hand: Teure Technik wird besser ausgelastet. Ein Gerät, das nur einige Stunden pro Woche genutzt wird, verursacht sonst hohe Kosten pro Messung. Wird es von mehreren Gruppen gemeinsam verwendet, sinken die Ausgaben je Projekt, und kleinere Teams erhalten Zugang zu Instrumenten, die sie allein nie finanzieren könnten. Außerdem lassen sich Spezialisten für Bedienung und Pflege an einer Stelle konzentrieren. Das reduziert Ausfälle, weil die Geräte nicht in jedem Labor von wechselnd geschultem Personal betreut werden müssen. Gleichzeitig entstehen aber neue Abhängigkeiten. Wenn viele Forschende auf dieselbe Infrastruktur zugreifen, werden Wartungsfenster, Prioritäten und Buchungsregeln schnell zum Konfliktpunkt."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Gerade hier zeigt sich, dass gemeinschaftliche Nutzung mehr verlangt als nur einen gemeinsamen Kalender. Hochschulen müssen festlegen, wer im Notfall Vorrang hat, wie fairen Zugang man sicherstellt und wie Kosten verteilt werden. Manche Einrichtungen arbeiten mit Kontingenten, andere mit gestaffelten Tarifen oder internen Verrechnungen. Solche Modelle wirken auf den ersten Blick bürokratisch, verhindern aber, dass besonders einflussreiche Gruppen dauerhaft die besten Zeitfenster belegen. Gleichzeitig brauchen zentrale Plattformen Personal, das nicht nur technisch versiert ist, sondern auch vermitteln kann, wenn Forschende unterschiedliche Erwartungen an Geschwindigkeit, Service oder Datenverfügbarkeit haben."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Trotz dieser Vorteile ist die gemeinsame Nutzung nicht automatisch die nachhaltigere Lösung. Ein zentral betriebenes Gerät kann zwar Ressourcen sparen, doch es erzeugt unter Umständen mehr Transport, mehr Koordination und einen höheren Energiebedarf in Spitzenzeiten. Besonders wenn Proben zwischen entfernten Standorten hin- und hergebracht werden müssen, relativiert sich der ökologische Gewinn. Deshalb betonen viele Hochschulen, dass nicht jedes Instrument zentralisiert werden sollte. Wo Geräte häufig, unkompliziert und ohne komplexe Vorbereitung gebraucht werden, kann eine dezentrale Lösung sinnvoller sein. Die Entscheidung hängt also vom Nutzungsmuster ab, nicht von einer pauschalen Sparlogik."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Hinzu kommt ein oft unterschätzter wissenschaftlicher Effekt: Gemeinsame Plattformen fördern den Austausch zwischen Fachbereichen. Wer ein Gerät mit anderen nutzt, trifft dort Kolleginnen und Kollegen aus unterschiedlichen Disziplinen und erfährt oft nebenbei, welche Messverfahren anderswo bereits erfolgreich eingesetzt werden. Ein Chemiker, der eine Analyseeinheit mit einer Biologin teilt, übernimmt vielleicht eine dort entwickelte Probenvorbereitung; eine Ingenieurin entdeckt im Gespräch eine statistische Auswertungsmethode aus den Sozialwissenschaften. Solche Kontakte entstehen nicht automatisch, doch die räumliche und organisatorische Nähe senkt die Schwelle für Kooperationen. Die Plattform ist damit nicht nur Serviceeinrichtung, sondern auch ein Ort, an dem neue Fragen entstehen können."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Am Ende spricht daher vieles für einen differenzierten Ausbau gemeinsamer Gerätezentren. Hochschulen sollten dort zentralisieren, wo hohe Kosten, seltene Nutzung und anspruchsvolle Wartung zusammenkommen. Sie sollten aber vermeiden, aus der Idee der Bündelung ein Prinzip zu machen, das jede lokale Entscheidung ersetzt. Entscheidend ist, dass die Organisation nicht nur auf Effizienz zielt, sondern auch auf Zugänglichkeit, wissenschaftliche Vielfalt und verlässliche Betreuung. Gemeinschaftliche Nutzung ist also weder Selbstzweck noch bloße Sparmaßnahme. Sie ist dann überzeugend, wenn sie Forschung erleichtert, statt sie durch neue Hürden zu bremsen."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Entwicklung beschreibt der Text als Ausgangspunkt der gemeinsamen Gerätenutzung an Hochschulen?",
+              "options": [
+                "Einzelne Arbeitsgruppen können sich immer seltener eigene Spitzeninstrumente leisten.",
+                "Forschende bevorzugen grundsätzlich nur noch zentrale Laborgebäude.",
+                "Die Zahl technischer Geräte sinkt an Hochschulen insgesamt deutlich.",
+                "Private Firmen stellen Hochschulen zunehmend kostenfrei ihre Anlagen bereit."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum führt eine gemeinsame Nutzung laut Text oft zu weniger Ausfällen?",
+              "options": [
+                "Weil Geräte dadurch seltener an wechselnd eingewiesene Personen geraten.",
+                "Weil die Anschaffungskosten auf mehrere Institute verteilt werden.",
+                "Weil Wartungsarbeiten in jedem Labor gleichzeitig stattfinden können.",
+                "Weil nur noch besonders einfache Geräte ausgewählt werden."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dienen Kontingente, gestaffelte Tarife oder interne Abrechnungen nach Darstellung des Autors vor allem?",
+              "options": [
+                "Sie sollen verhindern, dass einzelne Gruppen dauerhaft bevorzugt werden.",
+                "Sie sollen die Zahl der zu betreuenden Geräte in jedem Labor erhöhen.",
+                "Sie sollen den Zugriff ausschließlich an externe Nutzer vergeben.",
+                "Sie sollen die Buchung möglichst ohne Regeln und Kontrolle lassen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was lässt sich aus dem Abschnitt zur Nachhaltigkeit der zentralen Gerätebenutzung schließen?",
+              "options": [
+                "Eine zentrale Lösung ist nicht in jedem Fall ökologisch günstiger als eine dezentrale.",
+                "Jede zentrale Plattform spart automatisch Energie und Material.",
+                "Dezentrale Standorte sind grundsätzlich mit mehr Wartung verbunden.",
+                "Ökologische Fragen spielen bei der Geräteplanung kaum eine Rolle."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Formulierung gibt die Aussage zum Austausch zwischen Fachbereichen am treffendsten wieder?",
+              "options": [
+                "Die gemeinsame Nutzung erleichtert unerwartete Kontakte und kann Kooperationen anstoßen.",
+                "Die gemeinsame Nutzung ersetzt die Zusammenarbeit zwischen Fachdisziplinen vollständig.",
+                "Die gemeinsame Nutzung führt vor allem dazu, dass alle Gruppen dieselben Methoden anwenden.",
+                "Die gemeinsame Nutzung verringert den Bedarf an Gesprächen über Forschungsfragen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "author_intention",
+              "text_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Funktion hat das Beispiel mit Chemikerin, Biologin und Ingenieurin im Text?",
+              "options": [
+                "Es veranschaulicht, wie aus gemeinsamer Nutzung fachübergreifende Impulse entstehen können.",
+                "Es zeigt, dass nur bestimmte Disziplinen Zugang zu Geräten erhalten sollten.",
+                "Es belegt, dass Plattformen ohne technische Fachkräfte nicht arbeiten können.",
+                "Es dient dazu, die finanziellen Vorteile zentraler Gerätezentren zu berechnen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was ist die kommunikative Hauptabsicht des gesamten Artikels?",
+              "options": [
+                "Er will für eine differenzierte, aber nicht pauschale Bündelung wissenschaftlicher Geräte werben.",
+                "Er will beweisen, dass zentrale Plattformen immer die günstigste Lösung sind.",
+                "Er will vor allem die Nachteile moderner Forschungstechnik kritisieren.",
+                "Er will zeigen, dass jede Hochschule ihre Geräte vollständig selbst besitzen sollte."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "questionId": "q6",
+        "skillTags": [
+          "author_intention",
+          "text_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Funktion hat das Beispiel mit Chemiker, Biologin und Ingenieurin im Text?",
+          "options": [
+            "Es zeigt, dass nur bestimmte Disziplinen Zugang zu Geräten erhalten sollten.",
+            "Es veranschaulicht, wie aus gemeinsamer Nutzung fachübergreifende Impulse entstehen können.",
+            "Es belegt, dass Plattformen ohne technische Fachkräfte nicht arbeiten können.",
+            "Es dient dazu, die finanziellen Vorteile zentraler Gerätezentren zu berechnen."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p5"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Wenn Geräte nicht stillstehen: Hochschulen und die gemeinsame Nutzung von Forschungstechnik",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "An Hochschulen stehen teure wissenschaftliche Geräte oft nur für einen begrenzten Teil des Tages oder des Jahres in einem einzelnen Labor. Elektronenmikroskope, Massenspektrometer oder hochauflösende Scanner sind technisch anspruchsvoll, aber sie erfüllen ihren Zweck nur dann, wenn sie regelmäßig ausgelastet werden. Genau deshalb gewinnt die gemeinsame Nutzung solcher Anlagen an Bedeutung. Nicht jede Arbeitsgruppe kann sich jedes Instrument selbst anschaffen; trotzdem brauchen viele Disziplinen Zugang zu denselben Messverfahren. Wer Geräte teilt, verteilt also nicht nur Kosten, sondern schafft auch Zugang zu Methoden, die sonst einzelnen Einrichtungen vorbehalten blieben."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "In der Praxis bedeutet gemeinschaftliche Nutzung jedoch mehr als ein offenes Türschild am Labor. Meist entstehen zentrale Plattformen, in denen Fachpersonal die Geräte betreut, Wartung organisiert und Schulungen anbietet. Das hat einen einfachen Grund: Je komplexer ein Instrument ist, desto größer ist das Risiko von Fehlbedienungen und Ausfallzeiten. Zugleich erlaubt eine solche Bündelung eine bessere Planung der Auslastung, weil mehrere Institute ihre Messungen abstimmen können. Gerade für selten genutzte Spezialgeräte ist das effizienter als doppelte Anschaffungen in verschiedenen Arbeitsgruppen."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Allerdings zeigt sich schnell, dass die gemeinsame Nutzung nur dann funktioniert, wenn Zuständigkeiten klar geregelt sind. Wer darf buchen, wer trägt Reparaturkosten, und was passiert, wenn eine Gruppe kurzfristig mehr Zeit braucht als vereinbart? Solche Fragen sind nicht bloß organisatorische Details, sondern entscheiden darüber, ob Vertrauen entsteht oder Konflikte wachsen. Manche Hochschulen reagieren darauf mit festen Nutzungsordnungen und transparenten Gebührenmodellen. Andere setzen auf Koordinatoren, die zwischen den Arbeitsgruppen vermitteln und bei Engpässen Prioritäten festlegen. Ohne solche Regeln droht, dass leistungsstarke Gruppen die Infrastruktur ungewollt dominieren."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Ein weiterer Vorteil gemeinsamer Gerätepools liegt in der wissenschaftlichen Qualität. Wenn ein hoch spezialisiertes Gerät in einem Zentrum steht, arbeiten oft mehrere Forschende mit unterschiedlichem Hintergrund daran. Dadurch werden Messfehler schneller entdeckt, weil nicht nur eine Perspektive auf die Daten schaut. Gleichzeitig kann das Personal der Plattform Routinewissen aufbauen, das in einzelnen Projekten kaum erreichbar wäre. Ein Beispiel ist die Probenvorbereitung für empfindliche bildgebende Verfahren: Wer diese Arbeit täglich macht, erkennt schneller, wann eine Probe ungeeignet ist und ein erneuter Versuch nötig wird. Das spart nicht nur Zeit, sondern verhindert auch falsche Schlussfolgerungen."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Trotz dieser Vorteile ist gemeinsame Nutzung kein Selbstläufer. Wenn Hochschulen die Geräteinfrastruktur zu stark zentralisieren, kann die Distanz zwischen Gerät und Forschenden wachsen. Dann melden Arbeitsgruppen ihre Bedürfnisse zwar an, fühlen sich aber nicht mehr verantwortlich für die langfristige Entwicklung der Anlage. Deshalb fordern viele Expertinnen und Experten ein ausgewogenes Modell: zentrale Verwaltung dort, wo Expertise und Wartung gebündelt werden müssen, aber zugleich Mitspracherechte für diejenigen, die die Geräte wissenschaftlich nutzen. Nur wenn beide Seiten zusammenkommen, bleibt ein Gerätepool lebendig und anpassungsfähig."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Am Ende zeigt sich, dass es bei gemeinsamer Nutzung wissenschaftlicher Geräte nicht nur um Sparsamkeit geht. Hochschulen, die solche Strukturen sinnvoll aufbauen, verbessern die Chancengleichheit zwischen unterschiedlich finanzstarken Gruppen, beschleunigen Forschung und erhöhen die technische Qualität. Entscheidend ist jedoch, dass diese Vorteile nicht automatisch entstehen. Sie hängen von klaren Abläufen, verlässlicher Finanzierung und einer Kultur des Teilens ab. Das Ziel ist deshalb nicht, überall möglichst wenige Geräte zu besitzen, sondern vorhandene Ressourcen so zu organisieren, dass sie der Forschung möglichst vielen nützen."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Aussage beschreibt den Grundgedanken des ersten Absatzes am treffendsten?",
+              "options": [
+                "Gemeinsame Geräte sollen vor allem Prestige für eine Hochschule schaffen.",
+                "Teure Messgeräte werden durch geteilte Nutzung für mehrere Gruppen zugänglich.",
+                "Einzelne Institute müssen grundsätzlich alle Instrumente selbst besitzen.",
+                "Die Anschaffungskosten von Forschungstechnik spielen für den Alltag kaum eine Rolle."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "argument_structure",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum werden laut Text häufig zentrale Plattformen eingerichtet?",
+              "options": [
+                "Weil so weniger komplexe Geräte gekauft werden müssen.",
+                "Weil Fachpersonal Bedienung, Wartung und Training zusammen organisieren kann.",
+                "Weil Messungen dann ausschließlich von Studierenden durchgeführt werden.",
+                "Weil jede Arbeitsgruppe ihre Geräte dadurch unabhängig verwaltet."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "inference",
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was lässt sich aus dem dritten Absatz über fehlende Regeln folgern?",
+              "options": [
+                "Sie führen vermutlich dazu, dass Ressourcen gerechter verteilt werden.",
+                "Sie machen eine zentrale Verwaltung grundsätzlich überflüssig.",
+                "Sie erhöhen die Wahrscheinlichkeit von Machtgefällen und Streit.",
+                "Sie betreffen nur die Reparatur besonders teurer Geräte."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Formulierung gibt den vierten Absatz inhaltlich am besten wieder?",
+              "options": [
+                "Geteilte Technik verbessert die Datenqualität, weil mehrere Fachleute und erfahrenes Personal Fehler leichter erkennen.",
+                "Gemeinsam genutzte Anlagen ersetzen wissenschaftliche Kontrolle durch reine Routinearbeit.",
+                "Messfehler entstehen vor allem dann, wenn viele Personen an einem Gerät arbeiten.",
+                "Die Probenvorbereitung ist nur dann erfolgreich, wenn sie selten und ohne Erfahrung erfolgt."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "author_intention",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Haltung vertritt die Autorin bzw. der Autor im fünften Absatz?",
+              "options": [
+                "Zentralisierung ist immer die beste Lösung, weil sie alle Probleme beseitigt.",
+                "Dezentralisierung ist grundsätzlich überlegen, weil Nähe alle Konflikte verhindert.",
+                "Ein Mischmodell aus zentraler Organisation und Beteiligung der Nutzer ist am überzeugendsten.",
+                "Mitspracherechte sind unnötig, wenn die technische Betreuung professionell ist."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "inference",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was folgt aus dem letzten Absatz für Hochschulen, die ihre Geräte gemeinsam nutzen?",
+              "options": [
+                "Sie gewinnen nur dann Vorteile, wenn sie neben Technik auch Organisation und Finanzierung absichern.",
+                "Sie sollten möglichst viele Einzelgeräte anschaffen, um flexibel zu bleiben.",
+                "Sie erreichen Chancengleichheit automatisch, sobald ein Pool eingerichtet ist.",
+                "Sie müssen die Nutzung sofort auf wenige Spitzenprojekte beschränken."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "text_structure",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient der gesamte Text vor allem?",
+              "options": [
+                "Er beschreibt ausschließlich technische Details einzelner Messverfahren.",
+                "Er wirbt für einen vollständigen Verzicht auf zentrale Gerätepools.",
+                "Er erläutert Chancen und Grenzen gemeinsamer Forschungsinfrastruktur und bewertet sie abwägend.",
+                "Er fordert, dass nur große Hochschulen hochwertige Geräte einsetzen dürfen."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": true,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          }
+        ]
+      }
+    }
+  ],
+  "status": "pass",
+  "content": {
+    "text": {
+      "title": "Wenn Geräte nicht stillstehen: Hochschulen und die gemeinsame Nutzung von Forschungstechnik",
+      "paragraphs": [
+        {
+          "paragraphId": "p1",
+          "text": "An Hochschulen stehen teure wissenschaftliche Geräte oft nur für einen begrenzten Teil des Tages oder des Jahres in einem einzelnen Labor. Elektronenmikroskope, Massenspektrometer oder hochauflösende Scanner sind technisch anspruchsvoll, aber sie erfüllen ihren Zweck nur dann, wenn sie regelmäßig ausgelastet werden. Genau deshalb gewinnt die gemeinsame Nutzung solcher Anlagen an Bedeutung. Nicht jede Arbeitsgruppe kann sich jedes Instrument selbst anschaffen; trotzdem brauchen viele Disziplinen Zugang zu denselben Messverfahren. Wer Geräte teilt, verteilt also nicht nur Kosten, sondern schafft auch Zugang zu Methoden, die sonst einzelnen Einrichtungen vorbehalten blieben."
+        },
+        {
+          "paragraphId": "p2",
+          "text": "In der Praxis bedeutet gemeinschaftliche Nutzung jedoch mehr als ein offenes Türschild am Labor. Meist entstehen zentrale Plattformen, in denen Fachpersonal die Geräte betreut, Wartung organisiert und Schulungen anbietet. Das hat einen einfachen Grund: Je komplexer ein Instrument ist, desto größer ist das Risiko von Fehlbedienungen und Ausfallzeiten. Zugleich erlaubt eine solche Bündelung eine bessere Planung der Auslastung, weil mehrere Institute ihre Messungen abstimmen können. Gerade für selten genutzte Spezialgeräte ist das effizienter als doppelte Anschaffungen in verschiedenen Arbeitsgruppen."
+        },
+        {
+          "paragraphId": "p3",
+          "text": "Allerdings zeigt sich schnell, dass die gemeinsame Nutzung nur dann funktioniert, wenn Zuständigkeiten klar geregelt sind. Wer darf buchen, wer trägt Reparaturkosten, und was passiert, wenn eine Gruppe kurzfristig mehr Zeit braucht als vereinbart? Solche Fragen sind nicht bloß organisatorische Details, sondern entscheiden darüber, ob Vertrauen entsteht oder Konflikte wachsen. Manche Hochschulen reagieren darauf mit festen Nutzungsordnungen und transparenten Gebührenmodellen. Andere setzen auf Koordinatoren, die zwischen den Arbeitsgruppen vermitteln und bei Engpässen Prioritäten festlegen. Ohne solche Regeln droht, dass leistungsstarke Gruppen die Infrastruktur ungewollt dominieren."
+        },
+        {
+          "paragraphId": "p4",
+          "text": "Ein weiterer Vorteil gemeinsamer Gerätepools liegt in der wissenschaftlichen Qualität. Wenn ein hoch spezialisiertes Gerät in einem Zentrum steht, arbeiten oft mehrere Forschende mit unterschiedlichem Hintergrund daran. Dadurch werden Messfehler schneller entdeckt, weil nicht nur eine Perspektive auf die Daten schaut. Gleichzeitig kann das Personal der Plattform Routinewissen aufbauen, das in einzelnen Projekten kaum erreichbar wäre. Ein Beispiel ist die Probenvorbereitung für empfindliche bildgebende Verfahren: Wer diese Arbeit täglich macht, erkennt schneller, wann eine Probe ungeeignet ist und ein erneuter Versuch nötig wird. Das spart nicht nur Zeit, sondern verhindert auch falsche Schlussfolgerungen."
+        },
+        {
+          "paragraphId": "p5",
+          "text": "Trotz dieser Vorteile ist gemeinsame Nutzung kein Selbstläufer. Wenn Hochschulen die Geräteinfrastruktur zu stark zentralisieren, kann die Distanz zwischen Gerät und Forschenden wachsen. Dann melden Arbeitsgruppen ihre Bedürfnisse zwar an, fühlen sich aber nicht mehr verantwortlich für die langfristige Entwicklung der Anlage. Deshalb fordern viele Expertinnen und Experten ein ausgewogenes Modell: zentrale Verwaltung dort, wo Expertise und Wartung gebündelt werden müssen, aber zugleich Mitspracherechte für diejenigen, die die Geräte wissenschaftlich nutzen. Nur wenn beide Seiten zusammenkommen, bleibt ein Gerätepool lebendig und anpassungsfähig."
+        },
+        {
+          "paragraphId": "p6",
+          "text": "Am Ende zeigt sich, dass es bei gemeinsamer Nutzung wissenschaftlicher Geräte nicht nur um Sparsamkeit geht. Hochschulen, die solche Strukturen sinnvoll aufbauen, verbessern die Chancengleichheit zwischen unterschiedlich finanzstarken Gruppen, beschleunigen Forschung und erhöhen die technische Qualität. Entscheidend ist jedoch, dass diese Vorteile nicht automatisch entstehen. Sie hängen von klaren Abläufen, verlässlicher Finanzierung und einer Kultur des Teilens ab. Das Ziel ist deshalb nicht, überall möglichst wenige Geräte zu besitzen, sondern vorhandene Ressourcen so zu organisieren, dass sie der Forschung möglichst vielen nützen."
+        }
+      ]
+    },
+    "questions": [
+      {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Aussage beschreibt den Grundgedanken des ersten Absatzes am treffendsten?",
+          "options": [
+            "Gemeinsame Geräte sollen vor allem Prestige für eine Hochschule schaffen.",
+            "Teure Messgeräte werden durch geteilte Nutzung für mehrere Gruppen zugänglich.",
+            "Einzelne Institute müssen grundsätzlich alle Instrumente selbst besitzen.",
+            "Die Anschaffungskosten von Forschungstechnik spielen für den Alltag kaum eine Rolle."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      },
+      {
+        "questionId": "q2",
+        "skillTags": [
+          "argument_structure",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Warum werden laut Text häufig zentrale Plattformen eingerichtet?",
+          "options": [
+            "Weil Fachpersonal Bedienung, Wartung und Training zusammen organisieren kann.",
+            "Weil so weniger komplexe Geräte gekauft werden müssen.",
+            "Weil Messungen dann ausschließlich von Studierenden durchgeführt werden.",
+            "Weil jede Arbeitsgruppe ihre Geräte dadurch unabhängig verwaltet."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p2"
+          ]
+        }
+      },
+      {
+        "questionId": "q3",
+        "skillTags": [
+          "inference",
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was lässt sich aus dem dritten Absatz über fehlende Regeln folgern?",
+          "options": [
+            "Sie führen vermutlich dazu, dass Ressourcen gerechter verteilt werden.",
+            "Sie machen eine zentrale Verwaltung grundsätzlich überflüssig.",
+            "Sie erhöhen die Wahrscheinlichkeit von Machtgefällen und Streit.",
+            "Sie betreffen nur die Reparatur besonders teurer Geräte."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p3"
+          ]
+        }
+      },
+      {
+        "questionId": "q4",
+        "skillTags": [
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Formulierung gibt den vierten Absatz inhaltlich am besten wieder?",
+          "options": [
+            "Gemeinsam genutzte Anlagen ersetzen wissenschaftliche Kontrolle durch reine Routinearbeit.",
+            "Geteilte Technik verbessert die Datenqualität, weil mehrere Fachleute und erfahrenes Personal Fehler leichter erkennen.",
+            "Messfehler entstehen vor allem dann, wenn viele Personen an einem Gerät arbeiten.",
+            "Die Probenvorbereitung ist nur dann erfolgreich, wenn sie selten und ohne Erfahrung erfolgt."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p4"
+          ]
+        }
+      },
+      {
+        "questionId": "q5",
+        "skillTags": [
+          "author_intention",
+          "argument_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Haltung vertritt die Autorin bzw. der Autor im fünften Absatz?",
+          "options": [
+            "Ein Mischmodell aus zentraler Organisation und Beteiligung der Nutzer ist am überzeugendsten.",
+            "Dezentralisierung ist grundsätzlich überlegen, weil Nähe alle Konflikte verhindert.",
+            "Zentralisierung ist immer die beste Lösung, weil sie alle Probleme beseitigt.",
+            "Mitspracherechte sind unnötig, wenn die technische Betreuung professionell ist."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p5"
+          ]
+        }
+      },
+      {
+        "questionId": "q6",
+        "skillTags": [
+          "inference",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was folgt aus dem letzten Absatz für Hochschulen, die ihre Geräte gemeinsam nutzen?",
+          "options": [
+            "Sie erreichen Chancengleichheit automatisch, sobald ein Pool eingerichtet ist.",
+            "Sie sollten möglichst viele Einzelgeräte anschaffen, um flexibel zu bleiben.",
+            "Sie gewinnen nur dann Vorteile, wenn sie neben Technik auch Organisation und Finanzierung absichern.",
+            "Sie müssen die Nutzung sofort auf wenige Spitzenprojekte beschränken."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p6"
+          ]
+        }
+      },
+      {
+        "questionId": "q7",
+        "skillTags": [
+          "text_structure",
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Wozu dient der gesamte Text vor allem?",
+          "options": [
+            "Er beschreibt ausschließlich technische Details einzelner Messverfahren.",
+            "Er wirbt für einen vollständigen Verzicht auf zentrale Gerätepools.",
+            "Er fordert, dass nur große Hochschulen hochwertige Geräte einsetzen dürfen.",
+            "Er erläutert Chancen und Grenzen gemeinsamer Forschungsinfrastruktur und bewertet sie abwägend."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    ],
+    "presentation": {
+      "numberParagraphs": true,
+      "optionLabels": false,
+      "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+    }
+  },
+  "validation": {
+    "deterministicPassed": true,
+    "deterministicRepairCount": 1,
+    "semantic": {
+      "passed": true,
+      "verificationCount": 1,
+      "repairCount": 0,
+      "issuesResolved": [],
+      "issueCounts": {},
+      "durationMs": 5505,
+      "regenerationCount": 1
+    }
+  },
+  "envelope": {
+    "schemaVersion": "german-exam-v1",
+    "generationId": "f8343fa3217943bba56e45f325377191",
+    "exam": {
+      "family": "TestDaF",
+      "variant": "Digital",
+      "cefrLevel": null,
+      "profileId": "testdaf_digital",
+      "profileVersion": 2
+    },
+    "module": "reading",
+    "part": {
+      "id": "lesen_3",
+      "title": "Multiple-Choice",
+      "taskType": "reading_multiple_choice",
+      "approxDurationSeconds": null
+    },
+    "mode": "adaptive_practice",
+    "topic": {
+      "topicId": "qa_1",
+      "label": "Gemeinschaftliche Nutzung wissenschaftlicher Geräte an Hochschulen"
+    },
+    "adaptation": {
+      "weaknessConfidence": "cold_start",
+      "instructionsApplied": []
+    },
+    "content": {
+      "text": {
+        "title": "Wenn Geräte nicht stillstehen: Hochschulen und die gemeinsame Nutzung von Forschungstechnik",
+        "paragraphs": [
+          {
+            "paragraphId": "p1",
+            "text": "An Hochschulen stehen teure wissenschaftliche Geräte oft nur für einen begrenzten Teil des Tages oder des Jahres in einem einzelnen Labor. Elektronenmikroskope, Massenspektrometer oder hochauflösende Scanner sind technisch anspruchsvoll, aber sie erfüllen ihren Zweck nur dann, wenn sie regelmäßig ausgelastet werden. Genau deshalb gewinnt die gemeinsame Nutzung solcher Anlagen an Bedeutung. Nicht jede Arbeitsgruppe kann sich jedes Instrument selbst anschaffen; trotzdem brauchen viele Disziplinen Zugang zu denselben Messverfahren. Wer Geräte teilt, verteilt also nicht nur Kosten, sondern schafft auch Zugang zu Methoden, die sonst einzelnen Einrichtungen vorbehalten blieben."
+          },
+          {
+            "paragraphId": "p2",
+            "text": "In der Praxis bedeutet gemeinschaftliche Nutzung jedoch mehr als ein offenes Türschild am Labor. Meist entstehen zentrale Plattformen, in denen Fachpersonal die Geräte betreut, Wartung organisiert und Schulungen anbietet. Das hat einen einfachen Grund: Je komplexer ein Instrument ist, desto größer ist das Risiko von Fehlbedienungen und Ausfallzeiten. Zugleich erlaubt eine solche Bündelung eine bessere Planung der Auslastung, weil mehrere Institute ihre Messungen abstimmen können. Gerade für selten genutzte Spezialgeräte ist das effizienter als doppelte Anschaffungen in verschiedenen Arbeitsgruppen."
+          },
+          {
+            "paragraphId": "p3",
+            "text": "Allerdings zeigt sich schnell, dass die gemeinsame Nutzung nur dann funktioniert, wenn Zuständigkeiten klar geregelt sind. Wer darf buchen, wer trägt Reparaturkosten, und was passiert, wenn eine Gruppe kurzfristig mehr Zeit braucht als vereinbart? Solche Fragen sind nicht bloß organisatorische Details, sondern entscheiden darüber, ob Vertrauen entsteht oder Konflikte wachsen. Manche Hochschulen reagieren darauf mit festen Nutzungsordnungen und transparenten Gebührenmodellen. Andere setzen auf Koordinatoren, die zwischen den Arbeitsgruppen vermitteln und bei Engpässen Prioritäten festlegen. Ohne solche Regeln droht, dass leistungsstarke Gruppen die Infrastruktur ungewollt dominieren."
+          },
+          {
+            "paragraphId": "p4",
+            "text": "Ein weiterer Vorteil gemeinsamer Gerätepools liegt in der wissenschaftlichen Qualität. Wenn ein hoch spezialisiertes Gerät in einem Zentrum steht, arbeiten oft mehrere Forschende mit unterschiedlichem Hintergrund daran. Dadurch werden Messfehler schneller entdeckt, weil nicht nur eine Perspektive auf die Daten schaut. Gleichzeitig kann das Personal der Plattform Routinewissen aufbauen, das in einzelnen Projekten kaum erreichbar wäre. Ein Beispiel ist die Probenvorbereitung für empfindliche bildgebende Verfahren: Wer diese Arbeit täglich macht, erkennt schneller, wann eine Probe ungeeignet ist und ein erneuter Versuch nötig wird. Das spart nicht nur Zeit, sondern verhindert auch falsche Schlussfolgerungen."
+          },
+          {
+            "paragraphId": "p5",
+            "text": "Trotz dieser Vorteile ist gemeinsame Nutzung kein Selbstläufer. Wenn Hochschulen die Geräteinfrastruktur zu stark zentralisieren, kann die Distanz zwischen Gerät und Forschenden wachsen. Dann melden Arbeitsgruppen ihre Bedürfnisse zwar an, fühlen sich aber nicht mehr verantwortlich für die langfristige Entwicklung der Anlage. Deshalb fordern viele Expertinnen und Experten ein ausgewogenes Modell: zentrale Verwaltung dort, wo Expertise und Wartung gebündelt werden müssen, aber zugleich Mitspracherechte für diejenigen, die die Geräte wissenschaftlich nutzen. Nur wenn beide Seiten zusammenkommen, bleibt ein Gerätepool lebendig und anpassungsfähig."
+          },
+          {
+            "paragraphId": "p6",
+            "text": "Am Ende zeigt sich, dass es bei gemeinsamer Nutzung wissenschaftlicher Geräte nicht nur um Sparsamkeit geht. Hochschulen, die solche Strukturen sinnvoll aufbauen, verbessern die Chancengleichheit zwischen unterschiedlich finanzstarken Gruppen, beschleunigen Forschung und erhöhen die technische Qualität. Entscheidend ist jedoch, dass diese Vorteile nicht automatisch entstehen. Sie hängen von klaren Abläufen, verlässlicher Finanzierung und einer Kultur des Teilens ab. Das Ziel ist deshalb nicht, überall möglichst wenige Geräte zu besitzen, sondern vorhandene Ressourcen so zu organisieren, dass sie der Forschung möglichst vielen nützen."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "questionId": "q1",
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Aussage beschreibt den Grundgedanken des ersten Absatzes am treffendsten?",
+            "options": [
+              "Gemeinsame Geräte sollen vor allem Prestige für eine Hochschule schaffen.",
+              "Teure Messgeräte werden durch geteilte Nutzung für mehrere Gruppen zugänglich.",
+              "Einzelne Institute müssen grundsätzlich alle Instrumente selbst besitzen.",
+              "Die Anschaffungskosten von Forschungstechnik spielen für den Alltag kaum eine Rolle."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p1"
+            ]
+          }
+        },
+        {
+          "questionId": "q2",
+          "skillTags": [
+            "argument_structure",
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Warum werden laut Text häufig zentrale Plattformen eingerichtet?",
+            "options": [
+              "Weil Fachpersonal Bedienung, Wartung und Training zusammen organisieren kann.",
+              "Weil so weniger komplexe Geräte gekauft werden müssen.",
+              "Weil Messungen dann ausschließlich von Studierenden durchgeführt werden.",
+              "Weil jede Arbeitsgruppe ihre Geräte dadurch unabhängig verwaltet."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p2"
+            ]
+          }
+        },
+        {
+          "questionId": "q3",
+          "skillTags": [
+            "inference",
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was lässt sich aus dem dritten Absatz über fehlende Regeln folgern?",
+            "options": [
+              "Sie führen vermutlich dazu, dass Ressourcen gerechter verteilt werden.",
+              "Sie machen eine zentrale Verwaltung grundsätzlich überflüssig.",
+              "Sie erhöhen die Wahrscheinlichkeit von Machtgefällen und Streit.",
+              "Sie betreffen nur die Reparatur besonders teurer Geräte."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p3"
+            ]
+          }
+        },
+        {
+          "questionId": "q4",
+          "skillTags": [
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Formulierung gibt den vierten Absatz inhaltlich am besten wieder?",
+            "options": [
+              "Gemeinsam genutzte Anlagen ersetzen wissenschaftliche Kontrolle durch reine Routinearbeit.",
+              "Geteilte Technik verbessert die Datenqualität, weil mehrere Fachleute und erfahrenes Personal Fehler leichter erkennen.",
+              "Messfehler entstehen vor allem dann, wenn viele Personen an einem Gerät arbeiten.",
+              "Die Probenvorbereitung ist nur dann erfolgreich, wenn sie selten und ohne Erfahrung erfolgt."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p4"
+            ]
+          }
+        },
+        {
+          "questionId": "q5",
+          "skillTags": [
+            "author_intention",
+            "argument_structure"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Haltung vertritt die Autorin bzw. der Autor im fünften Absatz?",
+            "options": [
+              "Ein Mischmodell aus zentraler Organisation und Beteiligung der Nutzer ist am überzeugendsten.",
+              "Dezentralisierung ist grundsätzlich überlegen, weil Nähe alle Konflikte verhindert.",
+              "Zentralisierung ist immer die beste Lösung, weil sie alle Probleme beseitigt.",
+              "Mitspracherechte sind unnötig, wenn die technische Betreuung professionell ist."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p5"
+            ]
+          }
+        },
+        {
+          "questionId": "q6",
+          "skillTags": [
+            "inference",
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was folgt aus dem letzten Absatz für Hochschulen, die ihre Geräte gemeinsam nutzen?",
+            "options": [
+              "Sie erreichen Chancengleichheit automatisch, sobald ein Pool eingerichtet ist.",
+              "Sie sollten möglichst viele Einzelgeräte anschaffen, um flexibel zu bleiben.",
+              "Sie gewinnen nur dann Vorteile, wenn sie neben Technik auch Organisation und Finanzierung absichern.",
+              "Sie müssen die Nutzung sofort auf wenige Spitzenprojekte beschränken."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p6"
+            ]
+          }
+        },
+        {
+          "questionId": "q7",
+          "skillTags": [
+            "text_structure",
+            "author_intention"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Wozu dient der gesamte Text vor allem?",
+            "options": [
+              "Er beschreibt ausschließlich technische Details einzelner Messverfahren.",
+              "Er wirbt für einen vollständigen Verzicht auf zentrale Gerätepools.",
+              "Er fordert, dass nur große Hochschulen hochwertige Geräte einsetzen dürfen.",
+              "Er erläutert Chancen und Grenzen gemeinsamer Forschungsinfrastruktur und bewertet sie abwägend."
+            ],
+            "correctIndex": 3,
+            "evidenceParagraphIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ]
+          }
+        }
+      ],
+      "presentation": {
+        "numberParagraphs": true,
+        "optionLabels": false,
+        "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+      }
+    },
+    "validation": {
+      "deterministicPassed": true,
+      "deterministicRepairCount": 1,
+      "semantic": {
+        "passed": true,
+        "verificationCount": 1,
+        "repairCount": 0,
+        "issuesResolved": [],
+        "issueCounts": {},
+        "durationMs": 5505,
+        "regenerationCount": 1
+      }
+    }
+  },
+  "diagnostics": {
+    "requestId": "1cb9a90eca1b",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "pass",
+    "totalMs": 27487,
+    "budgetS": 95.0,
+    "llmCalls": 4,
+    "providerMsSum": 27105,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 10749,
+    "promptTokens": 7343,
+    "cachedTokens": 0,
+    "completionTokens": 4986,
+    "reasoningTokens": 761,
+    "estimatedCostUsd": 0.027944,
+    "unpricedModels": [],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 4,
+        "models": [
+          "gpt-5.4-mini:default",
+          "gpt-5.4-mini:medium"
+        ],
+        "providerMs": 27105,
+        "slotWaitMs": 0,
+        "promptTokens": 7343,
+        "cachedTokens": 0,
+        "completionTokens": 4986,
+        "reasoningTokens": 761,
+        "estimatedCostUsd": 0.027944
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 10749,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 830,
+        "cachedTokens": 0,
+        "completionTokens": 1780,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0086325
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 1070,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2081,
+        "cachedTokens": 0,
+        "completionTokens": 140,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.00219075
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 9782,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 830,
+        "cachedTokens": 0,
+        "completionTokens": 2014,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0096855
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": "medium",
+        "providerMs": 5504,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3602,
+        "cachedTokens": 0,
+        "completionTokens": 1052,
+        "reasoningTokens": 761,
+        "estimatedCostUsd": 0.0074355
+      }
+    ],
+    "models": [
+      "gpt-5.4-mini:default",
+      "gpt-5.4-mini:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 27.488
+}

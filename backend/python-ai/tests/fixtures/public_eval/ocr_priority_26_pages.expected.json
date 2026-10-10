@@ -1,0 +1,9 @@
+{
+  "document_type": "unknown",
+  "min_pages": 26,
+  "must_contain": ["Table of contents", "Exercise 20.1", "diameter D = 46 mm"],
+  "must_not_contain": ["private course"],
+  "min_formula_blocks": 0,
+  "max_unclear_markers": 0,
+  "expect_ocr_recommended": true
+}

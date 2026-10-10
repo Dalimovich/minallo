@@ -1,0 +1,377 @@
+{
+  "t0Commit": "fd224858",
+  "available": false,
+  "partsAvailable": 0,
+  "nextStageStarted": false,
+  "pricingSource": "https://developers.openai.com/api/docs/models/gpt-5.4",
+  "costBasis": "Recorded token usage, standard list price; timed-out requests can add unreported charges. Original unpriced diagnostics remain unchanged.",
+  "totalRecordedUsageCostUsd": 0.620661,
+  "samples": [
+    {
+      "file": "live/sample-1.json",
+      "seconds": 27.488,
+      "recordedUsageCostUsd": 0.027944,
+      "costMayExcludeTimedOutCalls": false,
+      "automaticResult": "pass",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C: q4 includes a plainly absurd claim about inexperienced sample preparation; q5/q6 use blanket claims; q7 has unrelated or extreme distractors.",
+      "deterministicRepairCalls": 1,
+      "semanticRepairCalls": 0,
+      "semanticFindings": [],
+      "verifiedFinalEnvelope": true,
+      "regenerations": 1
+    },
+    {
+      "file": "live/sample-2.json",
+      "seconds": 26.407,
+      "recordedUsageCostUsd": 0.030528,
+      "costMayExcludeTimedOutCalls": false,
+      "automaticResult": "pass",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C: q1 options 1 and 3 are both defensible paraphrases of the same point. Several other distractors can be eliminated without close reading.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 1,
+      "semanticFindings": [],
+      "verifiedFinalEnvelope": true,
+      "regenerations": 0
+    },
+    {
+      "file": "live/sample-3.json",
+      "seconds": 25.368,
+      "recordedUsageCostUsd": 0.029904,
+      "costMayExcludeTimedOutCalls": false,
+      "automaticResult": "pass",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C: q1 adds a prioritisation not established in the source; q5/q7 include implausible, sweeping or unrelated alternatives.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 1,
+      "semanticFindings": [],
+      "verifiedFinalEnvelope": true,
+      "regenerations": 0
+    },
+    {
+      "file": "live-v2/sample-1.json",
+      "seconds": 95.036,
+      "recordedUsageCostUsd": 0.161057,
+      "costMayExcludeTimedOutCalls": true,
+      "automaticResult": "fail",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C for the generated candidate: q1/q2/q6/q7 contain text-remote or extreme distractors. Six item repairs were returned, but the repaired candidate never completed verification.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 6,
+      "semanticFindings": [
+        {
+          "itemId": "q1",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Options 0 and 2 introduce unsupported themes rather than plausible misreadings of paragraph 1.",
+          "evidence": {
+            "segmentIds": [
+              "p1"
+            ],
+            "questionIds": [
+              "q1"
+            ],
+            "optionIndexes": [
+              0,
+              2
+            ]
+          }
+        },
+        {
+          "itemId": "q2",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Options 1 and 3 depend on unstated ideas about teachers yielding access or devices being automatic, which paragraph 2 does not support.",
+          "evidence": {
+            "segmentIds": [
+              "p2"
+            ],
+            "questionIds": [
+              "q2"
+            ],
+            "optionIndexes": [
+              1,
+              3
+            ]
+          }
+        },
+        {
+          "itemId": "q3",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 1 claims central devices are generally more prone to defects, a point not raised in paragraph 3.",
+          "evidence": {
+            "segmentIds": [
+              "p3"
+            ],
+            "questionIds": [
+              "q3"
+            ],
+            "optionIndexes": [
+              1
+            ]
+          }
+        },
+        {
+          "itemId": "q4",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 3 invents a comparison about failure frequency versus scheduling problems that paragraph 4 never suggests.",
+          "evidence": {
+            "segmentIds": [
+              "p4"
+            ],
+            "questionIds": [
+              "q4"
+            ],
+            "optionIndexes": [
+              3
+            ]
+          }
+        },
+        {
+          "itemId": "q6",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 2 attributes conflicts mainly to researchers' general rejection of administration, which paragraph 6 does not discuss.",
+          "evidence": {
+            "segmentIds": [
+              "p6"
+            ],
+            "questionIds": [
+              "q6"
+            ],
+            "optionIndexes": [
+              2
+            ]
+          }
+        },
+        {
+          "itemId": "q7",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Options 0 and 2 are extreme or off-topic summaries rather than plausible alternatives for the text's overall purpose.",
+          "evidence": {
+            "segmentIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ],
+            "questionIds": [
+              "q7"
+            ],
+            "optionIndexes": [
+              0,
+              2
+            ]
+          }
+        }
+      ],
+      "verifiedFinalEnvelope": false,
+      "regenerations": 0
+    },
+    {
+      "file": "live-v2/sample-2.json",
+      "seconds": 95.018,
+      "recordedUsageCostUsd": 0.17602,
+      "costMayExcludeTimedOutCalls": true,
+      "automaticResult": "fail",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C for the generated candidate: q1/q4/q7 have weak distractors and q1 is too literal. Three item repairs returned; no verified final candidate.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 3,
+      "semanticFindings": [
+        {
+          "itemId": "q1",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 4 introduces visitor-based heat-map coverage that is not grounded in paragraph 1 and is too easily dismissible without using the text.",
+          "evidence": {
+            "segmentIds": [
+              "p1"
+            ],
+            "questionIds": [
+              "q1"
+            ],
+            "optionIndexes": [
+              3
+            ]
+          }
+        },
+        {
+          "itemId": "q1",
+          "code": "PARAPHRASE_TOO_LITERAL",
+          "severity": "warning",
+          "message": "The keyed option closely reproduces the paragraph's list of factors, making the item solvable by surface matching.",
+          "evidence": {
+            "segmentIds": [
+              "p1"
+            ],
+            "questionIds": [
+              "q1"
+            ],
+            "optionIndexes": [
+              2
+            ]
+          }
+        },
+        {
+          "itemId": "q4",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Options 3 and 4 add claims about planning effort or weighting specific groups that paragraph 4 does not suggest, so they are not plausible text-based distractors.",
+          "evidence": {
+            "segmentIds": [
+              "p4"
+            ],
+            "questionIds": [
+              "q4"
+            ],
+            "optionIndexes": [
+              2,
+              3
+            ]
+          }
+        },
+        {
+          "itemId": "q6",
+          "code": "PARAPHRASE_TOO_LITERAL",
+          "severity": "warning",
+          "message": "The correct option mirrors the closing paragraph's wording about meteorological data, everyday routes, and seasonal differences very closely.",
+          "evidence": {
+            "segmentIds": [
+              "p6"
+            ],
+            "questionIds": [
+              "q6"
+            ],
+            "optionIndexes": [
+              1
+            ]
+          }
+        },
+        {
+          "itemId": "q7",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 3 about a new device replacing all older methods is unrelated to the article's actual line of argument and is not a plausible global-purpose distractor.",
+          "evidence": {
+            "segmentIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ],
+            "questionIds": [
+              "q7"
+            ],
+            "optionIndexes": [
+              2
+            ]
+          }
+        }
+      ],
+      "verifiedFinalEnvelope": false,
+      "regenerations": 0
+    },
+    {
+      "file": "live-v2/sample-3.json",
+      "seconds": 95.016,
+      "recordedUsageCostUsd": 0.195208,
+      "costMayExcludeTimedOutCalls": true,
+      "automaticResult": "fail",
+      "releaseResult": "FAIL",
+      "manualGrade": "C",
+      "manualReview": "C for the generated candidate: q1/q5/q7 have weak distractors; q3 uses indem clauses against a nominal question. Three repairs returned; no verified final candidate.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 3,
+      "semanticFindings": [
+        {
+          "itemId": "q1",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 1 und 2 führen extreme bzw. textferne Behauptungen ein, die nicht aus Absatz 1 herleitbar sind.",
+          "evidence": {
+            "segmentIds": [
+              "p1"
+            ],
+            "questionIds": [
+              "q1"
+            ],
+            "optionIndexes": [
+              1,
+              2
+            ]
+          }
+        },
+        {
+          "itemId": "q5",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 3 ist als Schluss aus Absatz 5 sachfremd und überzogen, weil dort gerade vor überdehnten Aussagen gewarnt wird.",
+          "evidence": {
+            "segmentIds": [
+              "p5"
+            ],
+            "questionIds": [
+              "q5"
+            ],
+            "optionIndexes": [
+              3
+            ]
+          }
+        },
+        {
+          "itemId": "q7",
+          "code": "IMPLAUSIBLE_DISTRACTOR",
+          "severity": "error",
+          "message": "Option 0 behauptet eine generelle methodische Überlegenheit von Zweitanalysen, die der Text nirgends als Hauptanliegen verfolgt.",
+          "evidence": {
+            "segmentIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ],
+            "questionIds": [
+              "q7"
+            ],
+            "optionIndexes": [
+              0
+            ]
+          }
+        }
+      ],
+      "verifiedFinalEnvelope": false,
+      "regenerations": 0
+    },
+    {
+      "file": "live-v3-pilot/sample-1.json",
+      "seconds": 26.467,
+      "recordedUsageCostUsd": 0,
+      "automaticResult": "provider_quota_blocked",
+      "releaseResult": "NOT QUALIFIED",
+      "manualGrade": null,
+      "manualReview": "No generated content to grade; provider credit balance exhausted.",
+      "deterministicRepairCalls": 0,
+      "semanticRepairCalls": 0,
+      "semanticFindings": [],
+      "verifiedFinalEnvelope": false
+    }
+  ],
+  "latestRevisionStatus": "article_then_items implemented and offline-tested; live pilot blocked before source generation by credit_balance_exhausted",
+  "pushedImplementationCheckpoint": "391765cf"
+}

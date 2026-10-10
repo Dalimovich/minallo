@@ -1,0 +1,38 @@
+[project]
+name = "minallo-qwen-tts"
+version = "0.1.0"
+description = "Isolated Qwen3-TTS inference service for Minallo's Hören (listening) feature. Never exposed to public browser clients — only python-ai calls this, over the internal token header."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.4",
+  "gunicorn>=21.2",
+  # Qwen3-TTS voice-clone inference. Pin loosely for now — bump deliberately,
+  # never as a side effect of an unrelated change (model output/latency can
+  # shift between releases).
+  "qwen-tts>=0.1",
+  "soundfile>=0.12",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["deploy*", "tests*"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F"]

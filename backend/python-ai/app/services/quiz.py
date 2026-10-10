@@ -16,12 +16,15 @@ from __future__ import annotations
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
+from .exam_solution_validation import validate_final_answer
+from .examforge_answer_verifier import answers_match
 from .llm_json import LlmResult, chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -32,8 +35,8 @@ log = logging.getLogger(__name__)
 # the parallel branches, not sum. Wall time for 20 items ≈ wall time for 6.
 _PARALLEL_SHARDS = 3
 _TARGET_SHARD_SIZE = 6
-# One follow-up backfill round if dedup left us short.
-_BACKFILL_ROUNDS = 1
+# More than one follow-up backfill round: launch quality needs exact counts.
+_BACKFILL_ROUNDS = 3
 _LETTERS = ("A", "B", "C", "D")
 _VALID_TYPES = {"mcq", "true_false", "short_answer"}
 _DEFAULT_TYPES = ["mcq", "true_false", "short_answer"]
@@ -41,13 +44,42 @@ _DEFAULT_TYPES = ["mcq", "true_false", "short_answer"]
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-def _system_prompt(count: int, difficulty: str, types: list[str]) -> str:
+def _system_prompt(
+    count: int,
+    difficulty: str,
+    types: list[str],
+    known_topics: list[str] | None = None,
+    language: str = "auto",
+) -> str:
     diff_guide = {
         "easy":   "Mostly definition recall and single-step identification.",
         "medium": "Mix of concept application, formula use, and 1-step calculations.",
-        "hard":   "Multi-step reasoning, formula application, spotting wrong steps. Tough but fair.",
+        "hard":   "Multi-step reasoning, formula application, subtle conditions, and professor-style traps. Never simple naming or definition recall.",
         "mixed":  "Balanced spread across easy, medium, and hard.",
     }.get(difficulty, "Balanced.")
+
+    # Topic-tagging block: when the indexer extracted topics for this course
+    # we hand them to the model and require it to label every item with one
+    # of them so Phase 2 mastery tracking can attribute results to a topic.
+    topic_block = ""
+    if known_topics:
+        topic_block = (
+            "\n\nKNOWN TOPICS FOR THIS COURSE:\n- "
+            + "\n- ".join(known_topics[:40])
+            + "\n\nEach item MUST include a \"topic\" field whose value is one of the "
+              "topics listed above (verbatim). Pick the single best match. If no listed "
+              "topic fits, set \"topic\" to null."
+        )
+    else:
+        topic_block = (
+            "\n\nNo course-level topic list is available; you may set \"topic\" to null."
+        )
+
+    language_guide = {
+        "auto": "Match the language of the context (German if the slides are German).",
+        "de": "Write all questions, options, answers, and explanations in German.",
+        "en": "Write all questions, options, answers, and explanations in English.",
+    }.get(language, "Match the language of the context (German if the slides are German).")
 
     return f"""You are an expert university professor writing an exam-quality quiz for a student.
 
@@ -61,10 +93,20 @@ Rules:
 2. Prefer high-value material: definitions, theorems, formulas, worked examples, exercises.
 3. For MCQ: distractors must be plausible, not obviously wrong.
 4. For true_false: include a brief explanation; do not write trivially-obvious statements.
+   ANSWER CORRECTNESS (most important): the keyed answer MUST be the factually correct one.
+   Before emitting each MCQ/true_false item, re-derive the correct answer from the context,
+   then set "answer" to the option that matches it — the keyed option must be unambiguously
+   supported by the context, and EVERY distractor must be definitely false. Pay special
+   attention to which value attaches to which entity: do not swap symbols, names, numbers,
+   units, or percentages between options (e.g. for a code like "AlSi8Cu3", Si is the 8%
+   element and Cu the 3% element — keep each figure with its own symbol). The "explanation"
+   must justify the keyed answer and stay consistent with it.
 5. For short_answer: write an answer key that an exam marker would accept.
 6. Cite the source like "filename, p.N" using the [Source N] header for every item.
 7. Math in KaTeX: $...$ inline, $$...$$ display.
-8. Match the language of the context (German if the slides are German).
+8. {language_guide}
+9. If the difficulty target is hard, questions must require applied reasoning from the context: formulas, conditions, comparisons, multi-step logic, or common exam traps. Do not ask only for the name or definition of a theorem.
+{topic_block}
 
 CRITICAL: emit EXACTLY {count} items in "items". Do not stop short. Do not pad with junk — quality must hold.
 
@@ -78,6 +120,7 @@ Return ONLY valid JSON in this exact shape (no markdown fence, no commentary):
       "answer": "A",
       "explanation": "...",
       "difficulty": "easy|medium|hard",
+      "topic": "one of KNOWN TOPICS or null",
       "source": "filename, p.X"
     }},
     {{
@@ -86,14 +129,17 @@ Return ONLY valid JSON in this exact shape (no markdown fence, no commentary):
       "answer": true,
       "explanation": "...",
       "difficulty": "easy|medium|hard",
+      "topic": "one of KNOWN TOPICS or null",
       "source": "filename, p.X"
     }},
     {{
       "type": "short_answer",
       "question": "...",
       "answer": "expected key answer",
+      "acceptableAnswers": ["other accepted phrasings or synonyms a marker would accept"],
       "explanation": "...",
       "difficulty": "easy|medium|hard",
+      "topic": "one of KNOWN TOPICS or null",
       "source": "filename, p.X"
     }}
   ]
@@ -102,7 +148,7 @@ Return ONLY valid JSON in this exact shape (no markdown fence, no commentary):
 
 # ── Normalisation + de-dup ───────────────────────────────────────────────────
 
-def _normalize(item: Any) -> dict[str, Any] | None:
+def _normalize(item: Any, known_topics: set[str] | None = None) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     qtype = (item.get("type") or "").strip().lower()
@@ -115,6 +161,14 @@ def _normalize(item: Any) -> dict[str, Any] | None:
     explanation = (item.get("explanation") or "").strip()
     source = (item.get("source") or "").strip()
     difficulty = item.get("difficulty") if item.get("difficulty") in ("easy", "medium", "hard") else "medium"
+    # Topic is optional; only kept when it matches a known course topic so a
+    # hallucinated label can't pollute user_topic_mastery downstream.
+    raw_topic = item.get("topic")
+    topic: str | None = None
+    if isinstance(raw_topic, str):
+        t = raw_topic.strip()
+        if t and (known_topics is None or t in known_topics):
+            topic = t
 
     if qtype == "mcq":
         opts_in = item.get("options")
@@ -144,6 +198,7 @@ def _normalize(item: Any) -> dict[str, Any] | None:
             "answer": answer,
             "explanation": explanation,
             "difficulty": difficulty,
+            "topic": topic,
             "source": source,
         }
 
@@ -164,18 +219,38 @@ def _normalize(item: Any) -> dict[str, Any] | None:
             "answer": answer,
             "explanation": explanation,
             "difficulty": difficulty,
+            "topic": topic,
             "source": source,
         }
 
     if qtype == "short_answer":
         if not isinstance(answer, str) or not answer.strip():
             return None
+        primary = answer.strip()
+        # Reject procedural non-answers ("Use the formula above") the same
+        # way ExamForge's _normalise_question does — a keyed "answer" must
+        # actually state the result, not just point at how to derive it.
+        if not validate_final_answer(question, primary, "short_answer"):
+            return None
+        # Collect the canonical answer plus any model-supplied acceptable
+        # phrasings into a de-duplicated (case-insensitive) list the frontend
+        # scores against. The canonical answer always leads the list.
+        acceptable: list[str] = []
+        seen_acc: set[str] = set()
+        for cand in [primary, *([v for v in item.get("acceptableAnswers", [])] if isinstance(item.get("acceptableAnswers"), list) else [])]:
+            if isinstance(cand, str) and cand.strip():
+                k = cand.strip().lower()
+                if k not in seen_acc:
+                    seen_acc.add(k)
+                    acceptable.append(cand.strip())
         return {
             "type": "short_answer",
             "question": question,
-            "answer": answer.strip(),
+            "answer": primary,
+            "acceptableAnswers": acceptable,
             "explanation": explanation,
             "difficulty": difficulty,
+            "topic": topic,
             "source": source,
         }
 
@@ -197,6 +272,32 @@ def _dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ── Public surface ───────────────────────────────────────────────────────────
 
 
+def _fetch_course_topics(course_id: str, document_ids: list[str] | None) -> list[str]:
+    """Distinct primary_topic values for this course (optionally narrowed to docs).
+
+    Used to give the quiz LLM a closed-set list to choose from when labeling
+    items, and later to validate that the user_topic_mastery writes only
+    reference real topics from the corpus. Returns at most 40.
+    """
+    try:
+        sb = get_supabase()
+        q = sb.table("document_chunks").select("primary_topic").eq("course_id", course_id)
+        if document_ids:
+            q = q.in_("document_id", document_ids)
+        resp = q.filter("primary_topic", "not.is", "null").limit(2000).execute()
+        seen: list[str] = []
+        seen_set: set[str] = set()
+        for row in (resp.data or []):
+            t = (row.get("primary_topic") or "").strip()
+            if t and t not in seen_set:
+                seen_set.add(t)
+                seen.append(t)
+        return seen[:40]
+    except Exception:
+        log.exception("quiz: fetch course topics failed")
+        return []
+
+
 def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> str:
     parts: list[str] = []
     for i, c in enumerate(chunks, 1):
@@ -213,9 +314,94 @@ def _context_block(chunks: list[RetrievedChunk], doc_names: dict[str, str]) -> s
     return "\n\n---\n\n".join(parts)
 
 
+def _source_payload(c: RetrievedChunk, doc_names: dict[str, str]) -> dict[str, Any]:
+    return {
+        "fileName": doc_names.get(c.document_id, "Unknown"),
+        "pageStart": c.page_start,
+        "pageEnd": c.page_end,
+        "chunkId": c.chunk_id,
+        "sectionTitle": c.section_title,
+    }
+
+
+def _source_label(c: RetrievedChunk, doc_names: dict[str, str]) -> str:
+    file_name = doc_names.get(c.document_id, "Unknown")
+    if c.page_start and c.page_end:
+        pages = f"p.{c.page_start}" if c.page_start == c.page_end else f"pp.{c.page_start}-{c.page_end}"
+    elif c.page_start:
+        pages = f"p.{c.page_start}"
+    else:
+        pages = "no-page"
+    return f"{file_name}, {pages}"
+
+
+def _text_snippet(text: str, max_len: int = 180) -> str:
+    clean = re.sub(r"\s+", " ", text or "").strip()
+    clean = re.sub(r"^\W+", "", clean)
+    if len(clean) <= max_len:
+        return clean
+    cut = clean[:max_len].rsplit(" ", 1)[0].strip()
+    return cut or clean[:max_len].strip()
+
+
+def _deterministic_mcq_backfill(
+    *,
+    chunks: list[RetrievedChunk],
+    doc_names: dict[str, str],
+    needed: int,
+    seen_questions: set[str],
+    known_topics: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Guaranteed final backfill from retrieved course chunks.
+
+    This is intentionally conservative: when the LLM returns too few valid
+    MCQs, create source-grounded recognition questions from distinct chunks so
+    the requested count is still honoured without inventing course facts.
+    """
+    out: list[dict[str, Any]] = []
+    topic = known_topics[0] if known_topics else None
+    for idx, c in enumerate(chunks):
+        if len(out) >= needed:
+            break
+        snippet = _text_snippet(c.text)
+        if len(snippet) < 24:
+            continue
+        source = _source_label(c, doc_names)
+        question = f"Which statement is supported by {source}?"
+        key = re.sub(r"\W+", " ", question.lower()).strip()
+        if key in seen_questions:
+            question = f"According to {source}, which statement best matches the course material?"
+            key = re.sub(r"\W+", " ", question.lower()).strip()
+        if key in seen_questions:
+            continue
+        seen_questions.add(key)
+        distractor_a = "The selected source does not discuss this topic."
+        distractor_b = "The opposite of the cited statement is stated as the rule."
+        distractor_c = "The result is independent of the definitions in the course material."
+        out.append({
+            "type": "mcq",
+            "question": question,
+            "options": {
+                "A": snippet,
+                "B": distractor_a if idx % 3 != 0 else distractor_b,
+                "C": distractor_b if idx % 3 != 1 else distractor_c,
+                "D": distractor_c if idx % 3 != 2 else "Only external general knowledge is needed.",
+            },
+            "answer": "A",
+            "explanation": f"The statement in option A is taken from the cited course source: {source}.",
+            "difficulty": "easy",
+            "topic": topic,
+            "source": source,
+        })
+    return out
+
+
 def _run_one_quiz_shard(
     *, shard_count: int, diff: str, types: list[str], context: str,
     already_taken: list[str], diversity_hint: str | None = None,
+    known_topics: list[str] | None = None,
+    language: str = "auto",
+    understanding: str = "",
 ) -> LlmResult | None:
     """Single LLM call for one shard's worth of items. Thread-safe."""
     avoid_block = ""
@@ -226,19 +412,228 @@ def _run_one_quiz_shard(
     diversity = ""
     if diversity_hint:
         diversity = f"\n\nFor this batch specifically: emphasise {diversity_hint}."
-    system = _system_prompt(shard_count, diff, types) + avoid_block + diversity
+    system = _system_prompt(shard_count, diff, types, known_topics, language) + avoid_block + diversity
     # Per-shard completion budget — each MCQ with options + explanation +
     # source runs ~250-400 tokens. 6 items × 400 = 2400; round up to 3000.
     max_completion = min(4000, 800 + shard_count * 380)
     try:
         return chat_json(
             system=system,
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_completion,
         )
     except Exception:
         log.exception("quiz shard LLM call failed (shard_count=%s)", shard_count)
         return None
+
+
+def _mcq_verdicts(
+    questions_block: str,
+    count: int,
+    context: str,
+    diagnostics: dict[str, Any],
+) -> dict[int, dict[str, Any]]:
+    """Ask a fresh model call to re-derive the correct answer for each of
+    `count` numbered items in `questions_block`, blind to any existing answer
+    key. Shared by both the standalone-quiz verifier (drop semantics) and the
+    inline-chat-quiz verifier (correct-in-place semantics) below — the two
+    differ only in what they DO with a confident disagreement, not in how
+    they ask for one.
+
+    `questions_block` may mix MCQ, true/false, and short-answer items (each
+    line notes its own type) — the prompt below asks for whichever answer
+    shape fits each item, and callers pick the field that applies.
+
+    Returns {question_number: verdict} (1-based), or {} on any failure —
+    callers must treat that as "could not verify, leave everything as-is",
+    never as an error to raise: verification must never block a quiz.
+    """
+    system = (
+        "You are a meticulous exam answer-key checker. For each numbered "
+        "question below, determine the single correct answer using ONLY the "
+        "COURSE CONTEXT. Re-derive the answer yourself; do not assume any "
+        "given option or key is correct. Watch for swapped symbols, names, "
+        "numbers, units, or percentages between options.\n\n"
+        "Each question is labelled with its type:\n"
+        "- mcq: return the correct option letter in \"letter\" (A-D).\n"
+        "- true_false: return true or false in \"answer\".\n"
+        "- short_answer: return the concise correct final answer (with units "
+        "if relevant) in \"answer\".\n\n"
+        'Return ONLY JSON: {"verdicts": [{"n": 1, "letter": "A", '
+        '"confident": true}, {"n": 2, "answer": true, "confident": true}, '
+        '...]}. Set "confident" to false when the context does not clearly '
+        "decide the answer."
+    )
+    user = "COURSE CONTEXT:\n\n" + context + "\n\nQUESTIONS:\n\n" + questions_block
+    try:
+        res = chat_json(system=system, user=user, max_tokens=min(2000, 200 + count * 40))
+    except Exception:
+        log.exception("quiz: verification pass failed; keeping items unverified")
+        return {}
+
+    diagnostics["prompt_tokens"] = diagnostics.get("prompt_tokens", 0) + (res.prompt_tokens or 0)
+    diagnostics["completion_tokens"] = diagnostics.get("completion_tokens", 0) + (res.completion_tokens or 0)
+    diagnostics["model"] = res.model
+
+    verdicts = res.data.get("verdicts") if isinstance(res.data, dict) else None
+    if not isinstance(verdicts, list):
+        return {}
+    by_n: dict[int, dict[str, Any]] = {}
+    for v in verdicts:
+        if isinstance(v, dict):
+            try:
+                by_n[int(v.get("n"))] = v
+            except (TypeError, ValueError):
+                continue
+    return by_n
+
+
+def _verify_mcq_keys(
+    items: list[dict[str, Any]],
+    context: str,
+    diagnostics: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Drop items whose keyed answer fails an independent re-derivation.
+
+    Covers all three quiz types (mcq, true_false, short_answer) — a wrong
+    true/false key or an unsupported short-answer key is exactly as capable
+    of reaching a student as a wrong MCQ key, so all three get the same
+    independent check.
+
+    A second model call answers each item from the same context *without
+    seeing the answer key*. Only a confident disagreement drops the item, so
+    a shaky verifier can't erode the count — the goal is to catch the rare
+    confidently wrong key (e.g. swapped Si/Cu values, or a flipped
+    true/false) before it reaches the student. On any failure the items pass
+    through unchanged: verification must never block a quiz.
+
+    Dropping is safe here because backfill rounds in generate_quiz replace
+    any deficit (MCQ or otherwise) with freshly generated, re-verified
+    questions up to the requested count. The inline chat quiz has no such
+    buffer — see `verify_and_correct_inline_quiz` for that path's
+    correct-in-place, MCQ-only approach.
+    """
+    verifiable = [(i, it) for i, it in enumerate(items) if it.get("type") in _VALID_TYPES]
+    if not verifiable:
+        return items
+
+    lines: list[str] = []
+    for n, (_, it) in enumerate(verifiable, 1):
+        qtype = it.get("type")
+        if qtype == "mcq":
+            opts = it.get("options") or {}
+            opt_text = "  ".join(f"{l}) {opts.get(l, '')}" for l in _LETTERS)
+            lines.append(f"{n}. [mcq] {it.get('question', '')}\n   {opt_text}")
+        elif qtype == "true_false":
+            lines.append(f"{n}. [true_false] {it.get('question', '')}")
+        else:
+            lines.append(f"{n}. [short_answer] {it.get('question', '')}")
+
+    by_n = _mcq_verdicts("\n\n".join(lines), len(verifiable), context, diagnostics)
+    if not by_n:
+        return items
+
+    drop_indices: set[int] = set()
+    for n, (orig_idx, it) in enumerate(verifiable, 1):
+        v = by_n.get(n)
+        if not v or not v.get("confident"):
+            continue
+        qtype = it.get("type")
+        if qtype == "mcq":
+            letter = str(v.get("letter") or "").strip().upper()[:1]
+            if letter in _LETTERS and letter != it.get("answer"):
+                drop_indices.add(orig_idx)
+        elif qtype == "true_false":
+            # A verdict with no parseable true/false answer is not a
+            # disagreement — treat it the same as "could not verify".
+            if v.get("answer") is not None and not answers_match("true_false", it.get("answer"), v.get("answer")):
+                drop_indices.add(orig_idx)
+        else:  # short_answer
+            verified_answer = v.get("answer")
+            if verified_answer and not answers_match("short_answer", it.get("answer"), verified_answer):
+                drop_indices.add(orig_idx)
+
+    if not drop_indices:
+        return items
+    log.info("quiz: verification dropped %d item(s) with disputed keys", len(drop_indices))
+    return [it for i, it in enumerate(items) if i not in drop_indices]
+
+
+_INLINE_QUIZ_FENCE_RE = re.compile(r"```minallo-quiz\n(.*?)\n```", re.DOTALL)
+
+
+def verify_and_correct_inline_quiz(full_answer: str, context: str) -> tuple[str, dict[str, Any]]:
+    """Re-derive each inline chat quiz MCQ's answer independently and CORRECT
+    (not drop) any confidently-wrong key in place.
+
+    The inline quiz (```minallo-quiz block, QUIZ_CONTRACT) never over-collects
+    a buffer of extra questions the way generate_quiz below does — dropping a
+    disputed item here would just shrink an already-tight 3-8 question quiz
+    the student is about to take. Rewriting the answer index (and leaving the
+    now-possibly-stale explanation as-is, rather than regenerating it) is a
+    smaller, safer change than serving either a confidently wrong key or a
+    shorter quiz. On any failure — no fence found, malformed JSON, the
+    verification call itself failing — the text is returned byte-for-byte
+    unchanged: verification must never block or corrupt a quiz.
+
+    Returns (possibly-rewritten full_answer, diagnostics) where diagnostics
+    carries prompt/completion token counts and the model used, for the
+    caller's own usage metering (empty/zero when no verification call ran).
+    """
+    diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
+    match = _INLINE_QUIZ_FENCE_RE.search(full_answer)
+    if not match:
+        return full_answer, diagnostics
+
+    try:
+        payload = json.loads(match.group(1))
+        questions = payload.get("questions") if isinstance(payload, dict) else None
+        if not isinstance(questions, list) or not questions:
+            return full_answer, diagnostics
+    except Exception:
+        log.warning("quiz: inline quiz block failed to parse; skipping verification")
+        return full_answer, diagnostics
+
+    valid: list[tuple[int, list[str]]] = []  # (index into questions, ordered letters)
+    lines: list[str] = []
+    for idx, item in enumerate(questions):
+        if not isinstance(item, dict):
+            continue
+        options = item.get("options")
+        answer_idx = item.get("answer")
+        if (not isinstance(options, list) or not (2 <= len(options) <= 4)
+                or not isinstance(answer_idx, int) or not (0 <= answer_idx < len(options))):
+            continue
+        letters = list(_LETTERS[:len(options)])
+        valid.append((idx, letters))
+        opt_text = "  ".join(f"{l}) {opt}" for l, opt in zip(letters, options))
+        lines.append(f"{len(valid)}. [mcq] {item.get('q', '')}\n   {opt_text}")
+    if not valid:
+        return full_answer, diagnostics
+
+    by_n = _mcq_verdicts("\n\n".join(lines), len(valid), context, diagnostics)
+    if not by_n:
+        return full_answer, diagnostics
+
+    corrected = 0
+    for n, (idx, letters) in enumerate(valid, 1):
+        v = by_n.get(n)
+        if not v or not v.get("confident"):
+            continue
+        letter = str(v.get("letter") or "").strip().upper()[:1]
+        if letter not in letters:
+            continue
+        new_answer = letters.index(letter)
+        if questions[idx].get("answer") != new_answer:
+            questions[idx]["answer"] = new_answer
+            corrected += 1
+
+    if not corrected:
+        return full_answer, diagnostics
+    log.info("quiz: inline verification corrected %d answer key(s)", corrected)
+    payload["questions"] = questions
+    new_block = "```minallo-quiz\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+    return full_answer[:match.start()] + new_block + full_answer[match.end():], diagnostics
 
 
 def generate_quiz(
@@ -250,13 +645,22 @@ def generate_quiz(
     difficulty: str,
     question_types: list[str] | None,
     doc_names: dict[str, str],
+    language: str | None = None,
+    seen_items: list[str] | None = None,
 ) -> dict[str, Any]:
     # Capped at 20. Parallelisation keeps the wall-clock under Netlify's 30s
     # function timeout even at the high end (3 parallel shards of 6-7 items
     # finishes in ~15-20s, not 45-60s sequential).
     requested = max(1, min(int(requested_count or 1), 20))
     diff = difficulty if difficulty in ("easy", "medium", "hard", "mixed") else "medium"
+    lang = (language or "auto").strip().lower()
+    if lang not in ("auto", "de", "en"):
+        lang = "auto"
     types = [t for t in (question_types or _DEFAULT_TYPES) if t in _VALID_TYPES] or _DEFAULT_TYPES
+    # Over-collect a small buffer of MCQs so the verification pass can drop a
+    # disputed item without immediately falling back to a low-value
+    # deterministic recognition question.
+    over_target = requested + (3 if "mcq" in types else 0)
 
     chunks = retrieve_chunks(
         user_id=user_id, course_id=course_id,
@@ -264,6 +668,9 @@ def generate_quiz(
         document_ids=document_ids,
         top_k=max(20, requested * 3),
     )
+    # Review-2 finding #5 — backfill source filenames so course-wide
+    # quizzes still attribute each question to its real source PDF.
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {
             "requestedCount": requested,
@@ -273,8 +680,19 @@ def generate_quiz(
         }
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
+    known_topics_list = _fetch_course_topics(course_id, document_ids)
+    known_topics_set = set(known_topics_list) if known_topics_list else None
     collected: list[dict[str, Any]] = []
     seen_questions: set[str] = set()
+    # Question stems the learner already saw — feed the avoid-list so shards
+    # don't regenerate them, and pre-seed the dedupe set so any that slip
+    # through are dropped.
+    seen_avoid = [s.strip() for s in (seen_items or []) if isinstance(s, str) and s.strip()][:100]
+    for s in seen_avoid:
+        k = re.sub(r"\W+", " ", s.lower()).strip()
+        if k:
+            seen_questions.add(k)
     diagnostics: dict[str, Any] = {"prompt_tokens": 0, "completion_tokens": 0, "model": None}
 
     # ── Round 1: fan-out parallel shards ─────────────────────────────────────
@@ -300,8 +718,11 @@ def generate_quiz(
                 diff=diff,
                 types=types,
                 context=context,
-                already_taken=[],   # round 1: no avoid list — diversity hints carry the load
+                already_taken=seen_avoid,   # avoid already-seen stems; diversity hints carry the rest
                 diversity_hint=diversity_hints[i % len(diversity_hints)],
+                known_topics=known_topics_list,
+                language=lang,
+                understanding=understanding,
             )
             for i in range(shard_count)
         ]
@@ -317,9 +738,9 @@ def generate_quiz(
         if not isinstance(raw_items, list):
             continue
         for raw in raw_items:
-            if len(collected) >= requested:
+            if len(collected) >= over_target:
                 break
-            norm = _normalize(raw)
+            norm = _normalize(raw, known_topics_set)
             if not norm:
                 continue
             key = re.sub(r"\W+", " ", (norm["question"] or "").lower()).strip()
@@ -328,37 +749,70 @@ def generate_quiz(
             seen_questions.add(key)
             collected.append(norm)
 
-    # ── Round 2: one serial backfill if we're short ──────────────────────────
-    if len(collected) < requested and _BACKFILL_ROUNDS > 0:
+    # ── Verify, then backfill any deficit with fresh, re-verified questions ──
+    # Independent verification pass: a fresh model call (blind to the answer
+    # key) re-derives each MCQ's answer from the same context and drops any item
+    # whose key it *confidently* rejects. Verifying BEFORE backfill means a
+    # dropped (wrong-key) item counts as a deficit the backfill rounds then
+    # replace with a newly generated question — so the user still gets exactly
+    # the count they requested, filled with real questions rather than padded
+    # with a low-value recognition item.
+    collected = _dedupe(collected)
+    collected = _verify_mcq_keys(collected, context, diagnostics)
+
+    for round_idx in range(_BACKFILL_ROUNDS):
+        if len(collected) >= requested:
+            break
         backfill = _run_one_quiz_shard(
             shard_count=requested - len(collected) + 2,
             diff=diff, types=types, context=context,
-            already_taken=[it.get("question") or "" for it in collected],
-            diversity_hint="any high-value concepts not yet asked about",
+            already_taken=seen_avoid + [it.get("question") or "" for it in collected],
+            diversity_hint=f"new high-value concepts not yet asked about; backfill round {round_idx + 1}",
+            known_topics=known_topics_list,
+            language=lang,
+            understanding=understanding,
         )
-        if backfill is not None:
-            diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
-            diagnostics["completion_tokens"] += backfill.completion_tokens or 0
-            raw_items = backfill.data.get("items") if isinstance(backfill.data, dict) else None
-            if isinstance(raw_items, list):
-                for raw in raw_items:
-                    if len(collected) >= requested:
-                        break
-                    norm = _normalize(raw)
-                    if not norm:
-                        continue
-                    key = re.sub(r"\W+", " ", (norm["question"] or "").lower()).strip()
-                    if not key or key in seen_questions:
-                        continue
-                    seen_questions.add(key)
-                    collected.append(norm)
+        if backfill is None:
+            continue
+        diagnostics["prompt_tokens"] += backfill.prompt_tokens or 0
+        diagnostics["completion_tokens"] += backfill.completion_tokens or 0
+        raw_items = backfill.data.get("items") if isinstance(backfill.data, dict) else None
+        if not isinstance(raw_items, list):
+            continue
+        fresh: list[dict[str, Any]] = []
+        for raw in raw_items:
+            norm = _normalize(raw, known_topics_set)
+            if not norm:
+                continue
+            key = re.sub(r"\W+", " ", (norm["question"] or "").lower()).strip()
+            if not key or key in seen_questions:
+                continue
+            seen_questions.add(key)
+            fresh.append(norm)
+        # Verify the replacements too, so a backfilled item can't reintroduce
+        # the very wrong-key bug we just removed.
+        fresh = _verify_mcq_keys(fresh, context, diagnostics)
+        for it in fresh:
+            if len(collected) >= requested:
+                break
+            collected.append(it)
 
     collected = _dedupe(collected)[:requested]
+    if len(collected) < requested and "mcq" in types:
+        collected.extend(_deterministic_mcq_backfill(
+            chunks=chunks,
+            doc_names=doc_names,
+            needed=requested - len(collected),
+            seen_questions=seen_questions,
+            known_topics=known_topics_list,
+        ))
+        collected = _dedupe(collected)[:requested]
 
     result: dict[str, Any] = {
         "requestedCount": requested,
         "actualCount": len(collected),
         "questions": collected,
+        "groundedSources": [_source_payload(c, doc_names) for c in chunks[:8]],
         "model": diagnostics["model"],
         "promptTokens": diagnostics["prompt_tokens"],
         "completionTokens": diagnostics["completion_tokens"],
