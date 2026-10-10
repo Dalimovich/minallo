@@ -447,16 +447,16 @@ def test_medium_complexity_general_question_in_course_chat_still_answers_correct
 
     monkeypatch.setattr(stream_router, "stream_answer", fake_stream_answer)
     # An empty, self-contained course-scoped search can also resolve via an
-    # earlier "nothing to ground this in" bail-out that calls
-    # generate_general_answer directly rather than reaching stream_answer —
-    # mock both so the test exercises whichever branch this request shape
+    # earlier "nothing to ground this in" bail-out that streams a live
+    # general-knowledge answer rather than reaching stream_answer — mock
+    # both so the test exercises whichever branch this request shape
     # actually takes rather than assuming one.
     monkeypatch.setattr(
-        stream_router, "generate_general_answer",
-        lambda *_a, **_k: {
-            "answer": "Morning study sessions often work well if you are more alert early.",
-            "model": "test",
-        },
+        stream_router, "stream_general_answer",
+        lambda *_a, **_k: iter([
+            {"t": "Morning study sessions often work well if you are more alert early."},
+            {"done": True, "model": "test"},
+        ]),
     )
 
     body = asyncio.run(_consume(stream_router, stream_router.AskStreamRequest(

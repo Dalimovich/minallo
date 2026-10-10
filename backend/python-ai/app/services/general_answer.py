@@ -6,7 +6,7 @@ from typing import Any, Iterator
 
 from ..config import get_settings
 from .answer import INTERNAL_CONFIDENTIALITY_RULE, chat_completion_params
-from .openai_client import get_openai_client
+from .openai_client import INTERACTIVE_ANSWER_TIMEOUT, get_openai_client
 
 
 _SYSTEM_PROMPT = """You are Minallo AI, a helpful university study assistant.
@@ -37,7 +37,11 @@ def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int 
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": question.strip()},
         ],
-        **chat_completion_params(target_model, max_tokens),
+        # A plain conversational answer, not math/reasoning work — a
+        # reasoning-model OPENAI_GENERATE_MODEL should spend as little
+        # (billed) reasoning effort here as it would on notes_full.py's
+        # synthesis calls, for the same latency/cost reason.
+        **chat_completion_params(target_model, max_tokens, reasoning_effort="low"),
     )
     msg = completion.choices[0].message if completion.choices else None
     answer_text = prefix + ((msg.content if msg else "") or "")
@@ -54,10 +58,13 @@ def generate_general_answer(question: str, *, prefix: str = "", max_tokens: int 
 
 
 def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]] | None = None,
-                          context_block: str = "", max_tokens: int = 700) -> Iterator[dict[str, Any]]:
+                          context_block: str = "", max_tokens: int = 700,
+                          prefix: str = "") -> Iterator[dict[str, Any]]:
     """Yield real model deltas immediately; never buffer a fast-lane answer."""
     settings = get_settings()
     target_model = settings.openai_generate_model
+    if prefix:
+        yield {"t": prefix, "model": target_model}
     history = []
     history_chars = 0
     for turn in reversed(previous_turns or []):
@@ -75,7 +82,9 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
         messages=[{"role": "system", "content": _SYSTEM_PROMPT + context_block}, *history,
                   {"role": "user", "content": question.strip()}],
         stream=True,
-        **chat_completion_params(target_model, max_tokens),
+        stream_options={"include_usage": True},
+        timeout=INTERACTIVE_ANSWER_TIMEOUT,
+        **chat_completion_params(target_model, max_tokens, reasoning_effort="low"),
     )
     prompt_tokens = completion_tokens = None
     for chunk in stream:

@@ -11,6 +11,9 @@ const DOCUMENT_RAIL = read('frontend/js/features/document-rail/document-rail.ts'
 const MAIN = read('frontend/js/main.ts');
 const CONFIG = read('frontend/js/config.js');
 const INDEX = read('frontend/index.html');
+// / is the static marketing page since the app-move split (commit 1debdce2);
+// loader.js now boots from the authenticated app shell at /app/ instead.
+const APP_INDEX = read('frontend/app/index.html');
 const TYPOGRAPHY = read('frontend/css/typography.css');
 const STYLES = read('frontend/css/styles.css');
 const PORTAL = read('frontend/pages/portal.html');
@@ -77,7 +80,7 @@ test('AI drawer exposes a persisted typography menu beside its header actions', 
   assert.doesNotMatch(MESSAGE_NAVIGATOR, /width:\s*calc\(var\(--dr-rail-w[^\n]+\+\s*24px\)/);
   assert.match(MESSAGE_NAVIGATOR, /width:\s*var\(--dr-rail-w,\s*66px\)/);
   assert.match(LOADER, /document-rail\.css\?v=35/);
-  assert.match(INDEX, /loader\.js\?v=\d+/);
+  assert.match(APP_INDEX, /loader\.js\?v=\d+/);
 });
 
 test('AI drawer composer uses the compact rounded two-row shell', () => {

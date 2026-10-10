@@ -65,6 +65,7 @@ function resetRuntimeProfileState(): void {
   window._germanLevel = undefined;
   window._germanExamProfileId = null;
   window._germanProfileLoaded = false;
+  window._profileResolutionSource = undefined;
   _resolvedProfileUid = null;
   _profileRetryAttempt = 0;
   if (_profileRetryTimer) {
@@ -101,6 +102,21 @@ export function resetProfileResolution(): void {
 function scheduleProfileRetry(uid: string): void {
   if (_profileRetryTimer) return; // one retry chain in flight at a time
   if (_profileRetryAttempt >= PROFILE_RETRY_DELAYS_MS.length) {
+    if (window._profileResolutionSource === 'cache') {
+      // A cached role already unblocked the splash — this is a background
+      // sync failure, not a user-facing one. Never dispatch ss-profile-failed
+      // (that would cover a working UI with the recovery screen); log it and
+      // keep trying at a slower, steady cadence instead of giving up.
+      console.warn('[loadUserData] profile still unresolved after retries; keeping cached role active');
+      _profileRetryTimer = setTimeout(() => {
+        _profileRetryTimer = null;
+        if (window._currentProfileUid !== uid) return;
+        if (window._profileResolutionSource !== 'cache') return; // network already resolved it
+        _lastLoadUid = null;
+        void loadUserData(uid);
+      }, 30000);
+      return;
+    }
     // Bounded retries exhausted: tell the boot owner (js/boot-cover.js) to
     // show its single recovery surface. ensureUserProfile({force:true}) can
     // still be called explicitly.
@@ -112,7 +128,9 @@ function scheduleProfileRetry(uid: string): void {
   _profileRetryTimer = setTimeout(() => {
     _profileRetryTimer = null;
     if (window._currentProfileUid !== uid) return; // account changed under us — stale
-    if (window._profileResolutionState === 'ready') return;
+    // A cache-sourced 'ready' must still retry the authoritative fetch in the
+    // background; only a network-confirmed 'ready' has nothing left to do.
+    if (window._profileResolutionState === 'ready' && window._profileResolutionSource !== 'cache') return;
     // The 30s de-dup guard exists to stop redundant re-entrant loadUserData
     // calls from _enterApp, not to suppress a bounded retry after a genuine
     // failure — bypass it for this one attempt.
@@ -228,6 +246,19 @@ async function runLoadUserData(uid: string): Promise<void> {
       const cached = localStorage.getItem('profile_cache_' + uid);
       if (cached) {
         const cp = JSON.parse(cached) as ProfileRow;
+        // A cached role is enough to stop the boot splash waiting on a fresh
+        // network round trip: flip resolution to 'ready' from cache BEFORE
+        // applyProfile() dispatches ss-profile-updated, same ordering as the
+        // authoritative path below, so every listener (boot-cover, chatbot
+        // shell) sees the resolved role the instant that event fires. The
+        // authoritative fetch still runs after this and can correct/confirm
+        // it (see the profile/network branch below).
+        if (cp && cp.user_type && window._currentProfileUid === uid) {
+          _resolvedProfileUid = uid;
+          window._profileResolutionState = 'ready';
+          window._profileResolutionSource = 'cache';
+          window.MinalloBoot?.mark('profileReady');
+        }
         if (cp && window.applyProfile) window.applyProfile(cp, { authoritative: false });
         if (cp && cp.courses) scheduleUserCoursesLoad(cp.courses);
       }
@@ -322,6 +353,7 @@ async function runLoadUserData(uid: string): Promise<void> {
         // fires.
         _resolvedProfileUid = uid;
         window._profileResolutionState = 'ready';
+        window._profileResolutionSource = 'network';
         window.MinalloBoot?.mark('profileReady');
         _profileRetryAttempt = 0;
         if (_profileRetryTimer) {
@@ -329,6 +361,14 @@ async function runLoadUserData(uid: string): Promise<void> {
           _profileRetryTimer = null;
         }
         if (window.applyProfile) window.applyProfile(profile);
+      } else if (window._profileResolutionSource === 'cache') {
+        // A cached role already unblocked the splash. This failure is a
+        // background sync issue, not a user-facing one — regressing state to
+        // 'error' here would re-trap the user behind the boot cover (or the
+        // recovery screen) over a UI that is already working. Keep the
+        // cached role active and just keep retrying quietly.
+        console.warn('[loadUserData] authoritative profile refresh failed; keeping cached role active');
+        scheduleProfileRetry(uid);
       } else {
         // The authoritative profiles fetch didn't return a row — timed out,
         // errored, or PostgREST rejected the .single() (0 rows). None of
@@ -429,10 +469,16 @@ async function runLoadUserData(uid: string): Promise<void> {
     // a silent "resolved" promotion. This is now a secondary safety net
     // (withTimeout no longer lets a query rejection propagate this far),
     // covering anything else that could throw before the profile apply runs.
-    if (window._currentProfileUid === uid && window._profileResolutionState !== 'ready') {
-      window._profileResolutionState = 'error';
-      window.dispatchEvent(new Event('ss-profile-updated'));
-      scheduleProfileRetry(uid);
+    if (window._currentProfileUid === uid) {
+      if (window._profileResolutionState !== 'ready') {
+        window._profileResolutionState = 'error';
+        window.dispatchEvent(new Event('ss-profile-updated'));
+        scheduleProfileRetry(uid);
+      } else if (window._profileResolutionSource === 'cache') {
+        // Already showing the cached role — keep trying for the
+        // authoritative data in the background instead of going silent.
+        scheduleProfileRetry(uid);
+      }
     }
   }
 }
@@ -453,6 +499,7 @@ export function applySavedProfile(row: ProfileRow): void {
   _resolvedProfileUid = uid;
   window._currentProfileUid = uid;
   window._profileResolutionState = 'ready';
+  window._profileResolutionSource = 'network';
   window._awaitingOnboarding = false;
   _profileRetryAttempt = 0;
   if (_profileRetryTimer) {

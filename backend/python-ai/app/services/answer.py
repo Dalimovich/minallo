@@ -59,15 +59,22 @@ _MIN_CONTEXT_CHARS = 400    # below this, we treat it as no useful context
 FIGURE_CHUNK_TYPES = frozenset({"exercise", "diagram", "figure", "image", "solution"})
 
 
-# OpenAI reasoning models (o1 / o3 / o3-mini / o4-mini …) take different
-# request params than the chat models: they use `max_completion_tokens`
-# (which ALSO counts internal reasoning tokens, so it needs generous
-# headroom or the visible answer truncates) and reject a non-default
-# `temperature`. We route math/exercise answers to a reasoning model because
-# gpt-4o/gpt-4.1 reliably fail multi-phase kinematics (resetting velocity at
-# an internal boundary) that o4-mini solves correctly.
+# OpenAI reasoning models (o1 / o3 / o3-mini / o4-mini / gpt-5 family …) take
+# different request params than the chat models: they use
+# `max_completion_tokens` (which ALSO counts internal reasoning tokens, so it
+# needs generous headroom or the visible answer truncates), accept
+# `reasoning_effort`, and reject a non-default `temperature`. We route
+# math/exercise answers to a reasoning model because gpt-4o/gpt-4.1 reliably
+# fail multi-phase kinematics (resetting velocity at an internal boundary)
+# that o4-mini solves correctly. gpt-5 is grouped the same way llm_json.py's
+# _MAX_COMPLETION_TOKENS_PREFIXES already does for the german-exam call path.
+# The gpt-5-chat variant is excluded: it's a plain chat model (temperature,
+# no reasoning_effort) despite the gpt-5 name.
 def is_reasoning_model(model: str | None) -> bool:
-    return bool(re.match(r"^o\d", (model or "").strip()))
+    m = (model or "").strip()
+    if m.startswith("gpt-5-chat"):
+        return False
+    return bool(re.match(r"^o\d", m)) or m.startswith("gpt-5")
 
 
 def _needs_max_completion_tokens(model: str | None) -> bool:

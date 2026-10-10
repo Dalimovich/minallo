@@ -50,6 +50,15 @@ writing is NOT routed through task-workspace.ts's generic productive path) —
 not yet built. Do not flip this flag again until that's fixed and re-verified
 with a real generate+grade round trip, not just a code-inspection pass.
 
+UPDATE (2026-10-08): fixed. german_exam.py's grade_writing_endpoint gained a
+third dispatch branch for Goethe's actual {"questions": [{...}]} shape
+(reusing validate_content(), not a new check), and goethe-writing-task.ts is
+a dedicated renderer+grader for it (mirroring dsh-stimulus-task.ts's own
+"own shape, own renderer" precedent) — task-workspace.ts now dispatches
+forum_discussion_post/formal_context_message there instead of mountWriting.
+Re-flipped available afterward, once a real production generate+grade round trip
+confirmed the fix (see commit history for the exact verification).
+
 Hören (G2) stays `available=False`: generation/validation are real, but the
 live frontend listening surface (practice.js's lsMapGeneratedQuestion/
 LS_RENDERERS/LS_OPTION_TYPES, and its hv1/hv2/hv3-hardcoded part switcher) has
@@ -235,7 +244,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=60, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 14, "coherence": 14, "vocabulary": 16, "structures": 16},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=False,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=50 * 60, available=True,
     ),
     PartBlueprint(
         part_id="schreiben_2", module="writing", title="(Halb-)formelle Nachricht",
@@ -249,7 +258,7 @@ _GOETHE_C1_SCHREIBEN: tuple[PartBlueprint, ...] = (
             max_points=40, mode=SCORING_RUBRIC, band_fractions=WRITING_BAND_FRACTIONS,
             criteria_max_points={"task_fulfilment": 10, "coherence": 10, "vocabulary": 10, "structures": 10},
         ),
-        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=False,
+        grading_dimensions=_GOETHE_WRITING_DIMENSIONS, time_limit_seconds=25 * 60, available=True,
     ),
 )
 

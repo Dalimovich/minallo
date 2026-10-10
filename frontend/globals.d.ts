@@ -329,6 +329,13 @@ declare global {
     // (chatbot shell, sidebar) must treat anything other than 'ready' as
     // unresolved and must never infer a role from it. See user-data.ts.
     _profileResolutionState?: 'loading' | 'ready' | 'error';
+    // Which fetch made _profileResolutionState 'ready': 'cache' means a
+    // locally-cached profile unblocked the boot splash provisionally while
+    // the authoritative fetch is still in flight (or retrying in the
+    // background after failing) — 'network' means the real profiles row
+    // confirmed it. Only relevant while _profileResolutionState is 'ready'.
+    // See user-data.ts's loadUserData/applyProfile.
+    _profileResolutionSource?: 'cache' | 'network';
     // uid the current _profileResolutionState/_userType/_german* globals
     // belong to — lets a stale async response (fetch resolves after the
     // account already changed) be detected and ignored.
