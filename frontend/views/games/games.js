@@ -190,7 +190,6 @@
         if (typeof _chessStop === 'function') _chessStop();
         showHub();
       });
-      wire('gdBack', showHub);
 
       // Solitaire dispatcher loaded its IIFE before this HTML was injected, so
       // its picker/back/undo listeners couldn't attach to elements that didn't

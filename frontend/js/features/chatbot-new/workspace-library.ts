@@ -19,7 +19,7 @@ import { authenticatedFetch, authenticatedSupabaseFetch } from '../../services/a
 import {
   listCanonicalLearnerFiles, listLearnerFilesForScope, getLegacyLearnerScopes, dedupeLearnerFiles,
   getLearnerFileStorageScope, uploadLearnerFile, indexLearnerFile,
-  refreshLearnerFile, deleteLearnerFile, openLearnerFile, type LearnerFile,
+  refreshLearnerFile, deleteLearnerFile, openLearnerFile, isLearnerFileScope, type LearnerFile,
 } from '../german/learner-files.js';
 
 export type CourseFile = {
@@ -836,7 +836,10 @@ function restoreWorkspacePdf(root: HTMLElement, coursePanel: HTMLElement, attemp
   // involve a remote storage listing and must never block refresh restore.
   // renderCourseDetail updates the hidden origin panel in the background so
   // Back still returns to the fully refreshed course once it is ready.
-  void renderCourseDetail(coursePanel, course);
+  // A learner's synthetic file scope has no real course-detail page to
+  // render (no SEMS course, no files()/userFolders() to hydrate) — skip it
+  // entirely rather than painting a fake course page behind the viewer.
+  if (!isLearnerFileScope(course.id)) void renderCourseDetail(coursePanel, course);
   openWorkspacePdf(root, file, course);
 }
 
@@ -974,8 +977,30 @@ function learnerFileRow(file: LearnerFile): HTMLElement {
     status.textContent = `${file.size || 'German Files'} \u00b7 ${indexable ? 'Indexed' : 'Uploaded'}`;
   }
   row.dataset.learnerFileKey = `${file.learnerFileScope}/${file._folder || ''}/${file._storageName}`;
-  row.querySelector('[data-library-file]')?.addEventListener('click', () => {
-    void openLearnerFile(file).catch((error: Error) => window.showToast?.('Could not open file', error.message));
+  const openThisLearnerFile = (): void => {
+    // Mirrors pdf-viewer.ts openFile()'s own isHtml/isImage classification
+    // (plus the default pdf.js path for .pdf) — anything else (e.g. a
+    // learner-upload-accepted .docx) has no in-chat render path, so it falls
+    // back to openLearnerFile's new-tab opener instead of silently failing
+    // inside the viewer.
+    if (!/\.(pdf|html?|png|jpe?g|gif|webp|svg|bmp|tiff?)$/i.test(file.name)) {
+      void openLearnerFile(file).catch((error: Error) => window.showToast?.('Could not open file', error.message));
+      return;
+    }
+    const pdfScope: LibraryCourse = {
+      id: file.learnerFileScope, short: file.learnerFileScope, name: 'German Files', files: [], userFolders: [],
+    };
+    openWorkspacePdf(rootFor(row), file, pdfScope);
+  };
+  row.addEventListener('click', (event) => {
+    if ((event.target as Element).closest('button, select, label, a, input, textarea, [data-delete-file], [data-retry-index], [data-learner-retry]')) return;
+    openThisLearnerFile();
+  });
+  row.addEventListener('keydown', (event) => {
+    if (event.target !== row) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openThisLearnerFile();
   });
   row.querySelector<HTMLButtonElement>('[data-delete-file]')?.addEventListener('click', async (event) => {
     if (!confirm(`Permanently delete "${file.name}"? This cannot be undone.`)) return;
@@ -1575,15 +1600,24 @@ function bindCourseFileActions(panel: HTMLElement, detail: HTMLElement, course: 
 }
 
 function bindSingleFileRow(panel: HTMLElement, detail: HTMLElement, course: LibraryCourse, row: HTMLElement): void {
-  const open = row.querySelector<HTMLButtonElement>('[data-library-file]');
-  open?.addEventListener('click', () => {
-    const folder = open.dataset.folder || null;
+  const openThisFile = (): void => {
+    const folder = row.dataset.folder || null;
     const collection = (folder
       ? (course.userFolders || []).find((item) => item.name === folder)?.files || []
       : course.files || []) as CourseFile[];
-    const documentId = open.dataset.documentId || row.dataset.documentId || '';
-    const file = collection.find((item) => documentId ? item._document?.id === documentId : item.name === open.dataset.fileName);
+    const documentId = row.dataset.documentId || '';
+    const file = collection.find((item) => documentId ? item._document?.id === documentId : item.name === row.dataset.fileName);
     if (file) openWorkspacePdf(rootFor(panel), file, course);
+  };
+  row.addEventListener('click', (event) => {
+    if ((event.target as Element).closest('button, select, label, a, input, textarea, [data-delete-file], [data-retry-index], [data-learner-retry]')) return;
+    openThisFile();
+  });
+  row.addEventListener('keydown', (event) => {
+    if (event.target !== row) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    openThisFile();
   });
   const remove = row.querySelector<HTMLButtonElement>('[data-delete-file]');
   remove?.addEventListener('click', () => {
@@ -1596,11 +1630,11 @@ function bindSingleFileRow(panel: HTMLElement, detail: HTMLElement, course: Libr
   retry?.addEventListener('click', async (event) => {
     event.stopPropagation();
     if (retry.disabled) return;
-    const folder = open?.dataset.folder || null;
+    const folder = row.dataset.folder || null;
     const file = findCourseFileByIdentity(
       course,
-      open?.dataset.documentId || row.dataset.documentId || '',
-      open?.dataset.fileName || '',
+      row.dataset.documentId || '',
+      row.dataset.fileName || '',
       folder
     );
     if (!file?._storageName) return;
@@ -1781,12 +1815,20 @@ function closeWorkspacePdf(root: HTMLElement): void {
   }
 }
 
-function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse): void {
+function openWorkspacePdf(root: HTMLElement, file: CourseFile, course: LibraryCourse, attempt = 0): void {
   const context = root.querySelector<HTMLElement>('.ncb-context');
   const inner = context?.querySelector<HTMLElement>('.ncb-context-inner');
   const wrap = document.getElementById('pdfViewerWrap');
-  if (!context || !inner || !wrap || !window.openFile) return;
-  rememberCourse(course);
+  if (!context || !inner || !wrap || !window.openFile) {
+    if (attempt < 80) { window.setTimeout(() => openWorkspacePdf(root, file, course, attempt + 1), 100); return; }
+    window.showToast?.('Could not open file', 'The file viewer is not ready yet. Please reload and try again.');
+    return;
+  }
+  // A learner's synthetic file scope (e.g. 'german-files') is not a real
+  // SEMS course — recording it as the "most recent course" would corrupt
+  // the student-only Courses tab's recent-course ordering for an account
+  // that never had a course to begin with.
+  if (!isLearnerFileScope(course.id)) rememberCourse(course);
   saveWorkspacePdfSession(course, file);
 
   if (!pdfOrigin) {
@@ -1846,7 +1888,7 @@ function fileButton(file: CourseFile, course: LibraryCourse, folder: string | nu
       : doc?.processing_status ? 'Indexing…' : 'Status unavailable';
   const retry = doc?.processing_status === 'failed' && file._storageName
     ? '<button type="button" class="ncb-file-retry" data-retry-index aria-label="Retry indexing">Retry</button>' : '';
-  return `<div class="ncb-file-row study-file-card"${doc?.id ? ` data-document-id="${escapeHtml(doc.id)}"` : ''}><div class="study-file-card__identity">${icon('file')}<div class="study-file-card__content"><strong class="study-file-card__filename" title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong><div class="study-file-card__meta"><small>${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}</div></div></div><div class="study-file-card__actions"><button type="button" class="study-file-card__open" data-library-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}">Open</button><button type="button" class="ncb-library-delete" data-delete-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete ${escapeHtml(filename)}" title="Delete file">${trashIcon()}</button></div></div>`;
+  return `<div class="ncb-file-row study-file-card" data-library-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" tabindex="0" role="button" aria-label="Open ${escapeHtml(filename)}"><div class="study-file-card__identity">${icon('file')}<div class="study-file-card__content"><strong class="study-file-card__filename" title="${escapeHtml(filename)}">${escapeHtml(filename)}</strong><div class="study-file-card__meta"><small>${escapeHtml(file.size || course.name || 'Course file')} &middot; ${escapeHtml(status)}</small><div class="co-file-doctype ncb-file-doctype">${picker}</div>${retry}</div></div></div><div class="study-file-card__actions"><button type="button" class="ncb-library-delete" data-delete-file="" data-document-id="${escapeHtml(doc?.id || '')}" data-file-name="${escapeHtml(file.name)}" data-folder="${escapeHtml(folder || '')}" aria-label="Delete ${escapeHtml(filename)}" title="Delete file">${trashIcon()}</button></div></div>`;
 }
 
 function trashIcon(): string {

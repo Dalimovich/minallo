@@ -20,9 +20,10 @@ import time
 import unicodedata
 import urllib.parse
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from types import SimpleNamespace
-from typing import Any, NamedTuple
+from typing import Any, Callable, Iterator, NamedTuple
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
@@ -46,7 +47,7 @@ from ..services.answer_intent import (
 )
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
 from ..services.embeddings import EmbeddingServiceUnavailable
-from ..services.general_answer import generate_general_answer
+from ..services.general_answer import generate_general_answer, stream_general_answer
 from ..services.execution_router import (
     EscalationReason,
     ExecutionLane,
@@ -113,7 +114,7 @@ from ..services.german_learner_profile import (
     get_german_learner_profile,
     learner_profile_fingerprint,
 )
-from ..services.web_answer import generate_web_answer
+from ..services.web_answer import stream_web_answer
 from ..services.usage_meter import record_usage
 from ..services.workspace_context import (
     assistant_mode_from_turn,
@@ -543,6 +544,13 @@ class AskStreamRequest(BaseModel):
     activeDocumentId: str | None = None
     activePdfVisible: bool = False
     question: str
+    # The exact text the browser displays/saves for this turn. `question`
+    # above may be enriched with a pasted-attachment block merged in for
+    # retrieval/intent purposes (see shell.ts's currentQuestion) — when that
+    # happens, messageText is the plain typed text alone, same as
+    # EnsureConversationRequest's own messageText. Falls back to `question`
+    # for an older client that doesn't send it yet.
+    messageText: str | None = Field(default=None, max_length=_MAX_STREAM_QUESTION_CHARS)
     # The file name + a slice of text from whatever the user is currently
     # looking at in the PDF reader. Surfaced into the user message so the
     # model can ground "this question / this section" references even when
@@ -872,6 +880,110 @@ def _stream_static_answer(
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+def _stream_live_answer(
+    *,
+    events: Iterator[dict[str, Any]],
+    decision: SourceDecision,
+    answer_mode: str,
+    request_id: str,
+    status_key: str = "writing_answer",
+    extra_meta: dict[str, Any] | None = None,
+    sources: list[dict[str, Any]] | None = None,
+    map_sources: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
+    decision_for_done: Callable[[dict[str, Any]], SourceDecision] | None = None,
+    on_finish: Callable[[dict[str, Any]], None] | None = None,
+):
+    """Same status -> meta -> t... -> done SSE contract as _stream_static_answer,
+    but driven by a live `{"t"}`/`{"done"}` token iterator instead of an
+    already-complete string, so the browser sees text as the model writes it.
+    """
+    extra_meta = extra_meta or {}
+
+    def gen():
+        confidence = "low" if answer_mode == "clarification" else "high"
+        needs_clarification = answer_mode == "clarification"
+        used_general_knowledge = answer_mode == "general"
+        unsupported = needs_clarification
+        yield _status_sse(status_key)
+        meta = {
+            "meta": True,
+            "retrievalMode": decision.source_scope.value,
+            "answerMode": answer_mode,
+            "confidence": confidence,
+            "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
+            **extra_meta,
+            **_source_meta(decision, cache_hit=False),
+        }
+        yield _sse_bytes(json.dumps(meta, ensure_ascii=False))
+
+        text_sent = False
+        final: dict[str, Any] = {}
+        try:
+            for event in events:
+                text = event.get("t")
+                if isinstance(text, str) and text:
+                    text_sent = True
+                    yield _sse_bytes(json.dumps({"t": text}, ensure_ascii=False))
+                elif event.get("done"):
+                    final = event
+                    break
+        except Exception:
+            log.exception("live_answer_failed request_id=%s answer_mode=%s", request_id, answer_mode)
+            yield _error_sse(
+                code="live_generation_failed",
+                message="The response could not be completed.",
+                retryable=True, request_id=request_id,
+                stage="live_generation", recoverable=True,
+                partial_answer_available=text_sent,
+            )
+            return
+
+        if not final.get("done") or not text_sent:
+            code = "empty_completed_response" if final.get("done") else "stream_ended_without_terminal_event"
+            log.warning(
+                "live_answer_no_terminal_event request_id=%s answer_mode=%s code=%s",
+                request_id, answer_mode, code,
+            )
+            yield _error_sse(
+                code=code,
+                message="The tutor did not return a complete answer.",
+                retryable=True, request_id=request_id,
+                stage="live_generation", recoverable=True,
+                partial_answer_available=text_sent,
+            )
+            return
+
+        final_decision = decision_for_done(final) if decision_for_done else decision
+        final_sources = map_sources(final) if map_sources else (sources or [])
+        # on_finish (record_usage) must run BEFORE the done event is yielded:
+        # early_stream's consumer breaks out of its loop the moment it sees a
+        # terminal SSE event and never calls next() again, so anything after
+        # the yield below would never execute (fast_general_stream calls
+        # record_usage before its own done yield for the same reason).
+        if on_finish:
+            on_finish(final)
+        yield _sse_bytes(json.dumps({
+            "done": True,
+            "retrievalMode": final_decision.source_scope.value,
+            "answerMode": answer_mode,
+            "confidence": confidence,
+            "unsupported": unsupported,
+            "needsClarification": needs_clarification,
+            "usedGeneralKnowledge": used_general_knowledge,
+            "sources": final_sources,
+            "cacheHit": False,
+            "model": final.get("model"),
+            "promptTokens": final.get("promptTokens"),
+            "completionTokens": final.get("completionTokens"),
+            **extra_meta,
+            **_source_meta(final_decision, cache_hit=False),
+        }, ensure_ascii=False))
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 def _validate_open_file_images(images: list[OpenFileImagePayload] | None) -> list[dict[str, Any]]:
     if not images:
         return []
@@ -972,6 +1084,75 @@ def _web_sources_to_js(sources: list[dict[str, Any]] | None) -> list[dict[str, A
     ]
 
 
+# Decorations (visual aids, Deep Learn reuse) must never make the student
+# wait longer for the answer than they already would without them — the
+# generation stage's own done event waits on these futures for at most this
+# long before falling back to an empty list, same as the rest of this
+# pipeline's "best-effort" DB reads.
+_DECORATION_WAIT_TIMEOUT_SECONDS = 3.0
+
+
+def _resolve_learning_recommendations_background(
+    visual_aids_future: "Future[list[dict[str, Any]]]",
+    explanation_plan: Any,
+    *,
+    user_id: str,
+    course_id: str,
+    document_ids: list[str],
+    source_chunk_ids: list[str],
+    weak_topics: list[str],
+    previous_turns: list[dict[str, str]],
+    response_language: str | None,
+) -> list[dict[str, Any]]:
+    """Runs on a background thread, submitted alongside select_visual_aids so
+    neither blocks the OpenAI call that writes the answer. This function
+    waits on visual_aids_future itself (the recommendation needs its
+    persistent_visual_ids) — that's thread-to-thread waiting on a background
+    worker, not something that blocks the request's own generation path.
+    """
+    try:
+        visual_aids = visual_aids_future.result()
+    except Exception:
+        log.exception("visual_aids_lookup_failed_for_learning_recommendation")
+        visual_aids = []
+    persistent_visual_ids = [
+        str(item.get("visualId")) for item in visual_aids
+        if item.get("sourceType") == "course_file"
+        and item.get("visualId")
+        and not str(item.get("visualId")).startswith("page-")
+    ]
+    learning_recommendations = build_learning_recommendations(
+        explanation_plan,
+        course_id=course_id,
+        document_ids=document_ids,
+        source_chunk_ids=source_chunk_ids,
+        visual_ids=persistent_visual_ids,
+        weak_topics=weak_topics,
+        previous_turns=previous_turns,
+        response_language=response_language,
+    )
+    if learning_recommendations:
+        try:
+            recommendation_doc_ids = learning_recommendations[0].get("documentIds") or []
+            recommendation_revision_hash = course_revision_hash(user_id, course_id, recommendation_doc_ids)
+            existing_lesson = find_existing_lesson(
+                user_id=user_id, course_id=course_id,
+                topic=str(learning_recommendations[0].get("topic") or ""),
+                revision_hash=recommendation_revision_hash,
+            )
+            learning_recommendations[0]["documentRevisionHash"] = recommendation_revision_hash
+            if existing_lesson:
+                learning_recommendations[0]["existingLessonId"] = existing_lesson.get("id")
+                learning_recommendations[0]["existingLessonStatus"] = existing_lesson.get("lesson_status") or "complete"
+                learning_recommendations[0]["action"] = {
+                    "label": "Continue Deep Learn" if existing_lesson.get("lesson_status") != "complete" else "Open Deep Learn lesson",
+                    "type": "open_deep_learn",
+                }
+        except Exception:
+            log.exception("deep learn reuse lookup failed (recommendation remains usable)")
+    return learning_recommendations
+
+
 @router.post("/conversations/ensure")
 async def ensure_conversation_endpoint(
     payload: EnsureConversationRequest,
@@ -1065,8 +1246,8 @@ async def conversation_messages_endpoint(
             if attempt == 0:
                 await asyncio.sleep(0.15)
     if rows is None:
-        log.warning("durable_transcript_hydration_failed conversation=%s error=%s",
-                    conversation_id, type(last_error).__name__)
+        log.warning("durable_transcript_hydration_failed conversation=%s error=%s message=%s",
+                    conversation_id, type(last_error).__name__, last_error)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={
             "code": "transcript_hydration_unavailable", "retryable": True,
         }) from last_error
@@ -1309,8 +1490,23 @@ async def ask_stream_endpoint(
     )
     user_id = user["id"]
     access_started = time.perf_counter()
-    await run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream"))
-    await run_in_threadpool(lambda: enforce_interactive_cap(user_id, _INTERACTIVE_MONTHLY_CAP))
+    # Subscription + interactive-cap are both pure reads that either pass or
+    # raise — safe to run concurrently. Priority is preserved by checking the
+    # subscription outcome before the cap outcome, so a user failing both
+    # still sees 402 (not 429). enforce_rate_limit must stay last and alone:
+    # unlike the other two, it writes a security_events row even on its
+    # success path, so running it concurrently with a check that might still
+    # reject the request would log a rate-limit-counted event for a request
+    # that was never actually served.
+    subscription_outcome, cap_outcome = await asyncio.gather(
+        run_in_threadpool(lambda: require_active_subscription(user_id, "ask_stream")),
+        run_in_threadpool(lambda: enforce_interactive_cap(user_id, _INTERACTIVE_MONTHLY_CAP)),
+        return_exceptions=True,
+    )
+    if isinstance(subscription_outcome, Exception):
+        raise subscription_outcome
+    if isinstance(cap_outcome, Exception):
+        raise cap_outcome
     await run_in_threadpool(
         lambda: enforce_rate_limit(
             user_id, "ask_stream", _ASK_STREAM_RATE_LIMIT_MAX,
@@ -1501,14 +1697,57 @@ async def ask_stream_endpoint(
             "stage": "request_validation",
         })
     if payload.durableConversation:
-        from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+        from ..services.conversation_store import (  # noqa: WPS433
+            create_durable_tutor_turn,
+            update_tutor_request,
+            validate_durable_conversation,
+        )
+
+        def _mark_preflight_running() -> None:
+            update_tutor_request(
+                user_id=user_id, request_id=request_id,
+                status="running", stage="request_preflight",
+            )
+
         try:
-            await run_in_threadpool(lambda: update_tutor_request(
-                user_id=user_id,
-                request_id=request_id,
-                status="running",
-                stage="request_preflight",
-            ))
+            try:
+                await run_in_threadpool(_mark_preflight_running)
+            except RuntimeError as not_found:
+                if str(not_found) != "tutor_request_not_found":
+                    raise
+                # A newer frontend skips /conversations/ensure for a chat
+                # that's already persisted (Phase 3 of the TTFT work) — it
+                # sends the client-generated message ids straight to
+                # /ask-stream instead. The durable turn for THIS message
+                # doesn't exist yet even though the conversation itself
+                # does, so create it now. create_durable_tutor_turn's RPC
+                # is idempotent on request_id (ON CONFLICT DO NOTHING), so a
+                # retry reusing the same X-Idempotency-Key never creates a
+                # duplicate turn.
+                if not await run_in_threadpool(lambda: validate_durable_conversation(
+                    user_id=user_id, conversation_id=payload.conversationId,
+                )):
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+                        "code": "conversation_not_found",
+                        "message": "This conversation could not be found.",
+                        "retryable": False,
+                        "stage": "request_preflight",
+                    }) from not_found
+                await run_in_threadpool(lambda: create_durable_tutor_turn(
+                    user_id=user_id, conversation_id=payload.conversationId,
+                    user_message_id=payload.clientMessageId or "",
+                    # The displayed/saved text, not the retrieval-enriched
+                    # `question` (which may have a pasted-attachment block
+                    # merged in) — same distinction /conversations/ensure
+                    # already drew via its own messageText field.
+                    user_content=payload.messageText or question,
+                    assistant_message_id=payload.assistantMessageId or "",
+                    request_id=request_id,
+                    request_snapshot=payload.requestSnapshot or {},
+                ))
+                await run_in_threadpool(_mark_preflight_running)
+        except HTTPException:
+            raise
         except Exception as exc:  # noqa: BLE001
             log.exception(
                 "ask_stream_preflight_state_failed request_id=%s exception=%s",
@@ -1827,13 +2066,12 @@ async def ask_stream_endpoint(
         return StreamingResponse(
             full_document_scope_required_stream(), media_type="text/event-stream"
         )
-    preflight_documents = await run_in_threadpool(
-        lambda: _load_authorized_documents(user_id, payload.courseId, resolved_ids)
-    )
+    authorized_ids = list(resolved_ids)
     if payload.activeDocumentId:
-        preflight_documents.update(await run_in_threadpool(
-            lambda: _load_authorized_documents(user_id, payload.courseId, [payload.activeDocumentId])
-        ))
+        authorized_ids.append(payload.activeDocumentId)
+    preflight_documents = await run_in_threadpool(
+        lambda: _load_authorized_documents(user_id, payload.courseId, authorized_ids)
+    )
     # Authorization is complete at this point.  Only now may revision/page
     # manifests be enumerated.  This ordering is a security invariant.
     document_revisions = {
@@ -3568,42 +3806,39 @@ async def _prepare_ask_stream_response(
             if source_decision.sanitized_web_query:
                 web_facts["topic_label"] = source_decision.sanitized_web_query
             status_sink(_CommentaryStatus("checking_web_sources", web_facts))
-        web_answer = await run_in_threadpool(
-            lambda: generate_web_answer(question, query=source_decision.sanitized_web_query or question)
-        )
-        source_decision = replace(source_decision, web_search_used=bool(web_answer.get("webSources")))
-        record_usage(
-            feature="ask_stream_web", model=web_answer.get("model"),
-            prompt_tokens=web_answer.get("promptTokens"),
-            completion_tokens=web_answer.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=web_answer["answer"],
+        return _stream_live_answer(
+            events=stream_web_answer(question, query=source_decision.sanitized_web_query or question),
             decision=source_decision,
             answer_mode="internet",
-            sources=_web_sources_to_js(web_answer.get("webSources") or []),
-            model=web_answer.get("model"),
-            prompt_tokens=web_answer.get("promptTokens"),
-            completion_tokens=web_answer.get("completionTokens"),
-            status_key="writing_answer",
+            # The web search itself (not just generation) runs inside this
+            # live stream now, so "writing_answer" would lie about what's
+            # happening until the first real token arrives.
+            status_key="checking_web_sources",
+            request_id=request_id,
+            map_sources=lambda final: _web_sources_to_js(final.get("webSources") or []),
+            decision_for_done=lambda final: replace(
+                source_decision, web_search_used=bool(final.get("webSources"))
+            ),
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_web", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE and not app_or_workspace:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
-        general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=prefix))
-        record_usage(
-            feature="ask_stream_general", model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=general["answer"],
+        return _stream_live_answer(
+            events=stream_general_answer(question, prefix=prefix, max_tokens=1200),
             decision=source_decision,
             answer_mode="general",
-            model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"),
             status_key="writing_answer",
+            request_id=request_id,
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_general", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     # ── Live workspace context (layer 2: the student's real Minallo data) ────
@@ -3616,15 +3851,36 @@ async def _prepare_ask_stream_response(
     )
     workspace_snapshot = None
     weak_topics: list[str] = []
+    learner_profile = None
     if payload.courseId:
         if status_sink:
             status_sink("collecting_sources")
         from ..services.mastery import fetch_weak_topics  # noqa: WPS433
         context_started = time.perf_counter()
-        workspace_snapshot, weak_topics = await asyncio.gather(
+        # German learner profile is independent of the course, but fetching
+        # it here alongside the workspace/weak-topics reads (rather than
+        # sequentially after this whole block) saves a full round trip on
+        # every course-bound request. return_exceptions=True because all
+        # three are best-effort — one failing must not cancel the others or
+        # the request; each already degrades to None/[] on its own below.
+        workspace_result, weak_topics_result, learner_profile_result = await asyncio.gather(
             run_in_threadpool(lambda: fetch_workspace_snapshot(user_id, payload.courseId)),
             run_in_threadpool(lambda: fetch_weak_topics(user_id, payload.courseId)),
+            run_in_threadpool(lambda: get_german_learner_profile(user_id)),
+            return_exceptions=True,
         )
+        if isinstance(workspace_result, Exception):
+            log.warning("workspace_snapshot_failed request_id=%s", request_id, exc_info=workspace_result)
+        else:
+            workspace_snapshot = workspace_result
+        if isinstance(weak_topics_result, Exception):
+            log.warning("weak_topics_failed request_id=%s", request_id, exc_info=weak_topics_result)
+        else:
+            weak_topics = weak_topics_result
+        if isinstance(learner_profile_result, Exception):
+            log.warning("learner_profile_failed request_id=%s", request_id, exc_info=learner_profile_result)
+        else:
+            learner_profile = learner_profile_result
         log.info(
             "ai_stream_timing request_id=%s phase=context context_ms=%.0f",
             request_id, (time.perf_counter() - context_started) * 1000,
@@ -3661,8 +3917,12 @@ async def _prepare_ask_stream_response(
         workspace_block += format_account_block(account_snapshot, in_course_chat=True)
     # German learner target, read server-side from the authenticated profile.
     # Its fingerprint joins the cache key so a level change (B2 → C1
-    # Hochschule) never replays an answer written for the old level.
-    learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
+    # Hochschule) never replays an answer written for the old level. Already
+    # fetched above (concurrently with workspace/weak-topics) when there's a
+    # course; a courseless chat skipped that gather entirely, so fetch it
+    # here instead of leaving German learners without their profile block.
+    if learner_profile is None and not payload.courseId:
+        learner_profile = await run_in_threadpool(lambda: get_german_learner_profile(user_id))
     workspace_block += format_learner_profile_block(learner_profile)
     ws_fingerprint = workspace_fingerprint(
         {"s": workspace_snapshot, "w": weak_topics, "p": page_context,
@@ -5456,20 +5716,17 @@ async def _prepare_ask_stream_response(
             source_scope=SourceScope.GENERAL_KNOWLEDGE,
             source_label="Using: General knowledge",
         )
-        general = await run_in_threadpool(lambda: generate_general_answer(question, prefix=auto_general_prefix()))
-        record_usage(
-            feature="ask_stream_general", model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"), user_id=user_id,
-        )
-        return _stream_static_answer(
-            text=general["answer"],
+        return _stream_live_answer(
+            events=stream_general_answer(question, prefix=auto_general_prefix(), max_tokens=1200),
             decision=general_decision,
             answer_mode="general",
-            model=general.get("model"),
-            prompt_tokens=general.get("promptTokens"),
-            completion_tokens=general.get("completionTokens"),
             status_key="no_strong_match",
+            request_id=request_id,
+            on_finish=lambda final: record_usage(
+                feature="ask_stream_general", model=final.get("model"),
+                prompt_tokens=final.get("promptTokens"),
+                completion_tokens=final.get("completionTokens"), user_id=user_id,
+            ),
         )
 
     # ── Stream + save to cache on finish ─────────────────────────────────────
@@ -5484,63 +5741,43 @@ async def _prepare_ask_stream_response(
         has_selected_region=verified_region is not None,
         has_page_image=bool(open_file_images),
     )
-    visual_aids = await run_in_threadpool(
-        lambda: select_visual_aids(
-            explanation_plan,
-            context=VisualContext(
-                document_id=payload.activeDocumentId,
-                document_revision=payload.viewerRevision,
-                page_number=payload.visiblePage,
-                selected_region=(selected_region.model_dump() if selected_region else None),
-                page_image_available=bool(open_file_images),
-            ),
-            user_id=user_id,
-            course_id=payload.courseId,
-            question=resolved_question,
-        ),
-    )
-    persistent_visual_ids = [
-        str(item.get("visualId")) for item in visual_aids
-        if item.get("sourceType") == "course_file"
-        and item.get("visualId")
-        and not str(item.get("visualId")).startswith("page-")
-    ]
-    learning_recommendations = build_learning_recommendations(
+    # Visual aids + the Deep Learn reuse lookup are shown beside the answer,
+    # never fed into its prompt (confirmed by reading stream_answer's
+    # signature below) — so they no longer block the OpenAI call that writes
+    # it. Both run on background threads; gen() picks up their results
+    # opportunistically as it streams tokens, and waits briefly for them
+    # right before the done event. The executor is shut down (non-blocking)
+    # immediately after submission: that stops it accepting further work
+    # without touching these two already-running futures.
+    decoration_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="stream-decorations")
+    visual_aids_future: "Future[list[dict[str, Any]]]" = decoration_executor.submit(
+        select_visual_aids,
         explanation_plan,
+        context=VisualContext(
+            document_id=payload.activeDocumentId,
+            document_revision=payload.viewerRevision,
+            page_number=payload.visiblePage,
+            selected_region=(selected_region.model_dump() if selected_region else None),
+            page_image_available=bool(open_file_images),
+        ),
+        user_id=user_id,
         course_id=payload.courseId,
+        question=resolved_question,
+    )
+    learning_recommendation_future: "Future[list[dict[str, Any]]]" = decoration_executor.submit(
+        _resolve_learning_recommendations_background,
+        visual_aids_future, explanation_plan,
+        user_id=user_id, course_id=payload.courseId,
         document_ids=[
             chunk.document_id for chunk in chunks
             if chunk.document_id and not chunk.document_id.startswith("__")
         ],
         source_chunk_ids=[chunk.chunk_id for chunk in chunks if chunk.chunk_id],
-        visual_ids=persistent_visual_ids,
         weak_topics=weak_topics,
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
-    if learning_recommendations:
-        try:
-            recommendation_doc_ids = learning_recommendations[0].get("documentIds") or []
-            recommendation_revision_hash = await run_in_threadpool(
-                lambda: course_revision_hash(user_id, payload.courseId, recommendation_doc_ids)
-            )
-            existing_lesson = await run_in_threadpool(
-                lambda: find_existing_lesson(
-                    user_id=user_id, course_id=payload.courseId,
-                    topic=str(learning_recommendations[0].get("topic") or ""),
-                    revision_hash=recommendation_revision_hash,
-                )
-            )
-            learning_recommendations[0]["documentRevisionHash"] = recommendation_revision_hash
-            if existing_lesson:
-                learning_recommendations[0]["existingLessonId"] = existing_lesson.get("id")
-                learning_recommendations[0]["existingLessonStatus"] = existing_lesson.get("lesson_status") or "complete"
-                learning_recommendations[0]["action"] = {
-                    "label": "Continue Deep Learn" if existing_lesson.get("lesson_status") != "complete" else "Open Deep Learn lesson",
-                    "type": "open_deep_learn",
-                }
-        except Exception:
-            log.exception("deep learn reuse lookup failed (recommendation remains usable)")
+    decoration_executor.shutdown(wait=False)
     context_consistent = bool(
         retrieval_scope.exercise_reference == grounded_identity.exercise_reference
         and (
@@ -5638,6 +5875,50 @@ async def _prepare_ask_stream_response(
             "conversationId": payload.conversationId,
             "assistantMessageId": payload.assistantMessageId,
         }
+        # Snapshot of each decoration future the moment it resolves, so the
+        # done event can reuse it below without a second wait.
+        decoration_results: dict[str, list[dict[str, Any]]] = {"visualAids": [], "learningRecommendations": []}
+        decoration_reported = {"visualAids": False, "learningRecommendations": False}
+
+        def _poll_decoration_ready() -> list[bytes]:
+            """Non-blocking check, called between generation events: emit a
+            *.ready event the first time each background future resolves."""
+            ready_events: list[bytes] = []
+            for key, future, event_name in (
+                ("visualAids", visual_aids_future, "visual_aids.ready"),
+                ("learningRecommendations", learning_recommendation_future, "learning_recommendation.ready"),
+            ):
+                if decoration_reported[key] or not future.done():
+                    continue
+                decoration_reported[key] = True
+                try:
+                    result = future.result()
+                except Exception:
+                    log.exception("%s_future_failed request_id=%s", key, request_id)
+                    result = []
+                decoration_results[key] = result
+                if result:
+                    ready_events.append(_sse_bytes(json.dumps({
+                        **event_identity, "event": event_name, key: result,
+                    }, ensure_ascii=False)))
+            return ready_events
+
+        def _await_decoration_results() -> None:
+            """Called right before the done event: give any still-pending
+            decoration a short grace window instead of leaving it empty just
+            because it resolved a moment too late."""
+            for key, future in (
+                ("visualAids", visual_aids_future),
+                ("learningRecommendations", learning_recommendation_future),
+            ):
+                if decoration_reported[key]:
+                    continue
+                decoration_reported[key] = True
+                try:
+                    decoration_results[key] = future.result(timeout=_DECORATION_WAIT_TIMEOUT_SECONDS)
+                except Exception:
+                    log.warning("%s_future_not_ready_by_done request_id=%s", key, request_id)
+
         observer.start("draft_generated")
         if app_or_workspace:
             yield _status_sse("checking_app_context")
@@ -5721,6 +6002,8 @@ async def _prepare_ask_stream_response(
             ),
         )
         for chunk_bytes in gen_iter:
+            for ready_event in _poll_decoration_ready():
+                yield ready_event
             # Decode the SSE event so we can intercept the closing 'done' frame.
             try:
                 line = chunk_bytes.decode("utf-8").lstrip().removeprefix("data: ").rstrip()
@@ -5751,23 +6034,18 @@ async def _prepare_ask_stream_response(
                     evt["retrievalRouting"] = cache_routing_plan.trace()
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
-                    evt["learningRecommendations"] = learning_recommendations
-                    evt["visualAids"] = visual_aids
+                    # Almost always still running at this point (this is the
+                    # very first event of the stream) — included here only
+                    # for the rare case either one already finished; the
+                    # real values normally arrive via the *.ready events
+                    # _poll_decoration_ready() emits as generation continues.
+                    evt["learningRecommendations"] = decoration_results["learningRecommendations"]
+                    evt["visualAids"] = decoration_results["visualAids"]
                     evt.update(_source_meta(source_decision, cache_hit=False))
                     evt.update(event_identity)
                     evt["event"] = "sources.ready"
                     chunk_bytes = ("data: " + json.dumps(evt, ensure_ascii=False) + "\n\n").encode("utf-8")
                     yield chunk_bytes
-                    if visual_aids:
-                        yield _sse_bytes(json.dumps({
-                            **event_identity, "event": "visual_aids.ready",
-                            "visualAids": visual_aids,
-                        }, ensure_ascii=False))
-                    if learning_recommendations:
-                        yield _sse_bytes(json.dumps({
-                            **event_identity, "event": "learning_recommendation.ready",
-                            "learningRecommendations": learning_recommendations,
-                        }, ensure_ascii=False))
                     continue
                 if evt.get("t"):
                     evt.update(event_identity)
@@ -5784,8 +6062,9 @@ async def _prepare_ask_stream_response(
                     observer.finish("draft_generated")
                     evt["dialogueResolution"] = dialogue.to_api()
                     evt["pedagogicalAnalysis"] = explanation_plan.to_api()
-                    evt["learningRecommendations"] = learning_recommendations
-                    evt["visualAids"] = visual_aids
+                    _await_decoration_results()
+                    evt["learningRecommendations"] = decoration_results["learningRecommendations"]
+                    evt["visualAids"] = decoration_results["visualAids"]
                     if multi_item_result.evidence:
                         original_text = "".join(full_text_buf)
                         completed_text, coverage = ensure_complete_answer(

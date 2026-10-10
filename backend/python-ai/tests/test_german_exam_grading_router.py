@@ -104,6 +104,21 @@ def _testdaf_task() -> dict:
     return {"schemaVersion": "productive-task-v1", "id": "t1", "prompt": "Schreiben Sie einen Text.", "sources": []}
 
 
+def _goethe_task(task_type: str, question_id: str = "t1") -> dict:
+    """The REAL shape german_exam_writing.py's _prompt_goethe_single_scenario produces --
+    {"questions": [{...}]}, no id/prompt/sources. Genuinely different from _testdaf_task()'s
+    productive-task-v1 shape (see goethe-writing-task.ts's header comment)."""
+    question: dict[str, object] = {
+        "questionId": question_id, "title": "Test topic", "communicativeSituation": "A short communicative situation.",
+        "contentPoints": ["point one", "point two", "point three", "point four"],
+        "taskInstructions": "Write a response that addresses all four content points listed above.",
+        "writingCoachTaskType": "freier_text",
+    }
+    if task_type == "formal_context_message":
+        question["addressForm"] = "Sie"
+    return {"questions": [question]}
+
+
 def test_grade_writing_testdaf_accepted(client: TestClient) -> None:
     """A real TestDaF writing task is a productive-task-v1 object, not a TELC
     two-statement topic. The route must accept exactly that shape."""
@@ -144,9 +159,14 @@ def test_grade_writing_unsupported_profile_rejected(client: TestClient) -> None:
 
 
 def test_grade_writing_goethe_schreiben1_accepted(client: TestClient) -> None:
-    """Goethe's schreiben_1 (forum_discussion_post) is a productive-task-v1
-    shape, exactly like TestDaF — not TELC's topic-choice shape."""
-    payload = _writing_payload("goethe_c1", "schreiben_1", task=_testdaf_task())
+    """Goethe's schreiben_1 (forum_discussion_post) is its OWN single-scenario shape
+    ({"questions": [{...}]}, no id/prompt/sources) -- NOT TELC's topic-choice shape, and NOT
+    TestDaF's productive-task-v1 shape either. A real production generate+grade attempt
+    (2026-10-07/08) found the route previously accepted a TestDaF-shaped task for a Goethe part
+    (see test_grade_writing_goethe_rejects_testdaf_shaped_task below) while the real frontend sent
+    the real Goethe shape, which the OLD code rejected with 'invalid productive schema' -- this
+    test now exercises the shape a real Goethe request actually sends."""
+    payload = _writing_payload("goethe_c1", "schreiben_1", task=_goethe_task("forum_discussion_post"))
     payload.pop("selectedTopic")
     r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 200
@@ -154,11 +174,35 @@ def test_grade_writing_goethe_schreiben1_accepted(client: TestClient) -> None:
 
 
 def test_grade_writing_goethe_schreiben2_accepted(client: TestClient) -> None:
-    payload = _writing_payload("goethe_c1", "schreiben_2", task=_testdaf_task())
+    payload = _writing_payload("goethe_c1", "schreiben_2", task=_goethe_task("formal_context_message"))
     payload.pop("selectedTopic")
     r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
     assert r.status_code == 200
     assert r.json()["scoreValue"] == 40
+
+
+def test_grade_writing_goethe_rejects_testdaf_shaped_task(client: TestClient) -> None:
+    """Regression guard for the exact bug found 2026-10-07/08: the route must not silently
+    accept a productive-task-v1 (TestDaF-shaped) task for a Goethe part just because both are
+    dicts -- that false positive is what let the real contract mismatch ship undetected."""
+    payload = _writing_payload("goethe_c1", "schreiben_1", task=_testdaf_task())
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_goethe_requires_task(client: TestClient) -> None:
+    payload = _writing_payload("goethe_c1", "schreiben_1")
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
+
+
+def test_grade_writing_goethe_requires_matching_topic_id(client: TestClient) -> None:
+    payload = _writing_payload("goethe_c1", "schreiben_1", task=_goethe_task("forum_discussion_post", question_id="other"))
+    payload.pop("selectedTopic")
+    r = client.post("/german-exam/grade-writing", headers=AUTH, json=payload)
+    assert r.status_code == 400
 
 
 def test_grade_writing_unsupported_task_type_rejected(client: TestClient) -> None:

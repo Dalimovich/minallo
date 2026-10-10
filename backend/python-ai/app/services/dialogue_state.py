@@ -8,11 +8,14 @@ academic intent classification to ``answer_intent``.
 
 from __future__ import annotations
 
+import logging
 import re
 import json
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 class DialogueAct(str, Enum):
@@ -928,7 +931,7 @@ def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str
                                   base: DialogueResolution) -> DialogueResolution:
     """Resolve only ambiguous turns with a small structured model call; fail closed."""
     from .answer import chat_completion_params  # local imports avoid startup cycles
-    from .openai_client import INTERACTIVE_SUPPORT_TIMEOUT, get_openai_client
+    from .openai_client import INTERACTIVE_CLASSIFIER_TIMEOUT, get_openai_client
     from ..config import get_settings
 
     frame = {
@@ -946,10 +949,14 @@ and source intent for continuations; mark unrelated self-contained requests new_
 Do not include reasoning."""
     try:
         model = get_settings().openai_generate_model
-        completion = get_openai_client().chat.completions.create(
+        # max_retries=0: this call already fails closed to a lexical fallback
+        # on any exception below, so a stalled attempt should surface (and
+        # get caught) immediately rather than retrying within the already-
+        # tight classifier timeout.
+        completion = get_openai_client().with_options(max_retries=0).chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(frame)}],
-            response_format={"type": "json_object"}, timeout=INTERACTIVE_SUPPORT_TIMEOUT,
+            response_format={"type": "json_object"}, timeout=INTERACTIVE_CLASSIFIER_TIMEOUT,
             # This is a short classification call, not math/reasoning work —
             # matches notes_full.py's existing override for the same reason.
             # Without it, a reasoning-model OPENAI_GENERATE_MODEL would use
@@ -1009,10 +1016,17 @@ Do not include reasoning."""
                "requires_new_retrieval": evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL,
                "confidence": confidence}
         )
-    except Exception:
+    except Exception as exc:
         # Classification unavailability must not erase obvious conversational
         # continuity. This branch is reached only for turns already deemed
         # short/context-dependent (standalone questions never call it).
+        # Logged so a tight INTERACTIVE_CLASSIFIER_TIMEOUT tripping under
+        # real provider latency is visible, not silent — watch this rate
+        # after release and raise the timeout if it fires often.
+        log.info(
+            "dialogue_semantic_classifier_fallback exception=%s",
+            type(exc).__name__,
+        )
         return _safe_conversational_fallback(message, previous_turns, base)
 
 

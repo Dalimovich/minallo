@@ -43,6 +43,12 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["german_exam"], dependencies=[Depends(require_internal_token)])
 
+# Goethe C1's two Schreiben task types: a single, no-choice scenario shape
+# ({"questions": [{title, communicativeSituation, contentPoints, taskInstructions, ...}]}),
+# distinct from both TELC's choice_long_form_writing (two chosen-between topics) and the
+# productive-task-v1 shape (id/prompt/sources) TestDaF's writing types use.
+_GOETHE_SINGLE_SCENARIO_WRITING_TYPES = frozenset({"forum_discussion_post", "formal_context_message"})
+
 
 class GenerateExamTaskRequest(BaseModel):
     userId: str
@@ -223,6 +229,22 @@ def grade_writing_endpoint(payload: GradeWritingRequest) -> dict[str, Any]:
         if payload.selectedTopic is None or payload.selectedTopic.questionId != payload.topicId:
             raise HTTPException(status_code=400, detail="selected topic does not match topicId")
         task_context = payload.selectedTopic.model_dump()
+    elif part.task_type in _GOETHE_SINGLE_SCENARIO_WRITING_TYPES:
+        # Goethe C1 shape (forum_discussion_post/formal_context_message): one no-choice scenario,
+        # {"questions": [{...}]} — genuinely different from productive-task-v1 (no id/prompt/
+        # sources), NOT the TestDaF productive-task branch below. Reuses validate_content(), the
+        # SAME generic validator generation already runs for this task type (resolves to
+        # validate_forum_discussion_post/validate_formal_context_message via VALIDATORS), rather
+        # than inventing a second check.
+        if payload.task is None:
+            raise HTTPException(status_code=400, detail="task is required for this writing task type")
+        issues = hard_issues(validate_content(part, payload.task))
+        if issues:
+            raise HTTPException(status_code=400, detail=f"invalid task: {issues[0].message}")
+        questions = payload.task.get("questions") or []
+        if len(questions) != 1 or questions[0].get("questionId") != payload.topicId:
+            raise HTTPException(status_code=400, detail="task does not match topicId")
+        task_context = questions[0]
     else:
         # Productive-task shape (e.g. TestDaF): the single generated task is the context.
         if payload.task is None:
