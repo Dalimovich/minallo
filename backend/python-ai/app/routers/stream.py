@@ -543,6 +543,13 @@ class AskStreamRequest(BaseModel):
     activeDocumentId: str | None = None
     activePdfVisible: bool = False
     question: str
+    # The exact text the browser displays/saves for this turn. `question`
+    # above may be enriched with a pasted-attachment block merged in for
+    # retrieval/intent purposes (see shell.ts's currentQuestion) — when that
+    # happens, messageText is the plain typed text alone, same as
+    # EnsureConversationRequest's own messageText. Falls back to `question`
+    # for an older client that doesn't send it yet.
+    messageText: str | None = Field(default=None, max_length=_MAX_STREAM_QUESTION_CHARS)
     # The file name + a slice of text from whatever the user is currently
     # looking at in the PDF reader. Surfaced into the user message so the
     # model can ground "this question / this section" references even when
@@ -1620,14 +1627,57 @@ async def ask_stream_endpoint(
             "stage": "request_validation",
         })
     if payload.durableConversation:
-        from ..services.conversation_store import update_tutor_request  # noqa: WPS433
+        from ..services.conversation_store import (  # noqa: WPS433
+            create_durable_tutor_turn,
+            update_tutor_request,
+            validate_durable_conversation,
+        )
+
+        def _mark_preflight_running() -> None:
+            update_tutor_request(
+                user_id=user_id, request_id=request_id,
+                status="running", stage="request_preflight",
+            )
+
         try:
-            await run_in_threadpool(lambda: update_tutor_request(
-                user_id=user_id,
-                request_id=request_id,
-                status="running",
-                stage="request_preflight",
-            ))
+            try:
+                await run_in_threadpool(_mark_preflight_running)
+            except RuntimeError as not_found:
+                if str(not_found) != "tutor_request_not_found":
+                    raise
+                # A newer frontend skips /conversations/ensure for a chat
+                # that's already persisted (Phase 3 of the TTFT work) — it
+                # sends the client-generated message ids straight to
+                # /ask-stream instead. The durable turn for THIS message
+                # doesn't exist yet even though the conversation itself
+                # does, so create it now. create_durable_tutor_turn's RPC
+                # is idempotent on request_id (ON CONFLICT DO NOTHING), so a
+                # retry reusing the same X-Idempotency-Key never creates a
+                # duplicate turn.
+                if not await run_in_threadpool(lambda: validate_durable_conversation(
+                    user_id=user_id, conversation_id=payload.conversationId,
+                )):
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={
+                        "code": "conversation_not_found",
+                        "message": "This conversation could not be found.",
+                        "retryable": False,
+                        "stage": "request_preflight",
+                    }) from not_found
+                await run_in_threadpool(lambda: create_durable_tutor_turn(
+                    user_id=user_id, conversation_id=payload.conversationId,
+                    user_message_id=payload.clientMessageId or "",
+                    # The displayed/saved text, not the retrieval-enriched
+                    # `question` (which may have a pasted-attachment block
+                    # merged in) — same distinction /conversations/ensure
+                    # already drew via its own messageText field.
+                    user_content=payload.messageText or question,
+                    assistant_message_id=payload.assistantMessageId or "",
+                    request_id=request_id,
+                    request_snapshot=payload.requestSnapshot or {},
+                ))
+                await run_in_threadpool(_mark_preflight_running)
+        except HTTPException:
+            raise
         except Exception as exc:  # noqa: BLE001
             log.exception(
                 "ask_stream_preflight_state_failed request_id=%s exception=%s",
