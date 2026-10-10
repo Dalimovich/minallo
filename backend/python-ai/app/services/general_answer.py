@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any, Iterator
 
 from ..config import get_settings
-from .answer import INTERNAL_CONFIDENTIALITY_RULE, LANGUAGE_MATCH_RULE, chat_completion_params
+from .answer import (
+    INTERNAL_CONFIDENTIALITY_RULE,
+    LANGUAGE_MATCH_RULE,
+    STATICS_SUPPORT_RULE,
+    chat_completion_params,
+)
 from .openai_client import INTERACTIVE_ANSWER_TIMEOUT, get_openai_client
 
 
@@ -24,16 +29,7 @@ organize, write, compare, recommend, or plan something, perform that task
 directly. Only explain a process when they ask how to do it. Use conversation
 history to resolve omitted information. If essential details are genuinely
 missing, ask one concise, specific question instead of producing a checklist
-of information requests.
-
-STATICS / MECHANICS. Name every support/constraint by its correct type and
-state exactly the reactions it can carry — never confuse them: a Festlager
-(pin support) carries a horizontal AND a vertical force but NO moment; a
-Loslager (roller support) carries only a force perpendicular to its rolling
-direction; an Einspannung (fixed support) carries a horizontal force, a
-vertical force, AND a moment. Write out every equilibrium equation used
-(ΣF_x = 0, ΣF_y = 0, ΣM = 0) and report every reaction, including ones that
-are zero (e.g. state "A_h = 0" rather than omitting it).""" + INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE
+of information requests.""" + STATICS_SUPPORT_RULE + INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE
 
 
 def _bounded_history(previous_turns: list[dict[str, str]] | None) -> list[dict[str, str]]:

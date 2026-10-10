@@ -427,6 +427,20 @@ LANGUAGE_MATCH_RULE = """
 
 LANGUAGE. Answer in the language of the student's latest message — German question, full German answer (headings, labels, explanations included), not just the German terms inside an English answer. Keep domain-specific terms exactly as the student wrote them (e.g. Festlager, Loslager, Einspannung, Kragarm, Auflagerkräfte, Schnittgrößen) rather than translating them; if you do answer in English, keep the German term and add the English gloss in brackets the first time, e.g. "Festlager (pinned support)"."""
 
+# Shared with general_answer.py's _SYSTEM_PROMPT and run_chat() (the generic
+# /chat path), both of which can field a statics/mechanics question with no
+# course context to ground it.
+STATICS_SUPPORT_RULE = """
+
+STATICS / MECHANICS. Name every support/constraint by its correct type and
+state exactly the reactions it can carry — never confuse them: a Festlager
+(pin support) carries a horizontal AND a vertical force but NO moment; a
+Loslager (roller support) carries only a force perpendicular to its rolling
+direction; an Einspannung (fixed support) carries a horizontal force, a
+vertical force, AND a moment. Write out every equilibrium equation used
+(ΣF_x = 0, ΣF_y = 0, ΣM = 0) and report every reaction, including ones that
+are zero (e.g. state "A_h = 0" rather than omitting it)."""
+
 # Deterministic backstop for the ANSWER OPENING prompt rule above. The model
 # usually obeys, but "usually" is not an acceptance criterion — these patterns
 # scrub banned announcement openings before anything reaches the client.

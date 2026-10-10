@@ -155,18 +155,24 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     max_tokens = _normalise_max_tokens(payload.get("max_tokens"))
     client = get_openai_client()
 
-    # Server-side confidentiality guard: the client's system prompt (and its
-    # pre-filter regex) can be bypassed by calling the API directly, so the
-    # internals rule is appended here regardless of what the client sent.
-    from .answer import INTERNAL_CONFIDENTIALITY_RULE  # noqa: WPS433
+    # Server-side guards: the client's system prompt (buildSystemPrompt() in
+    # shell.ts, plus its pre-filter regex) can be bypassed by calling the API
+    # directly, so these rules are appended here regardless of what the
+    # client sent. LANGUAGE_MATCH_RULE/STATICS_SUPPORT_RULE also defend
+    # against the client prompt's OWN "Always reply in {lang}" line
+    # overriding the question's actual language — that line is now
+    # conditional client-side too, but a stale cached bundle may still send
+    # the old unconditional one.
+    from .answer import INTERNAL_CONFIDENTIALITY_RULE, LANGUAGE_MATCH_RULE, STATICS_SUPPORT_RULE  # noqa: WPS433
+    server_rules = INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE + STATICS_SUPPORT_RULE
     if messages and messages[0].get("role") == "system":
         if INTERNAL_CONFIDENTIALITY_RULE not in str(messages[0].get("content") or ""):
             messages[0] = {
                 "role": "system",
-                "content": str(messages[0].get("content") or "") + INTERNAL_CONFIDENTIALITY_RULE,
+                "content": str(messages[0].get("content") or "") + server_rules,
             }
     else:
-        messages = [{"role": "system", "content": INTERNAL_CONFIDENTIALITY_RULE.strip()}] + messages
+        messages = [{"role": "system", "content": server_rules.strip()}] + messages
 
     # Account workspace awareness: the generic chatbot knows the student's
     # real course list (names + file counts, server-fetched and cached) so
