@@ -202,7 +202,7 @@ def test_classifier_failure_still_falls_back_safely(monkeypatch):
     assert captured_kwargs.get("timeout") == openai_client.INTERACTIVE_CLASSIFIER_TIMEOUT
 
 
-def test_classifier_uses_no_retries_and_tight_timeout(monkeypatch):
+def test_classifier_uses_one_retry_and_realistic_timeout(monkeypatch):
     from app.services import dialogue_state, openai_client
 
     with_options_calls = []
@@ -236,8 +236,8 @@ def test_classifier_uses_no_retries_and_tight_timeout(monkeypatch):
     ]
     base = dialogue_state.resolve_dialogue("why?", previous_turns=turns)
     dialogue_state.resolve_dialogue_semantically("why?", previous_turns=turns, base=base)
-    assert with_options_calls == [{"max_retries": 0}]
-    assert openai_client.INTERACTIVE_CLASSIFIER_TIMEOUT.read == 2.5
+    assert with_options_calls == [{"max_retries": 1}]
+    assert openai_client.INTERACTIVE_CLASSIFIER_TIMEOUT.read == 7.0
 
 
 # ── jwt_auth.py: pooled client is reused and closes cleanly ────────────────

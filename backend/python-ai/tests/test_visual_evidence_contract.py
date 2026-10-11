@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
+
+from starlette.responses import StreamingResponse
 
 from app.routers.stream import (
     AskStreamRequest,
@@ -10,6 +14,7 @@ from app.routers.stream import (
     _automatic_context_conversation_id,
     _validate_open_file_images,
 )
+from test_conversational_evidence_resolution import _consume, _stream_router_common_mocks
 
 
 def test_visual_contract_accepts_png_regions_and_preserves_metadata() -> None:
@@ -80,6 +85,55 @@ def test_visible_pdf_without_document_identity_is_explicit_error() -> None:
     assert "payload.activePdfVisible and not payload.activeDocumentId" in route
     assert 'code="active_pdf_state_incomplete"' in route
     assert "requestWorkflow=document_extraction" in route
+
+
+def _consume_with_mocked_response(monkeypatch, payload):
+    """Mocks everything past the preflight guard under test so the guard's
+    own branch (let through vs. reject) is what the assertions observe."""
+    router = _stream_router_common_mocks(monkeypatch)
+    monkeypatch.setattr(router, "_load_authorized_documents", lambda *_: {})
+
+    async def prepare(payload, user, status_sink=None, request_id=None, preflight=None):
+        return StreamingResponse(
+            iter([b'data: {"t":"Page answer"}\n\ndata: {"done":true}\n\n']),
+            media_type="text/event-stream",
+        )
+
+    monkeypatch.setattr(router, "_prepare_ask_stream_response", prepare)
+    return asyncio.run(_consume(router, payload, "visible-pdf-no-id"))
+
+
+def test_visible_pdf_without_document_id_but_with_page_text_still_answers(monkeypatch) -> None:
+    # A still-indexing or duplicate-named upload never gets a server-confirmed
+    # activeDocumentId (see getActivePdfContext() in active-pdf-context.ts),
+    # but the rendered page itself is still real evidence of what the student
+    # is looking at - this must not swap one refusal for another.
+    from app.routers.stream import AskStreamRequest
+
+    body = _consume_with_mocked_response(monkeypatch, AskStreamRequest(
+        courseId="course-a",
+        question="Bezugsrahmen - can you explain this to me from the script?",
+        activePdfVisible=True,
+        activeFileName="BWL_gesamt_WiSe_2026_27_V03.pdf",
+        visiblePage=10,
+        openFileContext="Bezugsrahmen\nUnternehmensumwelt\n...",
+    ))
+    assert b"active_pdf_state_incomplete" not in body
+    assert b"Page answer" in body
+
+
+def test_visible_pdf_with_no_name_or_text_still_rejected(monkeypatch) -> None:
+    # The genuinely broken client state (visible PDF, nothing at all to show
+    # for it) must still be caught rather than silently answered blind.
+    from app.routers.stream import AskStreamRequest
+
+    body = _consume_with_mocked_response(monkeypatch, AskStreamRequest(
+        courseId="course-a",
+        question="Explain this.",
+        activePdfVisible=True,
+    ))
+    assert b"active_pdf_state_incomplete" in body
+    assert b"Page answer" not in body
 
 
 def test_terminal_sse_recognises_done_and_error_only() -> None:

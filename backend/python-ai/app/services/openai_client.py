@@ -75,6 +75,10 @@ INTERACTIVE_SUPPORT_TIMEOUT = httpx.Timeout(45.0, connect=10.0, pool=10.0)
 # (resolve_dialogue_semantically) that runs in the /ask-stream preflight,
 # before any byte reaches the browser. It already fails closed to a lexical
 # fallback on ANY exception, so there is no correctness reason to wait out
-# the shared client's default retries at the 45s support timeout — cut it
-# to fail fast instead, paired with max_retries=0 at the call site.
-INTERACTIVE_CLASSIFIER_TIMEOUT = httpx.Timeout(2.5, connect=2.0, pool=1.0)
+# the shared client's default retries at the 45s support timeout.
+# 2.5s/0 retries (the original cut) tripped under ordinary provider
+# latency often enough that real follow-ups ("Unternehmensumwelt") were
+# landing on the bare-message fallback instead of the classifier's actual
+# resolution — raised to a budget realistic for a JSON-mode call over up to
+# 10 turns of history, paired with one retry at the call site.
+INTERACTIVE_CLASSIFIER_TIMEOUT = httpx.Timeout(7.0, connect=3.0, pool=2.0)

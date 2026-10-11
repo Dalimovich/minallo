@@ -101,7 +101,7 @@ export function validateActivePdfViewerState(): boolean {
   const state = viewer.__minalloPdfViewerState;
   const visiblyOpen = isPdfViewerVisible();
   const complete = !!(
-    state?.courseId && state.documentId && state.fileName && state.pdfDoc
+    state?.courseId && state.fileName && state.pdfDoc
   );
   if (visiblyOpen && !complete) {
     console.warn('active_pdf_state_incomplete', {
@@ -127,7 +127,12 @@ export function getActivePdfContext(): ActivePdfContext | null {
   const courseId = String(state?.courseId || '').trim();
   const fileName = String(state?.fileName || '').trim();
   const pdfDoc = state?.pdfDoc;
-  if (!documentId || !courseId || !fileName || !pdfDoc) return null;
+  // documentId is server-resolved identity (see openFile() in pdf-viewer.ts)
+  // and is legitimately empty while a file is still indexing or has an
+  // ambiguous duplicate upload. Only courseId/fileName/pdfDoc are required
+  // to send the rendered page's text/image — a missing documentId must not
+  // make the AI blind to a page the student is actually looking at.
+  if (!courseId || !fileName || !pdfDoc) return null;
   const visiblePage = Math.max(1, Number(viewer._pdfVisiblePage?.() || viewer.pdfPage || 1));
   const hasPageTextResult = Object.prototype.hasOwnProperty.call(state?.pageTexts || {}, visiblePage);
   const pageText = String(state?.pageTexts?.[visiblePage] || '').trim();

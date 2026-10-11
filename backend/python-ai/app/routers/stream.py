@@ -1787,7 +1787,16 @@ async def ask_stream_endpoint(
     validated_image_pages = [
         int(image["page"]) for image in validated_images if image.get("page") is not None
     ]
-    if payload.activePdfVisible and not payload.activeDocumentId:
+    # A still-indexing file or an ambiguous duplicate upload never gets a
+    # server-confirmed activeDocumentId (see getActivePdfContext() in
+    # active-pdf-context.ts), but the rendered page itself - its name, text,
+    # or image - is still real evidence of what the student is looking at.
+    # Only reject when the client genuinely has nothing to show for the
+    # visible page; otherwise let it through and resolve by file name.
+    has_page_evidence = bool((payload.openFileContext or "").strip()) or bool(validated_images)
+    if payload.activePdfVisible and not payload.activeDocumentId and not (
+        has_page_evidence and payload.activeFileName
+    ):
         async def incomplete_active_pdf_stream():
             yield _error_sse(
                 code="active_pdf_state_incomplete",

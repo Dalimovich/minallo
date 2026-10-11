@@ -128,6 +128,30 @@ def test_semantic_visual_requests_still_require_page_evidence(question: str) -> 
     assert decision.recovery_code == "exact_question_not_resolved"
 
 
+def test_visual_reference_resolves_from_visible_page_without_document_id() -> None:
+    # A still-indexing or duplicate-named upload never gets a server-confirmed
+    # document_id (see pdf-viewer.ts), but the page the student is looking at
+    # (name + page number + rendered text) is still real evidence - it must
+    # not fall through to the "cannot identify" clarification.
+    ref = resolve_question_reference(
+        question="Bezugsrahmen\n\ncan you explain this to me from the script?",
+        course_id="course-a",
+        active_document_id=None,
+        active_document_name="BWL_gesamt_WiSe_2026_27_V03.pdf",
+        visible_page=10,
+        selected_text=None,
+        selected_region_id=None,
+        visible_text="Bezugsrahmen\nUnternehmensumwelt\n...",
+        has_visible_image=False,
+    )
+    assert ref.status == "resolved"
+    decision = decide_evidence(
+        ref, question="Bezugsrahmen\n\ncan you explain this to me from the script?", has_history=False,
+    )
+    assert decision.can_answer
+    assert decision.action == "answer"
+
+
 def test_exact_11_does_not_match_visible_13_11() -> None:
     ref = _resolve("Explain question 11.", "Aufgabe 13.11\nSome other problem", image=False)
     assert ref.user_requested_label == "11"

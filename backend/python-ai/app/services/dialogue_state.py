@@ -949,11 +949,11 @@ and source intent for continuations; mark unrelated self-contained requests new_
 Do not include reasoning."""
     try:
         model = get_settings().openai_generate_model
-        # max_retries=0: this call already fails closed to a lexical fallback
-        # on any exception below, so a stalled attempt should surface (and
-        # get caught) immediately rather than retrying within the already-
-        # tight classifier timeout.
-        completion = get_openai_client().with_options(max_retries=0).chat.completions.create(
+        # max_retries=1: this call already fails closed to a lexical fallback
+        # on any exception below, so one retry (not the client default of 2)
+        # is enough to ride out a single transient stall without eating into
+        # the preflight's time-to-first-token budget.
+        completion = get_openai_client().with_options(max_retries=1).chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(frame)}],
             response_format={"type": "json_object"}, timeout=INTERACTIVE_CLASSIFIER_TIMEOUT,

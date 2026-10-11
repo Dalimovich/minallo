@@ -288,7 +288,7 @@ def resolve_question_reference(
             ref.status = "not_found"
             ref.confidence = 0.2
     elif (not explicit_questions.self_contained
-          and active_document_id and visible_page
+          and (active_document_id or active_document_name) and visible_page
           and (selected or page_text or has_visible_image)):
         ref.question_text = page_text or None
         ref.status = "resolved"
