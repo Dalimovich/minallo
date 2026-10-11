@@ -5269,6 +5269,15 @@ async def _prepare_ask_stream_response(
     # course_file_scope / retrieval_document_ids resolved above for the cache
     # key; reused here as the retrieval scope.
 
+    # Computed unconditionally — the FAST_GROUNDED escalation path below
+    # (around "standard_chunks = await run_in_threadpool(...)") reads
+    # stream_top_k regardless of whether fresh retrieval ran here, so it must
+    # never be conditionally assigned only inside the `else:` branch. A
+    # reused-prior-grounding follow-up (requires_new_retrieval=False) that
+    # still gets routed to the FAST_GROUNDED lane hit an UnboundLocalError
+    # here before this fix.
+    stream_top_k = _retrieval_limit(question, len(retrieval_document_ids or []), generative_request)
+
     # App/product questions ("how do I upload", "where is settings", "what
     # features does Minallo have") should not trigger course-document
     # retrieval. stream_answer's app-question fast path uses

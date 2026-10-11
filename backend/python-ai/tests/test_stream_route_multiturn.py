@@ -328,6 +328,144 @@ def test_relevance_scoped_document_question_does_not_crash_on_undefined_name(mon
     assert b'"done": true' in joined
 
 
+def test_fast_grounded_escalation_on_a_reused_grounding_follow_up_does_not_crash(monkeypatch):
+    """Regression for an UnboundLocalError: stream_top_k was assigned only
+    inside the `else:` branch of `if app_or_workspace or not
+    dialogue.requires_new_retrieval:` (the branch that runs fresh retrieval),
+    but the FAST_GROUNDED escalation path further down reads it regardless of
+    which branch ran. A follow-up that reuses a prior grounded turn
+    (requires_new_retrieval=False, so chunks=[] and stream_top_k was never
+    assigned) that still gets routed to the FAST_GROUNDED lane hit this every
+    time. Forces exactly that combination by wrapping the real classifiers
+    rather than hand-building their dataclasses, so every other field stays
+    realistic."""
+    import dataclasses
+
+    from app.routers import stream
+    from app.services import cache, dialogue_state, mastery, retrieval, tutor_state_store
+    from app.services.execution_router import ExecutionLane
+    from app.services.tutor_state import TutorState
+
+    user_id = "00000000-0000-4000-8000-000000000005"
+    document_id = "00000000-0000-4000-8000-000000000006"
+    conversation_id = "fast-grounded-escalation-reused-retrieval"
+
+    latest_generation = 0
+
+    def claim(_uid, _conversation, _course, generation):
+        nonlocal latest_generation
+        if generation < latest_generation:
+            return False
+        latest_generation = generation
+        return True
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id,
+                "user_id": user_id,
+                "course_id": "course-1",
+                "file_name": "lecture.pdf",
+                "storage_path": "synthetic/lecture.pdf",
+                "document_hash": "rev-1",
+                "processing_status": "ready",
+                "page_count": 10,
+                "chunk_count": 20,
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    # Force the hazardous combination by wrapping the REAL classifiers — every
+    # other field on their results stays exactly what the real logic would
+    # produce, only the two fields that matter for this bug are overridden.
+    _real_resolve_dialogue = dialogue_state.resolve_dialogue
+
+    def _forced_no_new_retrieval(*args, **kwargs):
+        result = _real_resolve_dialogue(*args, **kwargs)
+        return dataclasses.replace(result, requires_new_retrieval=False)
+
+    monkeypatch.setattr(dialogue_state, "resolve_dialogue", _forced_no_new_retrieval)
+
+    _real_resolve_execution_plan = stream.resolve_execution_plan
+
+    def _forced_fast_grounded(*args, **kwargs):
+        task_profile, plan = _real_resolve_execution_plan(*args, **kwargs)
+        forced_plan = dataclasses.replace(
+            plan, executionLane=ExecutionLane.FAST_GROUNDED, initialLane=ExecutionLane.FAST_GROUNDED,
+        )
+        return task_profile, forced_plan
+
+    monkeypatch.setattr(stream, "resolve_execution_plan", _forced_fast_grounded)
+
+    chunk = retrieval.RetrievedChunk(
+        chunk_id="c1", document_id=document_id, page_start=1, page_end=1,
+        text="Escalation retrieval result.", score=1.0, similarity=1.0,
+        chunk_type="lecture", section_title="Intro",
+    )
+    # chunks=[] from the if-branch makes fast_grounded_evidence_is_sufficient
+    # return False for real (no chunks to score) — the escalation branch at
+    # "standard_chunks = await run_in_threadpool(lambda: retrieve_routed_chunks(...))"
+    # is what actually reads the previously-unbound stream_top_k.
+    monkeypatch.setattr(stream, "retrieve_routed_chunks", lambda **_: [chunk])
+    monkeypatch.setattr(
+        stream, "retrieve_multi_item_course_evidence",
+        lambda **_: type("R", (), {"chunks": [chunk], "evidence": [], "to_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        stream, "research_unresolved_items",
+        lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+    )
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+
+    def fake_stream_answer(**_kwargs):
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield 'data: {"meta": true}\n\n'.encode()
+        yield b'data: {"t":"Answer."}\n\n'
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=document_id,
+            question="and the next part?",
+            sourceMode="course_files",
+            conversationId=conversation_id,
+            conversationGeneration=1,
+            previousTurns=[
+                {"role": "user", "text": "Explain the first part of the lecture."},
+                {"role": "assistant", "text": "The first part covers torsion."},
+            ],
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    joined = b"".join(events)
+    assert b'"code": "internal_error"' not in joined, joined
+    assert b"UnboundLocalError" not in joined, joined
+    assert b'"done": true' in joined
+
+
 # ── Phase 3 of the TTFT brief: /conversations/ensure is skippable for a chat
 # ── that's already persisted — /ask-stream must create the durable turn
 # ── itself on first sight of a request_id it hasn't seen yet, idempotently.
