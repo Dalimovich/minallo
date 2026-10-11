@@ -170,23 +170,79 @@ def _actively_indexing_elsewhere(sb, document_id: str) -> bool:
 
 # page_processing_status values that mean "this page has real, usable text",
 # even if OCR wasn't fully confident about it — used to derive each page's
-# document_page_manifests status (see _manifest_page_status). Deliberately
-# does NOT include "pending_on_demand_ocr": that value means OCR was never
-# actually attempted/completed for the page, which is the case the manifest
-# gate exists to catch (a page can't silently be missing from exhaustive
-# processing). "weak_or_ambiguous" means OCR DID run and returned real text
-# it just wasn't fully confident about (confirmed in the 2026-08-31 incident:
-# weak_or_ambiguous pages carried 200+ characters of genuine, if garbled,
-# text) — treating that identically to a page with nothing at all made the
-# whole document permanently unable to activate a new revision over a single
-# imperfect page, which is a worse outcome for retrieval than including it.
+# document_page_manifests status (see _manifest_page_status). "weak_or_ambiguous"
+# means OCR DID run and returned real text it just wasn't fully confident about
+# (confirmed in the 2026-08-31 incident: weak_or_ambiguous pages carried 200+
+# characters of genuine, if garbled, text) — treating that identically to a
+# page with nothing at all made the whole document permanently unable to
+# activate a new revision over a single imperfect page, which is a worse
+# outcome for retrieval than including it.
 _MANIFEST_INDEXED_PAGE_STATUSES = frozenset(
     {"embedded_text_reliable", "ocr_complete", "weak_or_ambiguous"}
 )
 
+# page_processing_status values meaning "OCR didn't fully resolve this page"
+# — never attempted because the per-document OCR candidate cap
+# (MINALLO_VISION_OCR_MAX_PAGES, default 20) was exceeded, skipped as
+# probable front matter, or attempted and recovered nothing. See the
+# 2026-10-11 BWL incident: a 304-page diagram-heavy deck flagged 69 OCR
+# candidates, only the top 20 were attempted, and the other 49 — each with
+# perfectly usable pdfminer text, just also containing enough diagram/table
+# ink to trip the OCR heuristic — were marked "failed" and the single-failed-
+# page gate in activate_document_index_revision rejected the whole document,
+# discarding a fully chunked and embedded 304-page index. These statuses no
+# longer map to a hard "failed" manifest row (see _manifest_page_status) —
+# index_document promotes any of them to "weak_or_ambiguous" (counted as
+# indexed) the moment the page actually has usable pdfminer text, and the
+# ones that are genuinely empty map to the non-blocking "deferred" manifest
+# status (supabase/migrations/20261011_000002_manifest_deferred_status.sql)
+# instead of blocking the whole document.
+_OCR_DEFERRABLE_PAGE_STATUSES = frozenset(
+    {"pending_on_demand_ocr", "skipped_probable_front_matter", "failed"}
+)
+
+# Below this many non-whitespace characters, pdfminer's extraction is treated
+# as "nothing usable" rather than real fallback text — matches the bar used
+# elsewhere in this module for "does this page have real content".
+_MIN_USABLE_FALLBACK_TEXT_CHARS = 20
+
 
 def _manifest_page_status(page_processing_status: str | None) -> str:
-    return "indexed" if page_processing_status in _MANIFEST_INDEXED_PAGE_STATUSES else "failed"
+    if page_processing_status in _MANIFEST_INDEXED_PAGE_STATUSES:
+        return "indexed"
+    if page_processing_status in _OCR_DEFERRABLE_PAGE_STATUSES:
+        return "deferred"
+    return "failed"
+
+
+def _resolve_deferred_ocr_pages(
+    ocr_page_metadata: dict[int, dict[str, Any]], pages: list[str]
+) -> dict[int, dict[str, Any]]:
+    """Promote a page that would otherwise manifest as "failed" (OCR deferred
+    past the per-document cap, skipped as front matter, or attempted and
+    recovered nothing) to "weak_or_ambiguous" when pdfminer already extracted
+    real text for it — that text is genuinely usable. Confirmed in the
+    2026-10-11 BWL incident: all 49 blocked pages carried 200-350 real
+    characters each, just also flagged for OCR by the diagram/table-ink
+    heuristic; a single un-OCR'd page used to reject the whole 304-page,
+    fully chunked and embedded document.
+
+    A page left with no usable text keeps its current status —
+    _manifest_page_status routes every _OCR_DEFERRABLE_PAGE_STATUSES value to
+    the non-blocking "deferred" manifest status rather than a hard "failed",
+    so it no longer blocks the rest of the document either way.
+    """
+    for idx, metadata in ocr_page_metadata.items():
+        if metadata.get("page_processing_status") not in _OCR_DEFERRABLE_PAGE_STATUSES:
+            continue
+        fallback_text = pages[idx] if 0 <= idx < len(pages) else ""
+        if len((fallback_text or "").strip()) >= _MIN_USABLE_FALLBACK_TEXT_CHARS:
+            ocr_page_metadata[idx] = {
+                **metadata,
+                "page_processing_status": "weak_or_ambiguous",
+                "ocr_needs_review": True,
+            }
+    return ocr_page_metadata
 
 
 def run_document_indexing(
@@ -610,6 +666,8 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                     )
         except Exception:  # noqa: BLE001
             log.exception("vision OCR pass failed — continuing with pdfminer text only")
+
+        ocr_page_metadata = _resolve_deferred_ocr_pages(ocr_page_metadata, pages)
 
         # Per-doc OCR cost-tracking line. Single structured log entry the
         # operator can grep for to see "how many OCR calls did indexing

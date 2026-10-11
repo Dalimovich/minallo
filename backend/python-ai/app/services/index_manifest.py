@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 
-_VALID_STATUSES = {"indexed", "semantic_empty", "filtered", "failed"}
+_VALID_STATUSES = {"indexed", "semantic_empty", "filtered", "failed", "deferred"}
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,12 @@ def validate_page_manifest(rows: list[dict[str, Any]], *, physical_page_count: i
             raise ValueError("filtered pages require an exclusion reason and cannot be required")
         if page.status == "failed":
             raise ValueError("failed pages prevent an index revision becoming ready")
+        # "deferred" (OCR skipped past the per-document cap, or attempted and
+        # recovered nothing, with no usable pdfminer fallback) does NOT block
+        # activation — activate_document_index_revision only ever counts a
+        # literal "failed" row, so an active revision can legitimately carry
+        # deferred pages. coverage_result() below reports them explicitly so
+        # exhaustive features can warn rather than silently claim completeness.
     return pages
 
 
@@ -54,6 +60,16 @@ def coverage_result(
         page.page_number for page in manifest
         if page.required_for_processing and page.source_page_id not in processed_set
     ]
+    # Pages the indexer couldn't fully resolve (OCR deferred past the cap, or
+    # attempted and recovered nothing, with no usable pdfminer fallback) —
+    # distinct from failedPages (pages this specific request didn't retrieve/
+    # process). A deferred page CAN still be processed/retrieved normally;
+    # this list exists so an exhaustive feature can say "pages 37, 112 not
+    # readable yet" instead of silently claiming full coverage.
+    deferred_pages = [
+        page.page_number for page in manifest
+        if page.required_for_processing and page.status == "deferred"
+    ]
     return {
         "documentId": document_id,
         "revision": revision,
@@ -63,6 +79,7 @@ def coverage_result(
         "processedPageIds": processed,
         "processedPages": len(expected_set & processed_set),
         "failedPages": failed_pages,
+        "deferredPages": deferred_pages,
         "excludedPages": [
             {"pageNumber": page.page_number, "reason": page.exclusion_reason}
             for page in manifest if not page.required_for_processing
