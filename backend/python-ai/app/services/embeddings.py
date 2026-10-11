@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 from functools import lru_cache
-from typing import Sequence
+from typing import Callable, Sequence
 
 from openai import APIError, OpenAI, RateLimitError
 
@@ -44,8 +44,15 @@ def _client() -> OpenAI:
     return get_openai_client()
 
 
-def embed_texts(texts: Sequence[str]) -> list[list[float]]:
-    """Embed a list of strings. Returns vectors aligned to input order."""
+def embed_texts(
+    texts: Sequence[str], on_batch: Callable[[], None] | None = None
+) -> list[list[float]]:
+    """Embed a list of strings. Returns vectors aligned to input order.
+
+    ``on_batch``, when given, is called after every batch — the indexer uses
+    it to heartbeat the document's ``updated_at`` so a large document's
+    embedding pass is never mistaken for a dead run by the orphan sweeper.
+    """
     if not texts:
         return []
 
@@ -79,6 +86,8 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
         )
         # OpenAI returns embeddings in input order.
         out.extend(item.embedding for item in resp.data)
+        if on_batch is not None:
+            on_batch()
 
     return out
 

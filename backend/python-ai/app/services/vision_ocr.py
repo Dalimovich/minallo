@@ -28,10 +28,21 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Callable, Iterable
+
+import httpx
 
 from ..config import get_settings
 from .llm_json import _token_limit_param
+
+# A single vision-model page call used to inherit the shared OpenAI client's
+# 600s read timeout × its default retries — worst case ~30 minutes for ONE
+# page, during which the 2-concurrent-documents semaphore (indexing.py) left
+# every other queued upload waiting behind it. Bounded tighter here: a page
+# that genuinely times out just keeps its pdfminer text (see _vision_extract's
+# caller, which only overwrites when the OCR result scores better).
+_OCR_CALL_TIMEOUT = httpx.Timeout(90.0, connect=10.0, pool=10.0)
+_OCR_CALL_MAX_RETRIES = 1
 
 log = logging.getLogger(__name__)
 
@@ -229,8 +240,9 @@ def _vision_extract(client, model: str, image_bytes: bytes, *, mode: str = "stan
             if mode == "handwriting"
             else "Extract the page content as Markdown."
         )
-        response = client.chat.completions.create(
+        response = client.with_options(max_retries=_OCR_CALL_MAX_RETRIES).chat.completions.create(
             model=model,
+            timeout=_OCR_CALL_TIMEOUT,
             # OCR is a transcription task — temperature 0 for faithful, stable
             # output. The SDK default of 1.0 invites paraphrase / hallucination.
             temperature=0,
@@ -402,6 +414,7 @@ def pages_via_vision_results(
     pdf_bytes: bytes,
     page_indices: Iterable[int],
     provider: str = "openai",
+    on_page: Callable[[], None] | None = None,
 ) -> dict[int, OcrPageResult]:
     """Run vision OCR on the given 0-based page indices.
 
@@ -412,6 +425,11 @@ def pages_via_vision_results(
     Returns ``{page_index: markdown}`` only for pages that succeeded. The
     indexer should ``original_pages[idx] = result[idx]`` for each key in
     the dict and leave the rest alone.
+
+    ``on_page``, when given, is called after every page attempt (success or
+    not) — the indexer uses it to heartbeat the document's ``updated_at`` so a
+    multi-page scan that runs quiet for minutes is never mistaken for a dead
+    run by the orphan-recovery sweeper.
 
     Silently returns ``{}`` when the feature flag is off, dependencies
     are missing, or the chosen provider has no credentials.
@@ -481,10 +499,14 @@ def pages_via_vision_results(
     for idx in indices:
         png = _render_page_to_png(pdfium, pdf_bytes, idx, render_dpi)
         if not png:
+            if on_page is not None:
+                on_page()
             continue
         if mode == "handwriting":
             png = _preprocess_handwriting_image(png)
         text = extract(png)
+        if on_page is not None:
+            on_page()
         if text and text.strip():
             stripped = text.strip()
             confidence, needs_review, unclear_count = _estimate_ocr_confidence(

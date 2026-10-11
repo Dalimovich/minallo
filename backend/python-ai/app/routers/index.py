@@ -93,6 +93,19 @@ def index_document_endpoint(
     if doc["course_id"] != payload.courseId:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="document not found")
 
+    # This endpoint is the one real "user-triggered" indexing entrypoint
+    # (fresh upload trigger AND the UI's explicit Retry button both call it;
+    # the automatic orphan-recovery sweeper never does). Give it a fresh
+    # auto-recovery attempt budget so a crash loop from a previous incident
+    # doesn't eat into a deliberate retry. Best-effort — the index_attempts
+    # column may not exist yet (migration not applied).
+    try:
+        get_supabase().table("documents").update(
+            {"index_attempts": 0}
+        ).eq("id", payload.documentId).execute()
+    except Exception:  # noqa: BLE001
+        log.debug("index_attempts column unavailable for %s — skipping reset", payload.documentId)
+
     def _run() -> None:
         try:
             run_document_indexing(payload.documentId, force=payload.force)

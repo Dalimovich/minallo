@@ -7,7 +7,6 @@ phases.
 
 import logging
 import os
-import threading
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -49,19 +48,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 async def _lifespan(_app: FastAPI):
     anyio.to_thread.current_default_thread_limiter().total_tokens = 64
 
-    def _recover() -> None:
-        try:
-            from .services.indexing import recover_orphaned_indexing
+    from .services.indexing import start_indexing_recovery_sweeper
 
-            recover_orphaned_indexing()
-        except Exception:  # noqa: BLE001
-            log.exception("startup indexing recovery failed")
-
-    threading.Thread(
-        target=_recover,
-        name="indexing-recovery",
-        daemon=True,
-    ).start()
+    start_indexing_recovery_sweeper()
     from .services.scoped_job_worker import start_scoped_job_worker
 
     start_scoped_job_worker()

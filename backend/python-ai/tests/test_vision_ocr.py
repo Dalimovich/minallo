@@ -650,3 +650,64 @@ def test_handwriting_renders_at_handwriting_dpi_and_returns_metadata() -> None:
     assert result[0].mode == "handwriting"
     assert result[0].needs_review is True
     assert result[0].unclear_count == 1
+
+
+def test_on_page_heartbeat_fires_once_per_page_attempted() -> None:
+    """The indexer's orphan-recovery heartbeat relies on this firing for every
+    page the loop touches — including a page whose render comes back empty —
+    so a long multi-page OCR scan never goes quiet long enough for the
+    recovery sweeper to mistake a live run for a dead one."""
+    class S(_FakeSettings):
+        vision_ocr_enabled = True
+
+    def fake_render(_pdfium, _pdf_bytes, idx, _dpi):
+        return None if idx == 1 else b"PNG"  # page 1 fails to render
+
+    def fake_extract(_client, _model, _png, *, mode="standard"):
+        return "some text"
+
+    heartbeats = []
+    with patch("app.services.vision_ocr.get_settings", lambda: S()), \
+         patch("app.services.vision_ocr._try_import_pypdfium2", lambda: object()), \
+         patch("app.services.vision_ocr._try_import_openai", lambda: (lambda **kw: object())), \
+         patch("app.services.vision_ocr._render_page_to_png", fake_render), \
+         patch("app.services.vision_ocr._vision_extract", fake_extract):
+        pages_via_vision_results(
+            b"%PDF-fake", [0, 1, 2], provider="openai", on_page=lambda: heartbeats.append(1)
+        )
+
+    assert len(heartbeats) == 3  # once per page, including the failed render
+
+
+def test_vision_extract_bounds_timeout_and_retries() -> None:
+    """A single OCR call used to inherit the shared client's 600s x 3-attempt
+    budget — worst case ~30 minutes pinning the 2-document indexing semaphore
+    for everyone else. It must now use a tight per-call timeout and a single
+    retry instead."""
+    from app.services import vision_ocr
+
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            response = MagicMockLike()
+            return response
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+        def with_options(self, **kwargs):
+            captured["with_options"] = kwargs
+            return self
+
+    class MagicMockLike:
+        choices = []
+
+    vision_ocr._vision_extract(FakeClient(), "gpt-test-vision", b"PNG")
+
+    assert captured["with_options"] == {"max_retries": vision_ocr._OCR_CALL_MAX_RETRIES}
+    assert captured["timeout"] == vision_ocr._OCR_CALL_TIMEOUT

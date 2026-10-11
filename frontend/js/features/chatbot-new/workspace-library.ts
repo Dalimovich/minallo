@@ -1038,7 +1038,24 @@ function setLearnerRowState(row: HTMLElement, state: 'indexing' | 'error' | 'unk
   if (meta) meta.textContent = label;
 }
 
-async function monitorLearnerIndex(row: HTMLElement, file: LearnerFile, attempt = 0): Promise<void> {
+// Indexing can legitimately take minutes (a long scanned PDF queued behind
+// others, slow OCR) — a backend restart no longer loses the file, but the
+// frontend used to give up on a fixed clock (60 polls x 2s = 2 minutes) and
+// show an error even when indexing was healthy, just slow. Poll with
+// backoff instead, for up to ~30 minutes, and only ever treat a real backend
+// `failed` status as an error — running out of polling time means "check
+// back later", not failure.
+const INDEX_POLL_BACKOFF_MS = [2000, 5000, 10000];
+const INDEX_POLL_MAX_MS = 30 * 60 * 1000;
+const INDEX_POLL_SLOW_LABEL_MS = 90 * 1000;
+
+function nextIndexPollDelay(attempt: number): number {
+  return INDEX_POLL_BACKOFF_MS[Math.min(attempt, INDEX_POLL_BACKOFF_MS.length - 1)]!;
+}
+
+async function monitorLearnerIndex(
+  row: HTMLElement, file: LearnerFile, attempt = 0, startedAt = Date.now()
+): Promise<void> {
   if (!row.isConnected) return;
   try {
     const updated = await refreshLearnerFile(file);
@@ -1048,12 +1065,17 @@ async function monitorLearnerIndex(row: HTMLElement, file: LearnerFile, attempt 
       return;
     }
     if (updated._document?.processing_status === 'failed') {
-      setLearnerRowState(row, 'error', 'Indexing failed');
+      setLearnerRowState(row, 'error', updated._document.processing_error || 'Indexing failed');
       learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, updated, true));
       return;
     }
-    if (attempt >= 60) throw new Error('Indexing status unavailable');
-    window.setTimeout(() => void monitorLearnerIndex(row, updated, attempt + 1), 2000);
+    if (Date.now() - startedAt >= INDEX_POLL_MAX_MS) {
+      setLearnerRowState(row, 'unknown', 'Still indexing · check back later');
+      learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, updated, true));
+      return;
+    }
+    setLearnerRowState(row, 'indexing', Date.now() - startedAt >= INDEX_POLL_SLOW_LABEL_MS ? 'Still indexing…' : 'Indexing');
+    window.setTimeout(() => void monitorLearnerIndex(row, updated, attempt + 1, startedAt), nextIndexPollDelay(attempt));
   } catch (error) {
     setLearnerRowState(row, 'unknown', String(error));
     learnerRowRetry(row, 'Retry indexing', () => void indexLearnerRow(row, file, true));
@@ -1403,8 +1425,10 @@ async function uploadIntoCourse(
         }
         throw new Error(`Indexing status unavailable (${response.status})`);
       }
-      setPendingFileState(pendingRow, 'ready', 'Indexed');
-      window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, uploaded, folder, pendingRow), 2200);
+      // The trigger response only confirms indexing STARTED (it's a
+      // fire-and-forget Cloudflare->Python call) — it used to show "Indexed"
+      // right here, before the backend had even begun. Poll the real status.
+      await reconcilePendingIndexState(panel, detail, course, uploaded, folder, pendingRow);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.startsWith('Backend indexing failed:')) {
@@ -1491,26 +1515,43 @@ async function reconcilePendingIndexState(
   course: LibraryCourse,
   file: CourseFile | undefined,
   folder: string | null,
-  row: HTMLElement | undefined
+  row: HTMLElement | undefined,
+  attempt = 0,
+  startedAt = Date.now()
 ): Promise<void> {
   if (!file?._storageName || !row?.isConnected) return;
+  const retry = (): void => {
+    window.setTimeout(
+      () => void reconcilePendingIndexState(panel, detail, course, file, folder, row, attempt + 1, startedAt),
+      nextIndexPollDelay(attempt)
+    );
+  };
   try {
     const docs = await listCourseDocuments(course.id, { force: true });
     const suffix = '/' + (folder ? folder.replace(/\\/g, '/') + '/' : '') + file._storageName;
     const matches = docs.filter((doc) => String(doc.storage_path || '').replace(/\\/g, '/').endsWith(suffix));
-    if (matches.length !== 1) return;
-    const doc = matches[0]!;
-    file._document = doc;
-    if (doc.processing_status === 'ready') {
-      setPendingFileState(row, 'ready', 'Indexed');
-      window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, file, folder, row), 500);
-    } else if (doc.processing_status === 'failed') {
-      setPendingFileState(row, 'error', doc.processing_error || 'Indexing failed');
-    } else {
-      setPendingFileState(row, 'indexing', 'Indexing for AI');
+    if (matches.length === 1) {
+      const doc = matches[0]!;
+      file._document = doc;
+      if (doc.processing_status === 'ready') {
+        setPendingFileState(row, 'ready', 'Indexed');
+        window.setTimeout(() => replacePendingWithFileRow(panel, detail, course, file, folder, row), 500);
+        return;
+      }
+      if (doc.processing_status === 'failed') {
+        setPendingFileState(row, 'error', doc.processing_error || 'Indexing failed');
+        return;
+      }
     }
+    if (Date.now() - startedAt >= INDEX_POLL_MAX_MS) {
+      setPendingFileState(row, 'unknown', 'Still indexing · check back later');
+      return;
+    }
+    setPendingFileState(row, 'indexing', Date.now() - startedAt >= INDEX_POLL_SLOW_LABEL_MS ? 'Still indexing…' : 'Indexing for AI');
+    retry();
   } catch (error) {
     console.error('study_panel_index_status_reconcile_failed', { courseId: course.id, error });
+    if (Date.now() - startedAt < INDEX_POLL_MAX_MS) retry();
   }
 }
 

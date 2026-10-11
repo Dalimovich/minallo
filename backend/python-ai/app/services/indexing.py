@@ -20,6 +20,7 @@ import logging
 import os
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -57,21 +58,115 @@ class IndexingError(Exception):
 #
 # Indexing is heavy (download → OCR render → embed) and runs in-process via the
 # router's BackgroundTask, sharing the same threadpool that serves answers and
-# generation. Two safeguards keep an upload burst (or a redeploy) from hurting
-# the rest of the service:
+# generation. A deploy (or gunicorn's own `--max-requests` worker recycling)
+# kills whatever file is mid-index at that moment, so three safeguards keep an
+# upload burst — or a run of back-to-back deploys — from hurting the rest of
+# the service or leaving an upload stuck forever:
 #   1. A bounded semaphore caps how many documents index at once PER PROCESS, so
 #      uploads can't drain the event-loop threadpool and starve generation. It
 #      also protects the 2 GB box from N concurrent vision-OCR rasterizations.
-#   2. recover_orphaned_indexing() re-queues documents a killed process left
-#      stuck mid-pipeline (the "frozen in extracting_text after a deploy" trap).
+#   2. The recovery sweeper (start_indexing_recovery_sweeper) re-queues
+#      documents a killed process left stuck mid-pipeline (the "frozen in
+#      extracting_text after a deploy" trap) — not just once at startup, but
+#      every INDEXING_RECOVERY_SWEEP_SECONDS for the life of the process, so a
+#      LATER deploy's casualties get picked up too.
+#   3. A live run heartbeats documents.updated_at (per OCR page, per embedding
+#      batch, and while queued on the semaphore) so the sweeper's staleness
+#      check never mistakes a slow-but-alive run for an orphan and starts a
+#      competing second run of the same document.
 # Env-overridable; no settings.py change needed.
 
 _INDEXING_MAX_CONCURRENCY = max(1, int(os.getenv("INDEXING_MAX_CONCURRENCY", "2")))
-_INDEXING_RECOVERY_AGE_SECONDS = max(60, int(os.getenv("INDEXING_RECOVERY_AGE_SECONDS", "120")))
+_INDEXING_RECOVERY_AGE_SECONDS = max(60, int(os.getenv("INDEXING_RECOVERY_AGE_SECONDS", "300")))
+_INDEXING_SWEEP_INTERVAL_SECONDS = max(10, int(os.getenv("INDEXING_RECOVERY_SWEEP_SECONDS", "60")))
+_INDEXING_SEMAPHORE_HEARTBEAT_SECONDS = max(5, int(os.getenv("INDEXING_SEMAPHORE_HEARTBEAT_SECONDS", "20")))
+# After this many automatic (sweeper-driven) recovery attempts, a document that
+# keeps crashing the worker is marked failed instead of retried forever — a
+# damaged/poison file must not loop indefinitely. A user-triggered reindex
+# (POST /index-document) resets this, see routers/index.py.
+_INDEXING_MAX_AUTO_ATTEMPTS = max(1, int(os.getenv("INDEXING_MAX_AUTO_ATTEMPTS", "3")))
+# Belt-and-suspenders: a row stuck in-flight for this long is failed outright
+# regardless of attempt count (covers the case where each attempt takes a
+# very long time rather than crashing fast).
+_INDEXING_ORPHAN_FAIL_AGE_SECONDS = max(
+    3600, int(os.getenv("INDEXING_ORPHAN_FAIL_AGE_SECONDS", str(24 * 3600)))
+)
 _INDEXING_SEMAPHORE = threading.BoundedSemaphore(_INDEXING_MAX_CONCURRENCY)
 
-# Non-terminal statuses an interrupted indexing run leaves behind.
-_IN_FLIGHT_STATUSES = ("extracting_text", "chunking", "embedding")
+# Non-terminal statuses an interrupted indexing run leaves behind. "uploaded"
+# is included because every row in `documents` is created only for a file
+# that's about to be indexed (course + learner uploads both gate on .pdf
+# before a row ever exists) — so a document stuck in "uploaded" with a stale
+# updated_at was either killed while queued on the semaphore, or its trigger
+# call never actually reached the background task. Either way it's safe (and
+# idempotent) to re-kick it.
+_IN_FLIGHT_STATUSES = ("uploaded", "extracting_text", "chunking", "embedding")
+
+# In-process registry so this worker never starts a second run of a document
+# it's already indexing. Production runs multiple gunicorn workers though, so
+# this alone can't see a duplicate trigger (e.g. two Retry clicks) that lands
+# on a DIFFERENT worker — see _actively_indexing_elsewhere for that case.
+_in_progress_lock = threading.Lock()
+_in_progress: set[str] = set()
+
+# Subset of _IN_FLIGHT_STATUSES that specifically means a pipeline run is
+# actively progressing right now — unlike "uploaded", which just means
+# nothing has started yet and carries no liveness guarantee.
+_ACTIVELY_RUNNING_STATUSES = ("extracting_text", "chunking", "embedding")
+
+
+def _touch_updated_at(sb, document_id: str) -> None:
+    """Heartbeat: prove a live run is still alive without touching its status.
+
+    Called per OCR page, per embedding batch, and while queued on the
+    semaphore — so a slow-but-healthy run's updated_at never goes stale enough
+    for the recovery sweeper to mistake it for an orphan. Best-effort; a failed
+    heartbeat must never abort the indexing run itself.
+    """
+    try:
+        sb.table("documents").update({
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", document_id).execute()
+    except Exception:  # noqa: BLE001
+        log.exception("indexing heartbeat failed for %s", document_id)
+
+
+def _timestamp_age_seconds(value: Any, now: datetime) -> float | None:
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (now - parsed).total_seconds()
+
+
+def _actively_indexing_elsewhere(sb, document_id: str) -> bool:
+    """True if the shared documents row shows a run genuinely in progress.
+
+    The cross-worker counterpart to the in-process ``_in_progress`` guard: two
+    gunicorn workers can each receive a direct trigger for the same document
+    (a double Retry click, or an upload-trigger retry) with neither process
+    ever knowing about the other's in-memory state. A fresh heartbeat (within
+    the recovery staleness window) on an actively-running status is the only
+    cross-process signal available without a real distributed lock — a stale
+    one means the other run already died and this one should proceed (that's
+    exactly the orphan-recovery case, which already proved staleness itself
+    via its own atomic claim and calls this with the check disabled).
+    """
+    try:
+        rows = (
+            sb.table("documents")
+            .select("processing_status, updated_at")
+            .eq("id", document_id)
+            .limit(1)
+            .execute()
+        ).data or []
+    except Exception:  # noqa: BLE001
+        log.exception("_actively_indexing_elsewhere: status check failed for %s", document_id)
+        return False
+    if not rows or rows[0].get("processing_status") not in _ACTIVELY_RUNNING_STATUSES:
+        return False
+    age = _timestamp_age_seconds(rows[0].get("updated_at"), datetime.now(timezone.utc))
+    return age is not None and age < _INDEXING_RECOVERY_AGE_SECONDS
 
 # page_processing_status values that mean "this page has real, usable text",
 # even if OCR wasn't fully confident about it — used to derive each page's
@@ -94,14 +189,50 @@ def _manifest_page_status(page_processing_status: str | None) -> str:
     return "indexed" if page_processing_status in _MANIFEST_INDEXED_PAGE_STATUSES else "failed"
 
 
-def run_document_indexing(document_id: str, *, force: bool = False) -> dict[str, Any]:
+def run_document_indexing(
+    document_id: str, *, force: bool = False, _check_live_elsewhere: bool = True
+) -> dict[str, Any]:
     """Concurrency-bounded entrypoint for indexing — what callers should use.
 
     Caps concurrent indexing per process (``_INDEXING_SEMAPHORE``) so an upload
     burst can't exhaust the threadpool that also serves answers/generation, then
-    delegates to :func:`index_document`. Blocks until a slot frees."""
-    with _INDEXING_SEMAPHORE:
-        return index_document(document_id, force=force)
+    delegates to :func:`index_document`. Blocks until a slot frees, heartbeating
+    ``updated_at`` every ``_INDEXING_SEMAPHORE_HEARTBEAT_SECONDS`` while queued so
+    a long wait isn't mistaken for an orphan.
+
+    Two duplicate-run guards, since production runs multiple gunicorn workers:
+      * ``_in_progress`` catches a second call landing in THIS process.
+      * ``_actively_indexing_elsewhere`` catches one landing on a DIFFERENT
+        worker (e.g. two Retry clicks), by checking the shared documents row
+        for a fresh in-flight heartbeat. ``_check_live_elsewhere=False`` is
+        for the orphan-recovery caller only — it already proved staleness
+        itself via its own atomic claim, so re-checking here would just see
+        the claim's own just-written heartbeat and wrongly bail out."""
+    with _in_progress_lock:
+        if document_id in _in_progress:
+            log.info(
+                "run_document_indexing: %s already running in this process — skipping duplicate",
+                document_id,
+            )
+            return get_index_status(document_id)
+        _in_progress.add(document_id)
+    try:
+        sb = get_supabase()
+        if _check_live_elsewhere and _actively_indexing_elsewhere(sb, document_id):
+            log.info(
+                "run_document_indexing: %s is actively indexing on another worker — skipping duplicate",
+                document_id,
+            )
+            return get_index_status(document_id)
+        while not _INDEXING_SEMAPHORE.acquire(timeout=_INDEXING_SEMAPHORE_HEARTBEAT_SECONDS):
+            _touch_updated_at(sb, document_id)
+        try:
+            return index_document(document_id, force=force)
+        finally:
+            _INDEXING_SEMAPHORE.release()
+    finally:
+        with _in_progress_lock:
+            _in_progress.discard(document_id)
 
 
 def claim_orphaned_indexing() -> list[str]:
@@ -110,56 +241,111 @@ def claim_orphaned_indexing() -> list[str]:
     Selects rows stuck in a non-terminal status and untouched for longer than
     ``_INDEXING_RECOVERY_AGE_SECONDS`` (the staleness guard means we never grab a
     document a peer worker is actively processing — a live run re-stamps
-    ``updated_at`` at each phase). For each candidate we issue a guarded UPDATE
+    ``updated_at`` via heartbeats). For each candidate we issue a guarded UPDATE
     (``WHERE updated_at < threshold``) that re-stamps ``updated_at``; Postgres
     serializes the writes, so only the worker whose UPDATE actually changes the
-    row claims it — every other worker's guarded UPDATE matches 0 rows. Returns
-    the claimed document ids. Never raises."""
+    row claims it — every other worker's guarded UPDATE matches 0 rows.
+
+    A document that has already exhausted ``_INDEXING_MAX_AUTO_ATTEMPTS`` automatic
+    attempts, or has been orphaned for longer than ``_INDEXING_ORPHAN_FAIL_AGE_SECONDS``,
+    is marked ``failed`` directly instead of claimed again — a damaged file that
+    keeps crashing the worker must not retry forever. Returns the ids actually
+    claimed for reindexing. Never raises."""
     sb = get_supabase()
-    threshold_iso = (
-        datetime.now(timezone.utc) - timedelta(seconds=_INDEXING_RECOVERY_AGE_SECONDS)
-    ).isoformat()
+    now = datetime.now(timezone.utc)
+    threshold_iso = (now - timedelta(seconds=_INDEXING_RECOVERY_AGE_SECONDS)).isoformat()
     try:
-        stuck = (
-            sb.table("documents")
-            .select("id, processing_status, updated_at")
-            .in_("processing_status", list(_IN_FLIGHT_STATUSES))
-            .lt("updated_at", threshold_iso)
-            .limit(200)
-            .execute()
-        ).data or []
+        stuck = _select_stuck_documents(sb, threshold_iso)
     except Exception:  # noqa: BLE001
         log.exception("claim_orphaned_indexing: failed to query stuck documents")
         return []
 
     claimed: list[str] = []
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = now.isoformat()
     for row in stuck:
         doc_id = row.get("id")
         if not doc_id:
             continue
+        attempts = int(row.get("index_attempts") or 0)
+        age_seconds = _timestamp_age_seconds(row.get("created_at"), now)
+        if attempts >= _INDEXING_MAX_AUTO_ATTEMPTS or (
+            age_seconds is not None and age_seconds >= _INDEXING_ORPHAN_FAIL_AGE_SECONDS
+        ):
+            reason = (
+                f"indexing kept crashing the worker after {attempts} automatic attempts — use Retry"
+                if attempts >= _INDEXING_MAX_AUTO_ATTEMPTS
+                else "indexing was orphaned for over 24h — use Retry"
+            )
+            _mark_failed(sb, doc_id, reason)
+            log.warning("claim_orphaned_indexing: giving up on %s (%s)", doc_id, reason)
+            continue
         try:
             resp = (
                 sb.table("documents")
-                .update({"updated_at": now_iso})
+                .update({"updated_at": now_iso, "index_attempts": attempts + 1})
                 .eq("id", doc_id)
                 .lt("updated_at", threshold_iso)
                 .execute()
             )
-            if resp.data:
-                claimed.append(doc_id)
-        except Exception:  # noqa: BLE001
-            log.exception("claim_orphaned_indexing: claim failed for %s", doc_id)
+        except Exception:  # noqa: BLE001 — index_attempts column may not exist yet.
+            try:
+                resp = (
+                    sb.table("documents")
+                    .update({"updated_at": now_iso})
+                    .eq("id", doc_id)
+                    .lt("updated_at", threshold_iso)
+                    .execute()
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("claim_orphaned_indexing: claim failed for %s", doc_id)
+                continue
+        if resp.data:
+            claimed.append(doc_id)
     return claimed
+
+
+_STUCK_DOCUMENT_COLUMNS = "id, processing_status, updated_at, created_at, index_attempts"
+_STUCK_DOCUMENT_COLUMNS_LEGACY = "id, processing_status, updated_at, created_at"
+
+
+def _select_stuck_documents(sb, threshold_iso: str) -> list[dict[str, Any]]:
+    """``index_attempts`` may not exist yet (migration 20261011_000001 not run).
+
+    Falls back to the column-reduced select so recovery keeps working either
+    way — the attempt cap just won't engage until the migration lands.
+    """
+    try:
+        return (
+            sb.table("documents")
+            .select(_STUCK_DOCUMENT_COLUMNS)
+            .in_("processing_status", list(_IN_FLIGHT_STATUSES))
+            .lt("updated_at", threshold_iso)
+            .limit(200)
+            .execute()
+        ).data or []
+    except Exception as exc:  # noqa: BLE001
+        msg = str(exc).lower()
+        if "index_attempts" not in msg and "schema cache" not in msg and "could not find" not in msg and "does not exist" not in msg:
+            raise
+        return (
+            sb.table("documents")
+            .select(_STUCK_DOCUMENT_COLUMNS_LEGACY)
+            .in_("processing_status", list(_IN_FLIGHT_STATUSES))
+            .lt("updated_at", threshold_iso)
+            .limit(200)
+            .execute()
+        ).data or []
 
 
 def recover_orphaned_indexing() -> int:
     """Claim and re-index documents orphaned by a killed/redeployed process.
 
-    Meant to run once per process at startup (off the request path). Re-indexes
-    each claimed document with ``force=True`` — the partial state from the
-    interrupted run is unreliable, and ``index_document`` is idempotent (it
-    deletes existing pages/chunks first). Returns the number re-queued."""
+    Called by the recovery sweeper (``start_indexing_recovery_sweeper``) on a
+    fixed interval for the life of the process — not just once at startup — so
+    a LATER deploy's casualties get picked up too. Re-indexes each claimed
+    document with ``force=True`` — the partial state from the interrupted run
+    is unreliable, and ``index_document`` is idempotent (it deletes existing
+    pages/chunks first). Returns the number re-queued."""
     claimed = claim_orphaned_indexing()
     if not claimed:
         return 0
@@ -169,12 +355,44 @@ def recover_orphaned_indexing() -> int:
     )
     for doc_id in claimed:
         try:
-            run_document_indexing(doc_id, force=True)
+            run_document_indexing(doc_id, force=True, _check_live_elsewhere=False)
         except IndexingError:
             log.warning("recover_orphaned_indexing: reindex failed for %s", doc_id)
         except Exception:  # noqa: BLE001
             log.exception("recover_orphaned_indexing: unexpected error reindexing %s", doc_id)
     return len(claimed)
+
+
+_sweeper_lock = threading.Lock()
+_sweeper_started = False
+
+
+def start_indexing_recovery_sweeper(interval_seconds: int = _INDEXING_SWEEP_INTERVAL_SECONDS) -> None:
+    """Daemon thread, mirrors conversation_store.start_tutor_request_sweeper's pattern.
+
+    Runs recover_orphaned_indexing() on a fixed interval for the life of the
+    process, replacing the old "once at startup only" recovery — that version
+    checked seconds after a new worker booted, well before the staleness
+    threshold, so a document killed by the PREVIOUS restart was never actually
+    recovered."""
+    global _sweeper_started
+    with _sweeper_lock:
+        if _sweeper_started:
+            return
+        threading.Thread(
+            target=_indexing_sweep_loop, args=(interval_seconds,),
+            name="indexing-recovery-sweeper", daemon=True,
+        ).start()
+        _sweeper_started = True
+
+
+def _indexing_sweep_loop(interval_seconds: int) -> None:
+    while True:
+        try:
+            recover_orphaned_indexing()
+        except Exception:  # noqa: BLE001
+            log.exception("indexing_recovery_sweeper_loop_failed")
+        time.sleep(interval_seconds)
 
 
 def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
@@ -327,12 +545,14 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                     idx for idx in attempt_idx if idx not in handwriting_set
                 ]
                 ocr_results = {}
+                _ocr_heartbeat = lambda: _touch_updated_at(sb, document_id)  # noqa: E731
                 if handwriting_attempt:
                     ocr_results.update(
                         pages_via_vision_results(
                             pdf_bytes,
                             handwriting_attempt,
                             provider=handwriting_provider,
+                            on_page=_ocr_heartbeat,
                         )
                     )
                 if normal_attempt:
@@ -341,6 +561,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
                             pdf_bytes,
                             normal_attempt,
                             provider=ocr_provider,
+                            on_page=_ocr_heartbeat,
                         )
                     )
                 # Don't blindly trust OCR: only overwrite the page when the
@@ -432,7 +653,10 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             raise IndexingError("0 chunks produced")
 
         _set_status(sb, document_id, "embedding")
-        vectors = embed_texts([c.chunk_text for c in chunks])
+        vectors = embed_texts(
+            [c.chunk_text for c in chunks],
+            on_batch=lambda: _touch_updated_at(sb, document_id),
+        )
         if len(vectors) != len(chunks):
             _mark_failed(
                 sb,
@@ -648,6 +872,10 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             "structural_index_status": (
                 "structured_ready" if structural_ready else "structural_index_failed"
             ),
+            # A successful index always clears the auto-recovery attempt
+            # counter — a prior crash-loop must not count against a document
+            # that just finished cleanly.
+            "index_attempts": 0,
         }
         if doc_type:
             update_payload["document_type"] = doc_type
@@ -681,7 +909,7 @@ def index_document(document_id: str, *, force: bool = False) -> dict[str, Any]:
             for _k in (
                 "document_type_confidence", "document_understanding",
                 "document_type_signals", "authority", "document_origin",
-                "structural_index_status",
+                "structural_index_status", "index_attempts",
             ):
                 update_payload.pop(_k, None)
             sb.table("documents").update(update_payload).eq("id", document_id).execute()

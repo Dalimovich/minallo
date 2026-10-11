@@ -433,11 +433,37 @@ test('course upload popup indexes uploaded PDFs for chatbot retrieval', () => {
   assert.match(moduleSource, /Upload complete\. Indexing files for AI search/);
   assert.match(moduleSource, /className = 'ncb-file-row ncb-file-row--pending'/);
   assert.match(moduleSource, /setPendingFileState\(pendingRow, 'indexing', 'Indexing for AI'\)/);
-  assert.match(moduleSource, /setPendingFileState\(pendingRow, 'ready', 'Indexed'\)/);
-  assert.match(moduleSource, /window\.setTimeout\(\(\) => replacePendingWithFileRow[\s\S]*?, 2200\)/);
   assert.match(css, /\.ncb-index-state i\s*\{[\s\S]*animation:\s*ncb-index-spin/);
   const uploadBody = moduleSource.slice(moduleSource.indexOf('async function uploadIntoCourse'), moduleSource.indexOf('function courseCollectionHost'));
   assert.doesNotMatch(uploadBody, /renderCourseDetail\(/);
+  // The trigger response only confirms indexing STARTED, not finished — it
+  // must poll the real status rather than assuming success immediately.
+  assert.match(uploadBody, /await reconcilePendingIndexState\(panel, detail, course, uploaded, folder, pendingRow\)/);
+  assert.doesNotMatch(uploadBody, /setPendingFileState\(pendingRow, 'ready', 'Indexed'\)/);
+});
+
+test('indexing status polling backs off and never fails on a slow (not failed) run', () => {
+  assert.match(moduleSource, /const INDEX_POLL_MAX_MS = 30 \* 60 \* 1000/);
+  assert.match(moduleSource, /function nextIndexPollDelay/);
+  // reconcilePendingIndexState: a 'ready'/'failed' backend status still wins;
+  // running out of poll time is "check back later", never a thrown error.
+  const reconcileBody = moduleSource.slice(
+    moduleSource.indexOf('async function reconcilePendingIndexState'),
+    moduleSource.indexOf('function updateCourseDetailCount')
+  );
+  assert.match(reconcileBody, /setPendingFileState\(row, 'ready', 'Indexed'\)/);
+  assert.match(reconcileBody, /setPendingFileState\(row, 'error', doc\.processing_error \|\| 'Indexing failed'\)/);
+  assert.match(reconcileBody, /Still indexing/);
+  assert.doesNotMatch(reconcileBody, /throw new Error/);
+  // monitorLearnerIndex (learner-files path): same contract — no hard
+  // attempt-count cutoff that throws, only the backend's own 'failed' status.
+  const monitorBody = moduleSource.slice(
+    moduleSource.indexOf('async function monitorLearnerIndex'),
+    moduleSource.indexOf('async function indexLearnerRow')
+  );
+  assert.doesNotMatch(monitorBody, /attempt >= 60/);
+  assert.doesNotMatch(monitorBody, /throw new Error\('Indexing status unavailable'\)/);
+  assert.match(monitorBody, /Still indexing/);
 });
 
 test('file and folder deletion update only their affected drawer rows', () => {
