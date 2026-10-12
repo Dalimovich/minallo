@@ -67,6 +67,7 @@ const ROUTES = [
   ['ai/german-exam/consume',          'ai-german-exam-consume'],
   ['ai/german-exam/grade-writing',    'ai-german-exam-grade-writing'],
   ['ai/german-exam/grade-listening-item', 'ai-german-exam-grade-listening-item'],
+  ['ai/german-exam/grade-item',       'ai-german-exam-grade-item'],
   ['ai/german-exam/grade-speaking-recording', 'ai-german-exam-grade-speaking-recording'],
   ['ai/german-exam/speaking',         'ai-german-exam-speaking'],
   ['ai/german-exam/manifest',         'ai-german-exam-manifest'],

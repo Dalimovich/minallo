@@ -48,6 +48,10 @@ def test_reading_module_dispatches_to_reading_adapter(monkeypatch):
     monkeypatch.setattr(gen, "pick_topic", lambda *a, **k: {"topicId": "academic_writing_skills", "label": "Wissenschaftliches Schreiben"})
     monkeypatch.setattr(gen, "record_topic_used", lambda *a, **k: calls.append(a))
     monkeypatch.setattr(gen, "_generate_reading", lambda profile, part, plan, topic: ({"text": {}, "candidates": [], "questions": []}, {"deterministicPassed": True}))
+    # lesen_1's task type (text_reconstruction_sentence_matching) is answer-key-protected (see
+    # test_german_exam_generator_reading_security.py) — _secure_envelope would otherwise try a
+    # real Supabase write here; this test is about dispatch, not security, so it stubs that away.
+    monkeypatch.setattr(gen.listening_practice_state, "create_generation", lambda *a, **k: None)
     envelope = gen.generate_task("u1", "telc_c1_hochschule", "reading", "lesen_1", "adaptive_practice", speculative=False)
     assert envelope["module"] == "reading"
     assert envelope["part"]["id"] == "lesen_1"

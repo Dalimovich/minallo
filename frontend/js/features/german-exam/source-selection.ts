@@ -1,7 +1,9 @@
 /** Reusable source/selection interaction. Exam policy arrives through the manifest. */
 export interface SelectionOption { id: string; text: string; role?: string }
 export interface SelectionQuestion {
-  id: string; prompt: string; group?: string; answerId: string; evidenceIds: string[];
+  // answerId/evidenceIds are answer-key fields and arrive absent until a check patches them back
+  // in (see validateSelection's own comment) — never required on the wire.
+  id: string; prompt: string; group?: string; answerId?: string | null; evidenceIds?: string[];
   skillTags: string[]; options?: SelectionOption[];
 }
 export interface SelectionContent {
@@ -22,6 +24,12 @@ function rows(v: unknown): asserts v is Array<Record<string, unknown>> {
     throw new Error('Missing or duplicate IDs');
 }
 export function validateSelection(part: SelectionPart, content: SelectionContent): void {
+  // answerId/evidenceIds are answer-key fields: german_exam_generator._secure_envelope strips
+  // them from the learner-facing generate response (see german_exam_reading_grading.py), so a
+  // freshly-generated, not-yet-checked exercise legitimately has neither. Validate them only when
+  // present (the full-content case: inventory authoring, tests, or the moment grade-item patches
+  // the real answerId back in after a check) — never require them, or every exercise would fail
+  // to render before the learner even answers.
   if (!SELECTION_TYPES.has(part.taskType) || content?.schemaVersion !== 'source-selection-v1') throw new Error('Invalid task schema');
   rows(content.source?.paragraphs); rows(content.questions);
   if (content.source.paragraphs.some(p => !nonempty(p.text))) throw new Error('Malformed source');
@@ -31,11 +39,13 @@ export function validateSelection(part: SelectionPart, content: SelectionContent
     const opts = q.options || content.options; rows(opts);
     if (opts.some(o => !nonempty(o.text)) || new Set(opts.map(o => o.text.trim().toLocaleLowerCase())).size !== opts.length) throw new Error('Invalid options');
     if (part.constraints.optionCount != null && opts.length !== part.constraints.optionCount) throw new Error('Wrong option count');
-    if (!nonempty(q.prompt) || !opts.some(o => o.id === q.answerId)) throw new Error('Invalid answer reference');
-    if (!Array.isArray(q.evidenceIds) || !q.evidenceIds.length || q.evidenceIds.some(id => !sources.has(id))) throw new Error('Invalid evidence');
+    if (!nonempty(q.prompt)) throw new Error('Invalid prompt');
+    if (q.answerId != null && !opts.some(o => o.id === q.answerId)) throw new Error('Invalid answer reference');
+    if (q.evidenceIds != null && (!Array.isArray(q.evidenceIds) || !q.evidenceIds.length || q.evidenceIds.some(id => !sources.has(id)))) throw new Error('Invalid evidence');
     if (!Array.isArray(q.skillTags) || !q.skillTags.length || q.skillTags.some(t => !nonempty(t))) throw new Error('Invalid skills');
   }
-  if (part.constraints.uniqueMappings && new Set(content.questions.map(q => q.answerId)).size !== content.questions.length) throw new Error('Nonunique mapping');
+  if (part.constraints.uniqueMappings && content.questions.every(q => q.answerId != null)
+    && new Set(content.questions.map(q => q.answerId)).size !== content.questions.length) throw new Error('Nonunique mapping');
   const roles = part.constraints.categoryRoles;
   if (roles && JSON.stringify(content.options?.map(o => o.role).sort()) !== JSON.stringify([...roles].sort())) throw new Error('Invalid category roles');
   if (part.constraints.groupCount != null && (content.questions.some(q => !nonempty(q.group)) || new Set(content.questions.map(q => q.group)).size !== part.constraints.groupCount)) throw new Error('Invalid groups');

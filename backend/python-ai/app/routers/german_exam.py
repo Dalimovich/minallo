@@ -28,6 +28,7 @@ from ..auth import require_internal_token
 from ..services import gen_timing
 from ..services.german_exam_generator import generate_task
 from ..services import german_exam_listening_grading as listening_grading
+from ..services import german_exam_reading_grading as reading_grading
 from ..services import german_exam_listening_practice_state as listening_practice_state
 from ..services.german_exams import build_manifest
 from ..services.german_exam_performance import AttemptItem, get_weakness_snapshot, record_attempts, record_topic_used
@@ -229,6 +230,54 @@ def grade_listening_item_endpoint(payload: GradeListeningItemRequest) -> dict[st
         "correct": correct,
         "correctAnswer": entry.get("correct"),
         "evidenceSegmentIds": entry.get("evidenceSegmentIds") or [],
+    }
+
+
+# ---- Generated (AI) answer-key protection — every other module --------------------------------
+# Generalizes the listening-only endpoint above to reading/language_elements (and any future
+# module) in the same way: generate_task()'s german_exam_generator._secure_envelope already
+# strips every answer-bearing field for any task type in listening_grading.ANSWER_KEY_TASK_TYPES
+# OR reading_grading.READING_ANSWER_KEY_TASK_TYPES and writes it to the same server-side table
+# (german_exam_listening_practice_generations — the name is historical, the shape is generic).
+# This endpoint is the only way to learn whether a submitted answer was correct for those task
+# types; like grade-listening-item, it reads the stored state back by (generationId, userId,
+# questionId) and the request cannot supply or replace it.
+
+
+class GradeItemRequest(BaseModel):
+    userId: str
+    generationId: str = Field(min_length=1, max_length=80)
+    questionId: str = Field(min_length=1, max_length=80)
+    selected: Annotated[str, Field(max_length=2000)] | int
+
+
+@router.post("/german-exam/grade-item")
+def grade_item_endpoint(payload: GradeItemRequest) -> dict[str, Any]:
+    """Same contract as grade_listening_item_endpoint, generalized to any task type either grading
+    module knows: an unknown generationId, a different owner, an expired generation, and an
+    unknown questionId are all the same 404; not a one-time claim (a question may legitimately be
+    re-checked)."""
+    entry = listening_practice_state.get_grading_entry(payload.userId, payload.generationId, payload.questionId)
+    if entry is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                             detail="Generation not found, expired, or has no such question.")
+    task_type = entry.get("taskType")
+    try:
+        if task_type in listening_grading.ANSWER_KEY_TASK_TYPES:
+            correct = listening_grading.grade_answer(task_type, entry.get("correct"), payload.selected)
+        else:
+            correct = reading_grading.grade_answer(task_type, entry.get("correct"), payload.selected)
+    except (listening_grading.UnknownListeningTaskTypeError, reading_grading.UnknownReadingTaskTypeError) as exc:
+        log.exception("grade-item: unrecognized stored taskType=%s", task_type)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
+                             detail="This question could not be graded.") from exc
+    return {
+        "questionId": payload.questionId,
+        "correct": correct,
+        "correctAnswer": entry.get("correct"),
+        "evidenceParagraphIds": entry.get("evidenceParagraphIds") or [],
+        "evidenceQuote": entry.get("evidenceQuote"),
+        "evidenceIds": entry.get("evidenceIds") or [],
     }
 
 

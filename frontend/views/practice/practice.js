@@ -2152,11 +2152,15 @@
       }
 
       function rdGradeDetailMc3() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
-          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === (q.mc3 || {}).correctIndex, skillTags: q.skillTags || [] };
-        });
-        return results;
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
+          var selected = rd.genAnswers[q.questionId];
+          return rdGradeGeneratedAnswer(q.questionId, selected).then(function (result) {
+            q.mc3 = q.mc3 || {};
+            if (result) q.mc3.correctIndex = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       // reading_multiple_choice (Digital TestDaF Lesen 3) — same mc3 item shape as reading_detail_mc3, plus an
@@ -2204,11 +2208,15 @@
       }
 
       function rdGradeMultipleChoice() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
-          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === (q.mc3 || {}).correctIndex, skillTags: q.skillTags || [] };
-        });
-        return results;
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
+          var selected = rd.genAnswers[q.questionId];
+          return rdGradeGeneratedAnswer(q.questionId, selected).then(function (result) {
+            q.mc3 = q.mc3 || {};
+            if (result) q.mc3.correctIndex = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       // multi_author_statement_matching_with_none — several short texts by different authors; every statement
@@ -2259,11 +2267,14 @@
       }
 
       function rdGradeMultiAuthor() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
-          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === q.correctAuthorId, skillTags: q.skillTags || [] };
-        });
-        return results;
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
+          var selected = rd.genAnswers[q.questionId];
+          return rdGradeGeneratedAnswer(q.questionId, selected).then(function (result) {
+            if (result) q.correctAuthorId = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       // contextual_cloze_mc4 — one text with inline gaps; each gap is its own four-option item. g0 is the
@@ -2320,11 +2331,14 @@
       }
 
       function rdGradeContextualCloze() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
-          results[q.questionId] = { correct: rd.genAnswers[q.questionId] === q.correctIndex, skillTags: q.skillTags || [] };
-        });
-        return results;
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
+          var selected = rd.genAnswers[q.questionId];
+          return rdGradeGeneratedAnswer(q.questionId, selected).then(function (result) {
+            if (result) q.correctIndex = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       function rdCheckButtonHtml() {
@@ -2355,11 +2369,14 @@
       }
 
       function rdGradeSourceSelection() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
-          results[q.id] = { correct: rd.genAnswers[q.id] === q.answerId, skillTags: q.skillTags || [] };
-        });
-        return results;
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
+          var selected = rd.genAnswers[q.id];
+          return rdGradeGeneratedAnswer(q.id, selected).then(function (result) {
+            if (result) q.answerId = result.correctAnswer;
+            return [q.id, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       var RD_GENERATED_RENDERERS = {
@@ -2383,34 +2400,72 @@
 
       // ── Grading (one screen per part, checked all at once — matches the
       // real exam's per-part scoring; no per-item hint/retry loop for v1) ──
+      //
+      // Generated questions no longer carry their own answer key (see
+      // german_exam_generator._secure_envelope): q.correctCandidateId/correctSectionId/
+      // correctAuthorId/correctIndex, q.mc3.correctIndex, q.tristate.answer,
+      // q.heading.correctHeadingId, q.answerId all arrive stripped from the network. Grading is a
+      // round trip to /api/ai/german-exam/grade-item per question — mirrors lsGradeGeneratedAnswer
+      // (practice.js's own Hören equivalent) exactly: it reads the real answer back server-side by
+      // (rd.generationId, questionId) and returns it ONLY now, for display — the caller patches it
+      // back onto the question object so the existing "checked" rendering needs no changes.
+
+      function rdGradeGeneratedAnswer(questionId, selected) {
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/grade-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generationId: rd.generationId, questionId: questionId, selected: selected })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('grade_item_http_' + resp.status);
+          return resp.json();
+        }).catch(function (err) {
+          // Fails closed: the question is left ungraded rather than guessing — never fabricate a
+          // correct/incorrect result locally.
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Lesen] grade-item failed', err);
+          return null;
+        });
+      }
+
+      function rdResultsFromPairs(pairs) {
+        var results = {};
+        pairs.forEach(function (pair) { results[pair[0]] = pair[1]; });
+        return results;
+      }
 
       function rdGradeTextReconstruction() {
         var questions = rd.content.questions || [];
-        var results = {};
-        questions.forEach(function (q) {
+        return Promise.all(questions.map(function (q) {
           var given = rd.genAnswers[q.gapId];
-          results[q.questionId] = { correct: given === q.correctCandidateId, skillTags: q.skillTags || [] };
-        });
-        return results;
+          return rdGradeGeneratedAnswer(q.questionId, given).then(function (result) {
+            if (result) q.correctCandidateId = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       function rdGradeSectionMatching() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
           var given = rd.genAnswers[q.questionId];
-          results[q.questionId] = { correct: given === q.correctSectionId, skillTags: q.skillTags || [] };
-        });
-        return results;
+          return rdGradeGeneratedAnswer(q.questionId, given).then(function (result) {
+            if (result) q.correctSectionId = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       function rdGradeDetailGlobal() {
-        var results = {};
-        (rd.content.questions || []).forEach(function (q) {
+        var questions = rd.content.questions || [];
+        return Promise.all(questions.map(function (q) {
           var given = rd.genAnswers[q.questionId];
-          var expected = q.kind === 'detail' ? (q.tristate || {}).answer : (q.heading || {}).correctHeadingId;
-          results[q.questionId] = { correct: given === expected, skillTags: q.skillTags || [] };
-        });
-        return results;
+          return rdGradeGeneratedAnswer(q.questionId, given).then(function (result) {
+            if (result) {
+              if (q.kind === 'detail') { q.tristate = q.tristate || {}; q.tristate.answer = result.correctAnswer; }
+              else { q.heading = q.heading || {}; q.heading.correctHeadingId = result.correctAnswer; }
+            }
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(rdResultsFromPairs);
       }
 
       var RD_GENERATED_GRADERS = {
@@ -2430,13 +2485,17 @@
       function rdCheckGeneratedAnswers() {
         var grader = RD_GENERATED_GRADERS[rd._activeTaskType];
         if (!grader) return;
-        var results = grader();
-        var ids = Object.keys(results);
-        var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
-        rd.genChecked = true;
-        rd._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
-        rdRenderGeneratedWorkspace();
-        rdSaveGeneratedResults(results);
+        // Every grader returns a Promise now (grading is a network round trip per question —
+        // see rdGradeGeneratedAnswer's own comment): the correct answers arrive and get patched
+        // onto rd.content only once this resolves, so the "checked" re-render must wait for it.
+        Promise.resolve(grader()).then(function (results) {
+          var ids = Object.keys(results);
+          var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
+          rd.genChecked = true;
+          rd._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
+          rdRenderGeneratedWorkspace();
+          rdSaveGeneratedResults(results);
+        });
       }
 
       // Tracked on rd._resultsSavePromise (mirrors ls._resultsSavePromise/
@@ -3701,19 +3760,43 @@
         sbWireCheckButton();
       }
 
+      // Generated questions no longer carry q.correctIndex (german_exam_generator._secure_envelope
+      // strips it — see practice.js's rdGradeGeneratedAnswer for the identical Lesen pattern this
+      // mirrors): grading is a round trip to /api/ai/german-exam/grade-item per gap, which reads
+      // the real answer back server-side by (sb.generationId, questionId) and patches it onto q
+      // for display only once it returns.
+      function sbGradeGeneratedAnswer(questionId, selected) {
+        return _authFetch(BACKEND_URL + '/api/ai/german-exam/grade-item', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generationId: sb.generationId, questionId: questionId, selected: selected })
+        }).then(function (resp) {
+          if (!resp.ok) throw new Error('grade_item_http_' + resp.status);
+          return resp.json();
+        }).catch(function (err) {
+          if (typeof console !== 'undefined' && console.warn) console.warn('[Sprachbausteine] grade-item failed', err);
+          return null;
+        });
+      }
+
       function sbCheckGeneratedAnswers() {
         var questions = sb.content.questions || [];
-        var results = {};
-        questions.forEach(function (q) {
+        Promise.all(questions.map(function (q) {
           var given = sb.genAnswers[q.gapId];
-          results[q.questionId] = { correct: given === q.correctIndex, skillTags: q.skillTags || [] };
+          return sbGradeGeneratedAnswer(q.questionId, given).then(function (result) {
+            if (result) q.correctIndex = result.correctAnswer;
+            return [q.questionId, { correct: !!result && result.correct, skillTags: q.skillTags || [] }];
+          });
+        })).then(function (pairs) {
+          var results = {};
+          pairs.forEach(function (pair) { results[pair[0]] = pair[1]; });
+          var ids = Object.keys(results);
+          var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
+          sb.genChecked = true;
+          sb._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
+          sbRenderWorkspace();
+          sbSaveGeneratedResults(results);
         });
-        var ids = Object.keys(results);
-        var correctCount = ids.filter(function (id) { return results[id].correct; }).length;
-        sb.genChecked = true;
-        sb._lastGenScoreLabel = 'Score: ' + correctCount + ' / ' + ids.length;
-        sbRenderWorkspace();
-        sbSaveGeneratedResults(results);
       }
 
       // Tracked on sb._resultsSavePromise (mirrors rd/ls's own pattern)

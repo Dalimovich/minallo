@@ -79,13 +79,18 @@ def test_live_generation_stores_grading_content_server_side_keyed_by_the_envelop
     assert stored[0]["grading_content"]["q1"]["correct"] == "speaker_2"
 
 
-def test_non_listening_modules_never_touch_listening_practice_state(monkeypatch):
+def test_modules_without_an_answer_key_never_touch_listening_practice_state(monkeypatch):
+    """Reading/language_elements are now ALSO answer-key-protected through this same table (see
+    test_german_exam_generator_reading_security.py — german_exam_generator._secure_envelope was
+    generalized beyond listening-only), so this guard now has to use a module that genuinely never
+    carries one: writing grades through its own path (german_exam_writing_grading.py) and never
+    embeds a key in generate_task()'s envelope to begin with."""
     _stub_common(monkeypatch)
     stored = []
     _recording_create_generation(monkeypatch, stored)
-    monkeypatch.setattr(gen, "_generate_reading", lambda profile, part, plan, topic: ({"text": {}, "candidates": [], "questions": []}, {"deterministicPassed": True}))
+    monkeypatch.setattr(gen, "_generate_writing", lambda profile, part, plan, topic: ({"questions": []}, {"deterministicPassed": True}))
 
-    gen.generate_task("u1", "telc_c1_hochschule", "reading", "lesen_1", "adaptive_practice")
+    gen.generate_task("u1", "telc_c1_hochschule", "writing", "schreiben_1", "adaptive_practice")
 
     assert stored == []
 
