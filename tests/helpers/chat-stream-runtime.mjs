@@ -23,6 +23,14 @@ export function shellRuntime(overrides = {}, extraNames = []) {
     normaliseSourceMode: x => x || 'auto', normaliseCourseFileScope: x => x || 'all_course_files',
     createSoftStreamReveal: () => ({ push: () => {}, finish: async () => {} }),
     isPdfViewerVisible: () => true,
+    // ragEligibility()'s image-continuation check (see shell.ts) — imported
+    // from visual-context.ts (isVisualFollowUpQuestion, not AST-extractable
+    // from shell.ts the way a same-file helper is) or opt-in via extraNames
+    // (findRecentImageTurn, a real shell.ts function). Defaulting both to
+    // "no continuation detected" preserves every existing test's behavior;
+    // a test that actually exercises image continuation overrides these.
+    isVisualFollowUpQuestion: () => false,
+    findRecentImageTurn: () => undefined,
     ...overrides,
   };
   vm.createContext(context);

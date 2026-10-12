@@ -23,7 +23,7 @@ const priorTurnsEnd = source.indexOf('\n      const followUpDoc', priorTurnsStar
 const priorTurns = source.slice(priorTurnsStart, priorTurnsEnd);
 
 const ragEligibilityStart = source.indexOf('function ragEligibility(');
-const ragEligibility = source.slice(ragEligibilityStart, ragEligibilityStart + 1200);
+const ragEligibility = source.slice(ragEligibilityStart, ragEligibilityStart + 1600);
 
 test('a shared helper extracts clipboard-pasted attachment text from a message', () => {
   assert.ok(helperStart >= 0, 'clipboardAttachmentText helper must exist');

@@ -33,7 +33,7 @@ import { routeStudyIntent } from '../ai-chat/intent-router.js';
 import { resolveNotesFileNameFromText, pickExplicitNotesCandidate } from './notes-intent-resolver.js';
 import { runNotesFlow, type ResolvedNotesDocument } from './notes-intent-flow.js';
 import { buildPageContext } from '../ai-chat/ai-page-context.js';
-import { shouldReuseRecentVisualContext, type LastAiImageContext } from '../ai-chat/visual-context.js';
+import { shouldReuseRecentVisualContext, isVisualFollowUpQuestion, type LastAiImageContext } from '../ai-chat/visual-context.js';
 import type { DailyMissionPanelHandlers } from '../daily-mission/daily-mission-ui.js';
 import {
   generateDailyMission,
@@ -1791,42 +1791,65 @@ async function streamAiReply(
       // truncates history turns to ~1.2k chars, so the doc would never
       // survive inside previousTurns.
       const followUpDoc = await resolveFollowUpDoc(requestMessages, rag.courseId || null);
-      const turnImages = resolveTurnImages(
-        rag.question, rag.courseId, durable!.conversationId, requestMessages.at(-1)?.images || []
+      const turnImages = await resolveTurnImages(
+        rag.question, rag.courseId, durable!.conversationId, requestMessages.at(-1)?.images || [], requestMessages
       );
-      const streamed = await streamFromAskStream(
-        rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
-        rag.documentIds, rag.documentNames, rag.groundingRequest, followUpDoc, allowDiagrams,
-        rag.activePdfContext, durable!.conversationId, turnImages, true,
-        assistantMessage.requestId, assistantMessage, sourceUser?.text
-      );
-      raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
-      if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
-      Object.assign(assistantMessage, {
-        text: raw,
-        completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString(),
-        allowDiagrams,
-        selectedSourceMode: streamed.meta?.selectedSourceMode as SourceMode | undefined,
-        sourceScope: streamed.meta?.sourceScope as string | undefined,
-        answerMode: streamed.meta?.answerMode as string | undefined,
-        groundingMode: streamed.meta?.groundingMode as string | undefined,
-        sourceLabel: streamed.meta?.sourceLabel as string | undefined,
-        courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
-        requestSnapshot: assistantMessage.requestSnapshot ? {
-          ...assistantMessage.requestSnapshot,
-          groundingResolution: streamed.meta?.groundingResolution as GroundingResolution | undefined
-        } : undefined,
-        sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
-        pedagogicalAnalysis: streamed.meta?.pedagogicalAnalysis as Record<string, unknown> | undefined,
-        learningRecommendations: Array.isArray(streamed.meta?.learningRecommendations)
-          ? streamed.meta.learningRecommendations as Array<Record<string, unknown>> : undefined,
-        visualAids: Array.isArray(streamed.meta?.visualAids)
-          ? streamed.meta.visualAids as Array<Record<string, unknown>> : undefined,
-        learningJourney: streamed.meta?.taskType === 'document_wide_extraction'
-          ? learningJourneyMarkerFromMeta(streamed.meta) : undefined,
-        examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''),
-      });
-      if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
+      // ragEligibility routed this turn here ONLY because it looks like a
+      // follow-up to an earlier image, but recovery (window cache, then
+      // this chat's own history + persistentFileId refetch) still came up
+      // empty — e.g. the storage file is gone, or the fetch failed. Answering
+      // anyway would mean the model guesses/fabricates the exercise from
+      // nothing; fail honestly instead of calling the model at all, in
+      // whichever language the follow-up itself was written in (a one-off
+      // fixed message, not a generated answer — Fix 4's language precedence
+      // rules are for real answers, not this fallback).
+      if (rag.pendingImageContinuation && !turnImages.length) {
+        const isGerman = /[äöüßÄÖÜ]|\b(und|der|die|das|bitte|kürzer|nochmal|erklär)\b/i.test(rag.question);
+        raw = isGerman
+          ? 'Ich habe das Bild nicht mehr. Bitte füge es noch einmal an, dann kann ich weiterhelfen.'
+          : 'I no longer have the image. Please attach it again so I can help.';
+        if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
+        Object.assign(assistantMessage, {
+          text: raw, completionState: 'complete', exportable: true, retryable: false,
+          updatedAt: new Date().toISOString(), allowDiagrams: false,
+          sourceScope: 'none', answerMode: 'general', groundingMode: 'none',
+        });
+        if (isOriginActive()) setBubbleSubtitle(aiRow, 'general_knowledge');
+      } else {
+        const streamed = await streamFromAskStream(
+          rag.question, rag.courseId, bubble, controller, priorTurns, thinking,
+          rag.documentIds, rag.documentNames, rag.groundingRequest, followUpDoc, allowDiagrams,
+          rag.activePdfContext, durable!.conversationId, turnImages, true,
+          assistantMessage.requestId, assistantMessage, sourceUser?.text
+        );
+        raw = sanitizeChatbotDiagrams(streamed.text, allowDiagrams);
+        if (continuationBase) raw = `${continuationBase}\n\n${raw}`;
+        Object.assign(assistantMessage, {
+          text: raw,
+          completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString(),
+          allowDiagrams,
+          selectedSourceMode: streamed.meta?.selectedSourceMode as SourceMode | undefined,
+          sourceScope: streamed.meta?.sourceScope as string | undefined,
+          answerMode: streamed.meta?.answerMode as string | undefined,
+          groundingMode: streamed.meta?.groundingMode as string | undefined,
+          sourceLabel: streamed.meta?.sourceLabel as string | undefined,
+          courseFileScope: streamed.meta?.courseFileScope as CourseFileScope | undefined,
+          requestSnapshot: assistantMessage.requestSnapshot ? {
+            ...assistantMessage.requestSnapshot,
+            groundingResolution: streamed.meta?.groundingResolution as GroundingResolution | undefined
+          } : undefined,
+          sources: Array.isArray(streamed.meta?.sources) ? streamed.meta.sources as SrcItem[] : undefined,
+          pedagogicalAnalysis: streamed.meta?.pedagogicalAnalysis as Record<string, unknown> | undefined,
+          learningRecommendations: Array.isArray(streamed.meta?.learningRecommendations)
+            ? streamed.meta.learningRecommendations as Array<Record<string, unknown>> : undefined,
+          visualAids: Array.isArray(streamed.meta?.visualAids)
+            ? streamed.meta.visualAids as Array<Record<string, unknown>> : undefined,
+          learningJourney: streamed.meta?.taskType === 'document_wide_extraction'
+            ? learningJourneyMarkerFromMeta(streamed.meta) : undefined,
+          examPractice: GENERATED_EXAM_REQUEST_RE.test(sourceUser?.text || ''),
+        });
+        if (isOriginActive()) setBubbleSubtitle(aiRow, streamed.meta?.sourceScope as string | undefined);
+      }
     } else if (normaliseSourceMode(requestChat.sourceMode) === 'course_files') {
       if (thinking) await thinking.waitMinimum();
       thinking?.remove(true);
@@ -3470,18 +3493,81 @@ function clipboardAttachmentText(message: ChatMessage): string[] {
     .map((file) => file.textContent!.trim());
 }
 
+// How many of the most-recent messages in a chat count as "recent" for
+// re-attaching an earlier turn's image to a text-only follow-up — mirrors
+// window._lastAiImageContext's own remainingTurns budget (4 reuses) so a
+// cold cache (reload, or a different browser tab) doesn't grant a longer
+// reuse window than an unbroken session would have.
+const RECENT_IMAGE_LOOKBACK_MESSAGES = 8;
+
+/** Scans a chat's OWN message history (already scoped to this conversation
+ * by construction — the caller only ever passes one chat's messages, so no
+ * courseId/conversationId matching is needed here unlike the window-cache
+ * path below) for the most recent user turn that carried an image. Used both
+ * to decide ROUTING (ragEligibility, synchronously, before any network call)
+ * and, once routed, to actually recover the image (resolveTurnImages). */
+function findRecentImageTurn(messages: ChatMessage[]): ChatMessage | undefined {
+  const recent = messages.slice(-RECENT_IMAGE_LOOKBACK_MESSAGES);
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const m = recent[i]!;
+    if (m.role === 'user' && m.images?.length) return m;
+  }
+  return undefined;
+}
+
+async function fetchPreviewAsDataUrl(fileId: string): Promise<string | null> {
+  const previewUrl = await resolveAttachmentPreviewUrl(fileId);
+  const response = await fetch(previewUrl);
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  return readAsDataUrl(blob as unknown as File);
+}
+
+/** Recovers real image bytes for a history turn's images. `dataUrl` is
+ * blanked to '' by compactMessageForStorage (see its own docstring) the
+ * moment the chat shell re-initializes — which happens on ANY SPA
+ * navigation to the Chatbot page, not just a full reload — so a turn that
+ * still visibly "has" images may carry none of their actual bytes by the
+ * time a later follow-up needs them. `persistentFileId` is never cleared by
+ * that compaction, and refetches the real bytes through the same
+ * /api/chat-attachments preview action the "reopen this attachment" UI
+ * feature already uses (openPersistedAttachment) — just converted to a data
+ * URL here since the AI request needs inline base64, not a viewer `<img src>`.
+ * Never throws: an image that can't be recovered is just dropped, same as
+ * every other evidence-missing path in this file (fail closed, not fatal). */
+async function recoverTurnImages(images: PastedImage[]): Promise<PastedImage[]> {
+  const recovered = await Promise.all(images.map(async (img): Promise<PastedImage | null> => {
+    if (img.dataUrl) return img;
+    if (!img.persistentFileId) return null;
+    try {
+      const dataUrl = await fetchPreviewAsDataUrl(img.persistentFileId);
+      return dataUrl ? { ...img, dataUrl } : null;
+    } catch {
+      return null;
+    }
+  }));
+  return recovered.filter((img): img is PastedImage => !!img);
+}
+
 /** A text-only follow-up ("what's this image about?", "solve question a")
  * has no attachment of its own — ragEligibility bypasses the visual stream
  * entirely for messages with images, so a follow-up about a PREVIOUS turn's
  * image would otherwise reach the backend with zero image evidence and the
  * model has nothing to look at. Mirrors ai-ask.ts's window._lastAiImageContext
- * pattern (shared key) so a short anaphoric window survives across turns. */
-function resolveTurnImages(
+ * pattern (shared key) so a short anaphoric window survives across turns.
+ *
+ * Two sources, tried in order: the in-memory window cache (fast, no network,
+ * but empty after a reload or once its own 4-turn/15-minute budget expires),
+ * then this chat's own recent history (works across a reload too, since it's
+ * read from the persisted chat store — see recoverTurnImages for why that
+ * still needs a network refetch rather than trusting history's own dataUrl). */
+async function resolveTurnImages(
   question: string,
   courseId: string,
   conversationId: string,
-  currentImages: PastedImage[]
-): PastedImage[] {
+  currentImages: PastedImage[],
+  messages: ChatMessage[],
+): Promise<PastedImage[]> {
   const w = window as unknown as { _lastAiImageContext?: LastAiImageContext };
   if (currentImages.length) {
     w._lastAiImageContext = {
@@ -3497,17 +3583,35 @@ function resolveTurnImages(
     return currentImages;
   }
   const ctx = w._lastAiImageContext;
-  if (!shouldReuseRecentVisualContext(question, ctx, {
+  if (shouldReuseRecentVisualContext(question, ctx, {
     courseId: courseId || undefined,
     conversationId: conversationId || undefined,
-  })) return [];
-  w._lastAiImageContext = { ...ctx!, remainingTurns: ctx!.remainingTurns - 1 };
-  return ctx!.images.map((img, i) => ({
-    id: `carried-image-${i}`,
-    name: 'carried-image',
-    mediaType: img.mediaType,
-    dataUrl: `data:${img.mediaType};base64,${img.data}`,
-  }));
+  })) {
+    w._lastAiImageContext = { ...ctx!, remainingTurns: ctx!.remainingTurns - 1 };
+    return ctx!.images.map((img, i) => ({
+      id: `carried-image-${i}`,
+      name: 'carried-image',
+      mediaType: img.mediaType,
+      dataUrl: `data:${img.mediaType};base64,${img.data}`,
+    }));
+  }
+  if (!isVisualFollowUpQuestion(question)) return [];
+  const turn = findRecentImageTurn(messages.slice(0, -1));
+  if (!turn?.images?.length) return [];
+  const recovered = await recoverTurnImages(turn.images);
+  if (recovered.length) {
+    w._lastAiImageContext = {
+      images: recovered.map((img) => {
+        const comma = img.dataUrl.indexOf(',');
+        return { mediaType: img.mediaType, data: comma >= 0 ? img.dataUrl.slice(comma + 1) : img.dataUrl };
+      }),
+      courseId: courseId || undefined,
+      conversationId: conversationId || undefined,
+      timestamp: Date.now(),
+      remainingTurns: 4,
+    };
+  }
+  return recovered;
 }
 
 /** Decide whether the latest user turn should go through RAG (`/ask-stream`)
@@ -3526,6 +3630,11 @@ function ragEligibility(
   activePdfContext: ActivePdfContext | null;
   explicitSourceOverride: boolean;
   groundingRequest: GroundingRequest;
+  // Set only when this turn was routed to /ask-stream SOLELY because it
+  // looks like a continuation of an earlier image conversation (no image of
+  // its own). The caller must verify resolveTurnImages() actually recovered
+  // something before proceeding — see its call site in streamAiReply.
+  pendingImageContinuation?: boolean;
 } | null {
   if (!messages.length) return null;
   const last = messages[messages.length - 1]!;
@@ -3730,11 +3839,22 @@ function ragEligibility(
     // stays on the generic path when there's no course to ground against.
     const mode = isLearner ? 'auto' : normaliseSourceMode(active.sourceMode);
     const hasUrl = /(?:https?:\/\/|www\.)\S+|\byoutu\.be\/\S+|\b(?:youtube|wikipedia|github|stackoverflow)\.(?:com|org)\b/i.test(currentQuestion);
-    if ((last.images || []).length || mode === 'internet' || (mode === 'auto' && hasUrl)) {
+    // A text-only follow-up to an earlier image turn ("und a?", "shorter
+    // please") must stay on THIS branch too, not fall through to the generic
+    // /api/ai path — that path never re-attaches the earlier image (see
+    // resolveTurnImages, only wired into the /ask-stream branch below), so a
+    // bare presence check on `last.images` alone silently lost the visual
+    // conversation after turn 1. findRecentImageTurn only looks at THIS
+    // chat's own history, so no course/conversation id matching is needed.
+    const continuesImageConversation = !(last.images || []).length
+      && isVisualFollowUpQuestion(currentQuestion)
+      && !!findRecentImageTurn(messages.slice(0, -1));
+    if ((last.images || []).length || continuesImageConversation || mode === 'internet' || (mode === 'auto' && hasUrl)) {
       return {
         question: currentQuestion, courseId: '', documentIds: [], documentNames: [],
         activePdfContext: null, explicitSourceOverride: false,
-        groundingRequest: { retrievalScope: { type: 'course' } }
+        groundingRequest: { retrievalScope: { type: 'course' } },
+        pendingImageContinuation: continuesImageConversation && !(last.images || []).length,
       };
     }
     return null;
@@ -4982,7 +5102,7 @@ async function callGenericAi(
   followUpDoc: GeneratedDoc | null = null,
   allowDiagrams = true
 ): Promise<string> {
-  const apiMessages = buildApiMessages(messages, followUpDoc);
+  const apiMessages = await buildApiMessages(messages, followUpDoc);
   const resp = await authenticatedFetch('/api/ai', {
     method: 'POST',
     signal: controller.signal,
@@ -5528,10 +5648,10 @@ function capChars(text: string, max: number, note: string): string {
   return text.length <= max ? text : text.slice(0, max) + '\n' + note;
 }
 
-function buildApiMessages(
+async function buildApiMessages(
   messages: ChatMessage[],
   resolvedFollowUpDoc: GeneratedDoc | null = null
-): Array<{ role: 'user' | 'assistant'; content: unknown }> {
+): Promise<Array<{ role: 'user' | 'assistant'; content: unknown }>> {
   // Mirror chatbot.js: keep last ~20 messages, and inline images as Claude-shaped image blocks.
   const trimmed = messages.slice(-20);
   // Messages older than the newest NCB_HISTORY_FULL_MESSAGES get capped.
@@ -5557,7 +5677,7 @@ function buildApiMessages(
   // visible reply only says it's ready). The caller resolves it (async note
   // restore for old chats); the in-chat scan is the synchronous fallback.
   const followUpDoc = resolvedFollowUpDoc ?? generatedDocForFollowUp(trimmed);
-  const result: Array<{ role: 'user' | 'assistant'; content: unknown }> = trimmed.map((m, idx) => {
+  const result: Array<{ role: 'user' | 'assistant'; content: unknown }> = await Promise.all(trimmed.map(async (m, idx) => {
     const isOldTurn = idx < fullFidelityFrom;
     if (m.role === 'assistant') {
       const text = sanitizeChatbotDiagrams(m.text, !!m.allowDiagrams);
@@ -5606,8 +5726,12 @@ function buildApiMessages(
         });
       });
     }
-    (m.images || []).forEach((img) => {
-      if (!img.dataUrl) return;
+    // dataUrl may be '' (compactMessageForStorage blanks it on every shell
+    // re-init — see its docstring) even though the image genuinely belongs
+    // here; recoverTurnImages refetches real bytes by persistentFileId
+    // instead of silently dropping the image with no trace.
+    const recoveredImages = await recoverTurnImages(m.images || []);
+    recoveredImages.forEach((img) => {
       blocks.push({
         type: 'image',
         source: {
@@ -5673,7 +5797,7 @@ function buildApiMessages(
         ? (blocks[0] as { text: string }).text
         : blocks,
     };
-  });
+  }));
 
   // The backend /chat endpoint REJECTS the whole request above 5 image blocks
   // (counted across all messages). Keep the newest images — the ones the

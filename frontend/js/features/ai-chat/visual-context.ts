@@ -35,6 +35,26 @@ export function isLikelyVisualAssignmentQuestion(question: string): boolean {
   );
 }
 
+// Shared with shell.ts's history-scan fallback (findRecentImageTurn's caller):
+// whether a question even plausibly CONTINUES a recent image conversation,
+// independent of whether the evidence for that conversation is still in
+// window._lastAiImageContext (this function's other caller) or has to be
+// recovered from the chat's own persisted history instead.
+export function isVisualFollowUpQuestion(question: string): boolean {
+  const visualReference =
+    /\b(this|that|it|image|picture|screenshot|photo|shown|above|diagram|table|checkbox|mark)\b/i;
+  const correctionOrContinuation =
+    /\b(missing|missed|wrong|incorrect|again|complete|all|only|you said|you mentioned|check|recheck|correct|fix|number|remaining)\b/i;
+  const formattingFollowUp =
+    /\b(german|english|translate|explain|shorter|detail|table|list|format)\b/i;
+  const shortFollowUp = question.trim().split(/\s+/).filter(Boolean).length <= 18;
+
+  return visualReference.test(question) ||
+    correctionOrContinuation.test(question) ||
+    formattingFollowUp.test(question) ||
+    shortFollowUp;
+}
+
 export function shouldReuseRecentVisualContext(
   question: string,
   context: LastAiImageContext | undefined,
@@ -48,17 +68,5 @@ export function shouldReuseRecentVisualContext(
   if (context.fileName && context.fileName !== current.fileName) return false;
   if (context.conversationId && context.conversationId !== current.conversationId) return false;
   if (context.page && current.page && context.page !== current.page) return false;
-
-  const visualReference =
-    /\b(this|that|it|image|picture|screenshot|photo|shown|above|diagram|table|checkbox|mark)\b/i;
-  const correctionOrContinuation =
-    /\b(missing|missed|wrong|incorrect|again|complete|all|only|you said|you mentioned|check|recheck|correct|fix|number|remaining)\b/i;
-  const formattingFollowUp =
-    /\b(german|english|translate|explain|shorter|detail|table|list|format)\b/i;
-  const shortFollowUp = question.trim().split(/\s+/).filter(Boolean).length <= 18;
-
-  return visualReference.test(question) ||
-    correctionOrContinuation.test(question) ||
-    formattingFollowUp.test(question) ||
-    shortFollowUp;
+  return isVisualFollowUpQuestion(question);
 }
