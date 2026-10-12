@@ -381,6 +381,14 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
                   Promise.all(tp).then((pages) => {
                     if (window._pdfOpenSeq !== mySeq) return;
                     window.pdfFullText = pages.join('\n');
+                    // Per-page text for getActivePdfContext()'s pageText/
+                    // pageTextStatus — without this, every "explain this"
+                    // request sends a content-free boilerplate header instead
+                    // of the actual visible page, which still reads as
+                    // non-empty to every downstream evidence check.
+                    setActivePdfViewerState({
+                      pageTexts: Object.fromEntries(pages.map((text, i) => [i + 1, text])),
+                    });
                     snapshotWindowInto(pane);
                   });
                 }, 400);
@@ -487,6 +495,12 @@ export function openFile(f: FileLite, course: LegacyCourse, pane: PaneId = 'left
                 Promise.all(textPromises).then((pages) => {
                   if (window._pdfOpenSeq !== mySeq) return;
                   window.pdfFullText = pages.join('\n\n');
+                  // See the matching comment in the uploaded-file path above —
+                  // same fix, same reason (getActivePdfContext()'s pageText
+                  // must come from real extracted text, not stay empty).
+                  setActivePdfViewerState({
+                    pageTexts: Object.fromEntries(pages.map((text, i) => [i + 1, text])),
+                  });
                   snapshotWindowInto(pane);
                 });
               }, 800);
