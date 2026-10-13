@@ -356,6 +356,28 @@ test('logout sweeps the unscoped recent-course and open-pdf session keys', () =>
   );
 });
 
+// ── cross-account PDF viewer state leak (V12 follow-up, 2026-10-14) ───────
+// getActivePdfContext() doesn't gate on PDF viewer DOM visibility, only on
+// __minalloPdfViewerState (courseId/documentId/pdfDoc) — a plain in-memory
+// module store signOut() never touched. Discovered while fixing V12 (German-
+// learner mode dropping file/page context): once learners were also allowed
+// to use getActivePdfContext(), the same still-open-PDF-from-account-A risk
+// that activeCourseId already closed for the course NAME would have reopened
+// for the PDF's actual identity/text if B asked a question before opening
+// any file of their own.
+test('logout clears the in-memory PDF viewer state (courseId/documentId/pdfDoc)', () => {
+  assert.match(
+    SUPABASE_JS,
+    /import\(['"]\.\/features\/pdf-viewer\/active-pdf-context\.js['"]\)/,
+    'signOut must dynamically import active-pdf-context.js (classic script, no static import)'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /clearActivePdfViewerState\(\)/,
+    'signOut must call clearActivePdfViewerState() so the next account on this browser never inherits an open PDF identity'
+  );
+});
+
 test('every cache-sourced applyProfile() call site marks itself non-authoritative', () => {
   // loadUserData()'s cached-profile branch, before the real network fetch.
   assert.match(

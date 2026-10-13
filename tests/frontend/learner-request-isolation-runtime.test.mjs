@@ -107,3 +107,71 @@ test('streamFromAskStream() strips a stale, pre-role-switch requestSnapshot and 
   assert.equal(payload.requestSnapshot.sourceMode, 'auto');
   assert.equal(payload.requestSnapshot.courseFileScope, 'all_course_files');
 });
+
+// ── V12 (QA, 2026-10-13): a learner's OWN open file must still reach the
+// backend ──────────────────────────────────────────────────────────────────
+// The blanket guards above (correctly) strip a stale, pre-role-switch SEMS
+// course PDF. But the exact same "isLearnerAccount() => null/''" guards used
+// to ALSO strip a learner's own currently-open file (learner-files.ts's
+// "german-files" scope — not a real SEMS course), so a learner asking about
+// a file they had genuinely open got "please upload the file" every time
+// (live-confirmed, §24 of the QA report). isLearnerFileScope() is the actual
+// test: a real course id is stripped, a learner-file-scope id is not.
+const GERMAN_FILES_SCOPE = 'german-files';
+const LEARNER_PDF = {
+  documentId: 'learner-doc-id', courseId: GERMAN_FILES_SCOPE, fileName: 'Statik-Uebung.pdf',
+  visiblePage: 1, pageCount: 3, pageText: 'Festlager A, Loslager B.', documentRevision: 'r1',
+};
+
+test('streamFromAskStream() forwards a learner\'s own open file instead of discarding it', async () => {
+  let payload;
+  const runtime = shellRuntime({
+    window: { _userType: 'learner', AI_SERVICE_URL: 'https://example.invalid', setTimeout, clearTimeout },
+    isLearnerFileScope: (id) => id === GERMAN_FILES_SCOPE,
+    authenticatedFetch: async (_url, init) => {
+      payload = JSON.parse(init.body);
+      return streamResponse([{ t: 'Festlager A hat keine Momentenreaktion.' }, { done: true }]);
+    },
+    captureStablePdfSnapshot: async () => ({
+      status: 'captured',
+      snapshot: { activeDocument: LEARNER_PDF, images: [] },
+    }),
+  });
+
+  await runtime.streamFromAskStream(
+    'Hat Lager A eine Momentenreaktion?', /* courseId */ GERMAN_FILES_SCOPE, null, new AbortController(), [], null,
+    /* documentIds */ [], /* documentNames */ [],
+    /* groundingRequest */ undefined, null, true, /* activePdfContext */ LEARNER_PDF,
+    'conversation-a', [], false, 'request-a',
+    { id: 'assistant-a', requestSnapshot: undefined },
+  );
+
+  assert.ok(payload, 'a learner asking about their own open file must still get an answer');
+  assert.equal(payload.courseId, GERMAN_FILES_SCOPE, 'the learner-file-scope id must reach the backend so _verify_user_owns_documents can resolve the document (not 404 on an empty courseId)');
+  assert.equal(payload.activeDocumentId, LEARNER_PDF.documentId, 'the open file\'s own identity must not be discarded for a learner');
+  assert.equal(payload.visiblePage, LEARNER_PDF.visiblePage);
+  assert.match(payload.openFileContext || '', /Festlager A, Loslager B\./, 'the actual visible page text must reach the model');
+});
+
+test('streamFromAskStream() still discards a stale real-course PDF even when one is passed directly', async () => {
+  let payload;
+  const runtime = shellRuntime({
+    window: { _userType: 'learner', AI_SERVICE_URL: 'https://example.invalid', setTimeout, clearTimeout },
+    isLearnerFileScope: (id) => id === GERMAN_FILES_SCOPE, // OLD_PDF.courseId is a real course, not this
+    authenticatedFetch: async (_url, init) => {
+      payload = JSON.parse(init.body);
+      return streamResponse([{ t: 'Der Dativ steht nach...' }, { done: true }]);
+    },
+    captureStablePdfSnapshot: async () => ({ status: 'captured', snapshot: { activeDocument: OLD_PDF, images: [] } }),
+  });
+
+  await runtime.streamFromAskStream(
+    'Erkläre mir den Dativ', OLD_COURSE_ID, null, new AbortController(), [], null,
+    [], [], undefined, null, true, OLD_PDF,
+    'conversation-a', [], false, 'request-a',
+    { id: 'assistant-a', requestSnapshot: undefined },
+  );
+
+  assert.equal(payload.courseId, '', 'a real SEMS course id must still be stripped for a learner');
+  assert.equal(payload.activeDocumentId, undefined, 'a stale real-course PDF must still be discarded for a learner');
+});

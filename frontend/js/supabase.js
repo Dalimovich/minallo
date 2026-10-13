@@ -275,6 +275,17 @@ var _sb = {
         // #portal=courses&course=<id> navigation. Reset before the next
         // sign-in can apply a profile.
         window.activeCourseId = null;
+        // QA (V12 follow-up, 2026-10-14): __minalloPdfViewerState (courseId,
+        // documentId, pdfDoc, page text) is a plain in-memory module store,
+        // also never reset here — getActivePdfContext() doesn't gate on PDF
+        // viewer DOM visibility, so account B's very first request could
+        // still have carried account A's still-open PDF's identity/text if
+        // B asks a question before ever opening a file of their own. Dynamic
+        // import matches this classic script's existing pattern for reaching
+        // a TS module (see flashcards.js's authenticated-fetch import).
+        import('./features/pdf-viewer/active-pdf-context.js')
+          .then(function (m) { m.clearActivePdfViewerState(); })
+          .catch(function () {});
       } catch (e) {}
       // Profile + course caches keyed by ss_last_uid are read at app boot
       // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT

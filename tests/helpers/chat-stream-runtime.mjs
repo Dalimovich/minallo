@@ -8,7 +8,10 @@ import { SseParser } from '../../frontend/js/services/sse-parser.ts';
 const source = fs.readFileSync(new URL('../../frontend/js/features/chatbot-new/shell.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('shell.ts', source, ts.ScriptTarget.Latest, true);
 export function shellRuntime(overrides = {}, extraNames = []) {
-  const names = ['streamFromAskStream', 'AskStreamError', 'resolveTutorModeForTurn', 'isLearnerAccount', ...extraNames];
+  const names = [
+    'streamFromAskStream', 'AskStreamError', 'resolveTutorModeForTurn', 'isLearnerAccount',
+    'activePdfContextForCurrentRole', ...extraNames,
+  ];
   const selected = ast.statements.filter(n => n.name && names.includes(n.name.text)).map(n => n.getText(ast)).join('\n');
   const code = ts.transpileModule(selected, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const context = {
@@ -31,6 +34,13 @@ export function shellRuntime(overrides = {}, extraNames = []) {
     // a test that actually exercises image continuation overrides these.
     isVisualFollowUpQuestion: () => false,
     findRecentImageTurn: () => undefined,
+    // activePdfContextForCurrentRole()'s own learner-file-scope check (V12) —
+    // imported from learner-files.ts, not AST-extractable from shell.ts.
+    // Defaulting to "not a learner file" preserves every existing test's
+    // behavior (a stale/foreign open PDF stays suppressed in learner mode);
+    // a test exercising a learner's own open file overrides this.
+    isLearnerFileScope: () => false,
+    getActivePdfContext: () => null,
     ...overrides,
   };
   vm.createContext(context);
