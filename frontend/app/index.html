@@ -75,9 +75,9 @@
     #minalloBootCover.mn-boot-anim .mn-boot-logo { transform: scale(.88); will-change: transform; }
     #minalloBootCover [data-boot-dot] { transform-origin: 82.8% 27%; transform: scale(0); }
     #minalloBootCover .mn-boot-spark { opacity: 0; transform-box: fill-box; transform-origin: center; }
-    #minalloBootCover .mn-boot-logo.go { animation: mnBootGrow 2.7s cubic-bezier(.4,0,.2,1) forwards; }
-    #minalloBootCover .mn-boot-logo.go [data-boot-dot] { animation: mnBootPop .55s cubic-bezier(.34,1.56,.64,1) 1.65s forwards; }
-    #minalloBootCover .mn-boot-logo.go .mn-boot-spark { animation: mnBootSpark 1s ease-out forwards; }
+    #minalloBootCover .mn-boot-logo.go { animation: mnBootGrow 2.2s cubic-bezier(.4,0,.2,1) forwards; }
+    #minalloBootCover .mn-boot-logo.go [data-boot-dot] { animation: mnBootPop .45s cubic-bezier(.34,1.56,.64,1) 1.35s forwards; }
+    #minalloBootCover .mn-boot-logo.go .mn-boot-spark { animation: mnBootSpark .85s ease-out forwards; }
     #minalloBootCover .mn-boot-logo.done [data-boot-dot] { transform: scale(1); animation: mnBootShine 2.8s ease-in-out infinite; }
     @keyframes mnBootGrow { from { transform: scale(.88); } to { transform: scale(1); } }
     @keyframes mnBootPop { 0% { transform: scale(0); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
@@ -121,9 +121,13 @@
         </div>
       </div>
     </div>
-    <!-- Not deferred on purpose: it must start the logo animation before the
-         first paint. It is small and only touches #minalloBootCover. -->
-    <script src="/js/boot-logo.js?v=1"></script>
+    <!-- Inlined at build time (see scripts/build-production.mjs), not just
+         non-deferred: an external <script src> yields to a paint between the
+         cover markup being parsed and the fetch finishing, flashing the
+         static logo before this hides it. frontend/js/boot-logo.js stays the
+         source of truth (tests read it directly); this marker is where its
+         contents get spliced in. -->
+    <!-- MINALLO_BOOT_LOGO_SCRIPT -->
     <!-- SECTIONS ARE INJECTED HERE BY loader.js (auth/signup/portal/modals). -->
     <div id="ss-sections-root"></div>
 

@@ -26,7 +26,7 @@
   var LOGO = '/assets/minallo-boot-logo.png?v=1';
   var TIMEMAP = '/assets/minallo-boot-timemap.png?v=1';
   var SIZE = 512;            // both images are 512x512
-  var WRITE_MS = 1700;       // pen stroke duration
+  var WRITE_MS = 1400;       // pen stroke duration
   var FEATHER = 0.06;        // soft pen-tip length, as a fraction of the path
   var LOAD_GIVE_UP_MS = 1500;
   var DOT_CLIP = [376, 90, 100, 99];  // x, y, w, h of the dot in the 512 image
@@ -114,7 +114,7 @@
       if (prog < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
-    setTimeout(function () { box.classList.add('done'); }, 2400);
+    setTimeout(function () { box.classList.add('done'); }, 2000);
   }).catch(function () {
     clearTimeout(giveUpTimer);
     fallback();
@@ -144,7 +144,7 @@
       el.setAttribute('fill', cols[i]);
       el.style.setProperty('--dx', (Math.cos(a) * dist).toFixed(1) + 'px');
       el.style.setProperty('--dy', (Math.sin(a) * dist).toFixed(1) + 'px');
-      el.style.animationDelay = (1.75 + i * 0.08).toFixed(2) + 's';
+      el.style.animationDelay = (1.45 + i * 0.065).toFixed(2) + 's';
       sparkLayer.appendChild(el);
     }
   }

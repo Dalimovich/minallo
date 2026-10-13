@@ -69,6 +69,21 @@ if (!indexHtmlRaw.includes(LANDING_MARKER)) {
 const landingFragment = readFileSync(landingFragmentPath, 'utf8');
 writeFileSync(indexPath, indexHtmlRaw.replace(LANDING_MARKER, landingFragment));
 
+// Inline the boot logo animation script into the app shell so it runs with
+// no network round-trip — an external <script src> yields to a paint of the
+// already-parsed cover markup while it fetches, flashing the static logo
+// before the script hides it. frontend/js/boot-logo.js stays the single
+// source of truth (also read directly by tests/frontend/boot-logo.test.mjs);
+// this is the only place its contents get duplicated.
+const BOOT_LOGO_MARKER = '<!-- MINALLO_BOOT_LOGO_SCRIPT -->';
+const appIndexPath = join(OUT, 'app', 'index.html');
+const appIndexRaw = readFileSync(appIndexPath, 'utf8');
+if (!appIndexRaw.includes(BOOT_LOGO_MARKER)) {
+  throw new Error(`app/index.html is missing the ${BOOT_LOGO_MARKER} marker — cannot inline boot-logo.js.`);
+}
+const bootLogoScript = readFileSync(join(OUT, 'js', 'boot-logo.js'), 'utf8');
+writeFileSync(appIndexPath, appIndexRaw.replace(BOOT_LOGO_MARKER, `<script>${bootLogoScript}</script>`));
+
 // Shared footer splice + sitemap.xml generation for the public SEO pages —
 // see scripts/build-seo.mjs and scripts/seo-pages-manifest.mjs.
 execFileSync(process.execPath, ['scripts/build-seo.mjs'], { stdio: 'inherit' });
