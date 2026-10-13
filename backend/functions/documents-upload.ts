@@ -99,6 +99,18 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   const fileExt = ALLOWED_TYPES[mimeType]!;
   const documentHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
   const storagePath = user.id + '/' + courseId + '/' + documentHash + '.' + fileExt;
+  // Stored/forwarded paths carry the ACTUAL bucket this request wrote to
+  // (STORAGE_BUCKET, resolved from RAG_STORAGE_BUCKET) as a `<bucket>:` prefix
+  // — the same convention chat-attachments.ts already uses for its own
+  // bucket, and the exact format storage.py's _resolve_bucket_and_path and
+  // documents-delete.ts's bucket parsing both already expect. A bare path
+  // instead relies on this Cloudflare Function's RAG_STORAGE_BUCKET and
+  // python-ai's own independently-configured default agreeing on the same
+  // bucket name; confirmed in production that they currently don't (uploads
+  // reported success while every one landed in a bucket indexing never
+  // looked in, failing 100% of the time) — embedding the real bucket here
+  // removes that cross-service assumption entirely.
+  const durableStoragePath = `${STORAGE_BUCKET}:${storagePath}`;
   await logSecurityEvent(serviceKey, user.id, 'document_upload', {
     course_id: courseId,
     bytes: fileBuffer.length
@@ -121,7 +133,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     file_name: fileName,
     file_type: fileExt,
     source_type: sourceType || 'lecture',
-    storage_path: storagePath,
+    storage_path: durableStoragePath,
     processing_status: 'uploaded',
     document_hash: documentHash
   };
@@ -154,7 +166,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
       'GET',
       'documents?user_id=eq.' + encodeURIComponent(user.id) +
         '&course_id=eq.' + encodeURIComponent(courseId) +
-        '&storage_path=eq.' + encodeURIComponent(storagePath) +
+        '&storage_path=eq.' + encodeURIComponent(durableStoragePath) +
         '&select=id,file_name,course_id,source_type,processing_status,storage_path&limit=1',
       null, serviceKey
     );
@@ -177,7 +189,7 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
   let indexingErrorCode: string | null = null;
   if (pythonAiConfigured()) {
     const py = await forwardToPython('index-document', {
-      userId: user.id, courseId, documentId: document.id, storagePath
+      userId: user.id, courseId, documentId: document.id, storagePath: durableStoragePath
     });
     if (!py.ok) {
       const err = (py.body as { error?: string }).error;
