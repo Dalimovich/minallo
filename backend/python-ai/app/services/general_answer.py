@@ -9,6 +9,7 @@ from .answer import (
     INTERNAL_CONFIDENTIALITY_RULE,
     LANGUAGE_MATCH_RULE,
     STATICS_SUPPORT_RULE,
+    SHARED_ANSWER_INTEGRITY_RULES,
     chat_completion_params,
 )
 from .openai_client import INTERACTIVE_ANSWER_TIMEOUT, get_openai_client
@@ -29,7 +30,7 @@ organize, write, compare, recommend, or plan something, perform that task
 directly. Only explain a process when they ask how to do it. Use conversation
 history to resolve omitted information. If essential details are genuinely
 missing, ask one concise, specific question instead of producing a checklist
-of information requests.""" + STATICS_SUPPORT_RULE + INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE
+of information requests.""" + STATICS_SUPPORT_RULE + INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE + SHARED_ANSWER_INTEGRITY_RULES
 
 
 def _bounded_history(previous_turns: list[dict[str, str]] | None) -> list[dict[str, str]]:

@@ -662,8 +662,9 @@ def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
         ])
     elif intent == AcademicIntent.ANSWER_CORRECTION_OR_GRADING:
         lines.extend([
-            "- Treat this as GRADING the student's OWN submitted answer/solution — evaluate it, do NOT just re-explain the topic or solve it from scratch.",
-            "- Use this exact structure: `## Verdict` (Correct / Partly correct / Wrong), `## Estimated points` (X / Y — only if a point total is known or implied, else omit), `## What is good`, `## What is missing or wrong` (name the FIRST wrong step for a multi-step solution), `## Corrected answer` (only the parts that need fixing — don't rewrite what was already right), `## Exam tip` (one line).",
+            "- Treat this as GRADING the student's OWN submitted answer/solution — evaluate IT specifically, do not pivot into a generic, unrelated lecture on the topic instead of engaging with their actual work.",
+            "- Before judging anything, independently (re)solve the problem yourself from the given values — do not evaluate by skimming whether their work merely LOOKS plausible or internally consistent; you must have your own worked result to compare against, or you cannot reliably catch a wrong number that was carried through consistently.",
+            "- Use this exact structure: `## Verdict` (Correct / Partly correct / Wrong), `## Estimated points` (X / Y — only if a point total is known or implied, else omit), `## What is good`, `## What is missing or wrong` (name the FIRST wrong step for a multi-step solution, stating BOTH what they wrote and the correct value at that step — not just that it's wrong), `## Corrected answer` (only the parts that need fixing — don't rewrite what was already right), `## Exam tip` (one line).",
             "- Ground the judgement in the COURSE CONTEXT / expected method; if the student's work isn't actually included in the message, ask them to paste it instead of inventing one.",
         ])
     elif intent == AcademicIntent.PRACTICE_VARIANT_GENERATION:

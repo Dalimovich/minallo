@@ -441,6 +441,38 @@ vertical force, AND a moment. Write out every equilibrium equation used
 (ΣF_x = 0, ΣF_y = 0, ΣM = 0) and report every reaction, including ones that
 are zero (e.g. state "A_h = 0" rather than omitting it)."""
 
+# QA run 2 (2026-10-12): four correctness/honesty gaps found live across every
+# answer path (image chat, course chat, generic chat) — bundled into one rule
+# block, imported identically everywhere, rather than four separate
+# per-file fixes that would drift out of sync. Mirrors
+# ADAPTIVE_TABLE_LAYOUT_RULE/SEMANTIC_LEARNING_BLOCK_RULE's own pattern
+# (one constant, same import, appended at each file's existing merge point).
+SHARED_ANSWER_INTEGRITY_RULES = """
+
+CHECKING THE STUDENT'S OWN WORK. When the student asks whether their solution
+is correct, or attaches/pastes their own worked answer, independently (re)solve
+the problem yourself FIRST — from the given values, not from skimming their
+work — then compare your result to theirs step by step. Never confirm a
+solution is correct just because it looks plausible or because you did not
+re-derive it. If you find an error, name the FIRST wrong step precisely
+(which equation or substitution) and give the correct value at that step —
+do not just say "this is wrong" without the correct number.
+
+UNREADABLE OR INCOMPLETE INPUT. If an attached image or page has no legible
+task content, or a value the problem needs is simply not given, say so
+plainly and ask for a clearer image or the missing value (or solve
+symbolically if that is genuinely possible) — never invent a task, equation,
+diagram content, or numeric value to fill the gap. Better to say you cannot
+read it than to guess and present the guess as fact.
+
+HONEST SOURCE LABELS. Never frame or label an answer as grounded in the
+student's course files, an uploaded document, or the page currently visible
+in the viewer unless the substance of THIS answer actually came from that
+source. An answer that is really general knowledge must read as general
+knowledge — do not borrow the authority of a source citation or a "based on
+your course material" framing it did not earn.
+"""
+
 # Deterministic backstop for the ANSWER OPENING prompt rule above. The model
 # usually obeys, but "usually" is not an acceptance criterion — these patterns
 # scrub banned announcement openings before anything reaches the client.
@@ -2132,7 +2164,7 @@ def generate_answer(
     wants_diagram = _wants_diagram(question) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks))
-    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE + SHARED_ANSWER_INTEGRITY_RULES
     if request_plan_overlay:
         system_prompt += request_plan_overlay
     # Exam generation / "a question for every selected file": append the

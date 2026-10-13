@@ -47,6 +47,7 @@ from .answer import (
     MAX_PROMPT_CHUNKS,
     MINALLO_APP_CONTEXT,
     SEMANTIC_LEARNING_BLOCK_RULE,
+    SHARED_ANSWER_INTEGRITY_RULES,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
     detect_exam_style,
@@ -1811,7 +1812,7 @@ def stream_answer(
     wants_diagram = _wants_diagram(question, problem_solver) and not app_question
     if wants_diagram:
         system_prompt += _diagram_overlay(bool(used_chunks or (has_open and deictic)))
-    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE
+    system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE + SHARED_ANSWER_INTEGRITY_RULES
     if request_plan_overlay:
         system_prompt += request_plan_overlay
     # Exam generation / "a question for every selected file": append the
@@ -2094,20 +2095,42 @@ def stream_answer(
         if dialogue_overlay:
             system_prompt += dialogue_overlay
 
-    # Keep this request-specific instruction last so a German document, course
-    # title, or exercise label cannot outweigh the language of the student's
-    # actual request (for example: "I don't understand Aufgabe 13.1").
-    system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
-    system_prompt += _latest_question_language_overlay(question)
+    # QA run 2 (2026-10-12), defect #19: this used to ALWAYS append
+    # FINAL_RESPONSE_LANGUAGE_RULE + _latest_question_language_overlay
+    # ("highest priority", re-derive from the current message, ignore
+    # earlier turns) and THEN, separately, the RESOLVED RESPONSE LANGUAGE
+    # note below when response_language was set — two instructions each
+    # independently claiming to be authoritative, and disagreeing whenever
+    # resolve_language_context() (routers/stream.py) had correctly carried
+    # forward a STICKY explicit "answer in X" instruction from an earlier
+    # turn while the current message happened to be in a different
+    # language. That is exactly the reproduced failure (an explicit English
+    # instruction, or an English-language follow-up, answered in German).
+    # response_language already encodes the full priority order — current
+    # explicit instruction, else a still-active explicit instruction from
+    # an earlier turn, else the current message's own language, else the
+    # conversation's language — so when it is set it is the ONLY language
+    # instruction emitted; the generic rule is the fallback for requests
+    # that never went through that resolver (e.g. app-only questions).
     if response_language:
         language_names = {"en": "English", "de": "German", "fr": "French"}
         resolved_name = language_names.get(response_language.lower(), response_language)
         system_prompt += (
-            f"\nRESOLVED RESPONSE LANGUAGE (server-enforced): Answer exclusively in "
-            f"{resolved_name}. Source documents may use another language. Translate "
-            "their relevant prose, but preserve symbols, values, signs, exponents, "
-            "units, formulas, inequalities, negations, and professor notation exactly.\n"
+            f"\nRESOLVED RESPONSE LANGUAGE (server-enforced, highest priority — supersedes "
+            f"any other language instruction in this prompt): Answer exclusively in "
+            f"{resolved_name}. This was already resolved server-side in priority order: an "
+            "explicit 'answer in X' instruction from THIS message, else one still active "
+            "from an earlier turn in this conversation until the student changes it, else "
+            "the language of the student's own current message, else the conversation's "
+            "language. Do not re-derive or override it from document text, course titles, "
+            "exercise labels, or the interface language. Source documents may use another "
+            "language. Translate their relevant prose, but preserve symbols, values, signs, "
+            "exponents, units, formulas, inequalities, negations, and professor notation "
+            "exactly.\n"
         )
+    else:
+        system_prompt += FINAL_RESPONSE_LANGUAGE_RULE
+        system_prompt += _latest_question_language_overlay(question)
     system_prompt += _language_rewrite_followup_overlay(question, previous_turns)
     system_prompt += _exact_exercise_overlay(
         question,

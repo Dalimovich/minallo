@@ -163,8 +163,12 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
     # overriding the question's actual language — that line is now
     # conditional client-side too, but a stale cached bundle may still send
     # the old unconditional one.
-    from .answer import INTERNAL_CONFIDENTIALITY_RULE, LANGUAGE_MATCH_RULE, STATICS_SUPPORT_RULE  # noqa: WPS433
-    server_rules = INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE + STATICS_SUPPORT_RULE
+    from .answer import (  # noqa: WPS433
+        INTERNAL_CONFIDENTIALITY_RULE, LANGUAGE_MATCH_RULE, STATICS_SUPPORT_RULE, SHARED_ANSWER_INTEGRITY_RULES,
+    )
+    server_rules = (
+        INTERNAL_CONFIDENTIALITY_RULE + LANGUAGE_MATCH_RULE + STATICS_SUPPORT_RULE + SHARED_ANSWER_INTEGRITY_RULES
+    )
     if messages and messages[0].get("role") == "system":
         if INTERNAL_CONFIDENTIALITY_RULE not in str(messages[0].get("content") or ""):
             messages[0] = {
