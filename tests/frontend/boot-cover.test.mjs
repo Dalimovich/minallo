@@ -208,6 +208,20 @@ test('profile failure with retries running keeps the logo only; exhausted retrie
   });
 });
 
+test('auth-backend recovery shows a reassuring, session-preserved message distinct from the profile-row failure', { timeout: 60_000 }, async () => {
+  await withPage(true, async (page) => {
+    await fire(page, 'ss-ready');
+    await page.evaluate(() => window.MinalloBoot.recovery('auth'));
+    const rec = await page.evaluate(() => {
+      const r = document.getElementById('minalloBootRecovery');
+      return { hidden: r.hidden, text: r.innerText };
+    });
+    assert.equal(rec.hidden, false);
+    assert.match(rec.text, /session is saved/i);
+    assert.doesNotMatch(rec.text, /Couldn’t load your account/);
+  });
+});
+
 test('logged-out and signed-out paths reveal; show() re-covers for the login transition', { timeout: 60_000 }, async () => {
   await withPage(false, async (page) => {
     assert.equal(await coverShown(page), true);

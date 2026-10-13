@@ -17,8 +17,14 @@
   var done = false;
   var unmountedTimer = null;
   var i18n = {
-    en: { msg: 'Couldn’t load your account.', retry: 'Retry', out: 'Sign out' },
-    de: { msg: 'Dein Konto konnte nicht geladen werden.', retry: 'Erneut versuchen', out: 'Abmelden' },
+    en: {
+      msg: 'Couldn’t load your account.', retry: 'Retry', out: 'Sign out',
+      authMsg: 'Having trouble reaching the server. Your session is saved — just retry.',
+    },
+    de: {
+      msg: 'Dein Konto konnte nicht geladen werden.', retry: 'Erneut versuchen', out: 'Abmelden',
+      authMsg: 'Der Server reagiert gerade nicht. Deine Sitzung ist gespeichert — versuch es einfach erneut.',
+    },
   };
 
   function el(id) { return document.getElementById(id); }
@@ -95,7 +101,7 @@
     var rec = el('minalloBootRecovery');
     if (!rec) return hide();
     var t = i18n[window._lang === 'de' ? 'de' : 'en'];
-    rec.querySelector('[data-boot-msg]').textContent = t.msg;
+    rec.querySelector('[data-boot-msg]').textContent = kind === 'auth' ? t.authMsg : t.msg;
     var retry = rec.querySelector('[data-boot-retry]');
     var out = rec.querySelector('[data-boot-out]');
     retry.textContent = t.retry;

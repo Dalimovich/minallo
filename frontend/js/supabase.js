@@ -910,12 +910,24 @@ function _sbRefreshAccessToken() {
   // duplicate fetch raced refresh-token rotation and converted timeouts/5xx
   // responses into a logout via _showModalClean(). refreshSession preserves
   // recoverable sessions and coalesces every caller in this tab.
-  return _sb.auth.refreshSession()
-    .then(function (user) { return user && user.id ? _sbToken : null; })
-    .catch(function (err) {
-      console.warn('[Auth] refresh temporarily unavailable:', err && err.message);
-      return null;
-    });
+  //
+  // 5s timeout: the /auth/v1/token fetch behind refreshSession() has no
+  // built-in timeout, same as getUser() below. Without this race, an auth
+  // backend that is merely slow (not erroring) leaves every boot-recovery
+  // attempt blocked on its full real-world latency instead of the bounded
+  // few-second retry the boot cover promises the user.
+  var timeoutPromise = new Promise(function (resolve) {
+    setTimeout(function () { resolve(null); }, 5000);
+  });
+  return Promise.race([
+    _sb.auth.refreshSession()
+      .then(function (user) { return user && user.id ? _sbToken : null; })
+      .catch(function (err) {
+        console.warn('[Auth] refresh temporarily unavailable:', err && err.message);
+        return null;
+      }),
+    timeoutPromise,
+  ]);
 }
 
 // Session could not be verified after bounded retries: show the boot cover's
