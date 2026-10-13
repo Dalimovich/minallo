@@ -3549,6 +3549,33 @@ async function recoverTurnImages(images: PastedImage[]): Promise<PastedImage[]> 
   return recovered.filter((img): img is PastedImage => !!img);
 }
 
+/** Same recovery as recoverTurnImages, for an "Add files" attachment
+ * (PendingFile, kind 'image') rather than a pasted PastedImage — these are
+ * two separate shapes/fields (m.images vs m.files) and compactMessageForStorage
+ * strips `base64` from a file the same way it blanks `dataUrl` on an image
+ * (see compactMessageForStorage's own file-mapping). Before this existed,
+ * an "Add files" image with no base64 fell all the way through
+ * buildApiMessages' kind checks to the generic binary-placeholder branch,
+ * and the model would fabricate an answer with zero real evidence (QA
+ * run, 2026-10-13: IMG08 via Add files, reload, "und a?" answered a
+ * invented exercise). Returns a map of file id -> recovered base64 data
+ * (no `data:...;base64,` prefix) for just the files that were missing it
+ * and could be recovered; callers must still treat a miss as "genuinely
+ * unrecoverable", never fall back to guessing. */
+async function recoverTurnFileImages(files: PendingFile[]): Promise<Map<string, string>> {
+  const recovered = new Map<string, string>();
+  await Promise.all(files.map(async (f) => {
+    if (f.kind !== 'image' || f.base64 || !f.persistentFileId) return;
+    try {
+      const dataUrl = await fetchPreviewAsDataUrl(f.persistentFileId);
+      if (dataUrl) recovered.set(f.id, dataUrl.replace(/^data:[^;]+;base64,/, ''));
+    } catch {
+      // leave unrecovered — the caller sends the honest "no longer available" instruction instead
+    }
+  }));
+  return recovered;
+}
+
 /** A text-only follow-up ("what's this image about?", "solve question a")
  * has no attachment of its own — ragEligibility bypasses the visual stream
  * entirely for messages with images, so a follow-up about a PREVIOUS turn's
@@ -5741,11 +5768,29 @@ async function buildApiMessages(
         },
       });
     });
+    // Same blanked-on-reload problem as m.images above, for an "Add files"
+    // attachment instead of a pasted image — see recoverTurnFileImages.
+    const recoveredFileImages = await recoverTurnFileImages(m.files || []);
     (m.files || []).forEach((f) => {
-      if (f.kind === 'image' && f.base64 && f.mediaType) {
+      const recoveredData = f.kind === 'image' && !f.base64 ? recoveredFileImages.get(f.id) : undefined;
+      if (f.kind === 'image' && (f.base64 || recoveredData) && f.mediaType) {
         blocks.push({
           type: 'image',
-          source: { type: 'base64', media_type: f.mediaType, data: f.base64 },
+          source: { type: 'base64', media_type: f.mediaType, data: f.base64 || recoveredData! },
+        });
+      } else if (f.kind === 'image') {
+        // persistentFileId missing or the refetch failed — the image is
+        // genuinely gone. Never fall through to the generic binary-format
+        // placeholder below: that text invites the model to guess at an
+        // exercise it never saw (confirmed live, 2026-10-13). An explicit
+        // instruction instead, so the model's own answer honestly says so
+        // in the student's language rather than fabricating content.
+        blocks.push({
+          type: 'text',
+          text:
+            '(The image "' + f.name + '" from an earlier turn is no longer available. ' +
+            'Do not guess its content or invent an answer. Tell the student — in their own ' +
+            'language — that the image is no longer available and ask them to attach it again.)',
         });
       } else if (f.pageImages && f.pageImages.length) {
         // Scanned PDF — no text layer, so the pages travel as images.
