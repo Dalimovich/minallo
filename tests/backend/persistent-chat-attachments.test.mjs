@@ -56,6 +56,16 @@ test('unsafe original filenames never become object storage paths', () => {
   assert.match(endpoint, /original_filename: filename/);
 });
 
+test('linking a message upserts on its real unique constraint, not the primary key (multi-image 409 regression)', () => {
+  // Both tables' unique constraints are on (conversation_id, client_message_id[, ...]),
+  // never on their generated primary key — an on_conflict mismatch here makes
+  // merge-duplicates silently fall back to the primary key, so the SECOND
+  // image in a multi-image message throws a 23505 unique violation (409)
+  // instead of upserting. See the migration's own unique(...) clauses.
+  assert.match(endpoint, /ai_chat_messages\?on_conflict=conversation_id,client_message_id'/);
+  assert.match(endpoint, /ai_chat_message_attachments\?on_conflict=conversation_id,client_message_id,file_id,attachment_order'/);
+});
+
 test('attachment failures expose structured stages without leaking file data', () => {
   assert.match(endpoint, /chat_attachment_send_failed/);
   assert.match(endpoint, /storage_policy_denied/);

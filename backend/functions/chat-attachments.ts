@@ -145,12 +145,19 @@ export const handler = async (event: NetlifyEvent): Promise<LambdaResponse> => {
     if (!Array.isArray(conversation.body) || !conversation.body[0]) return fail(403, 'Conversation access denied');
     const messageText = String(body.messageText || '').trim();
     if (!messageText) return fail(400, 'messageText is required');
-    const message = await supaRequest('POST', 'ai_chat_messages', {
+    // on_conflict must name the actual unique constraint — (conversation_id,
+    // client_message_id) and (conversation_id, client_message_id, file_id,
+    // attachment_order) respectively, not the bigint/uuid primary key — or
+    // merge-duplicates silently falls back to the primary key as its conflict
+    // target and a second attachment on the same multi-image message (same
+    // client_message_id, different file_id/order) throws a 23505 unique
+    // violation instead of upserting, surfacing as a 409 to the client.
+    const message = await supaRequest('POST', 'ai_chat_messages?on_conflict=conversation_id,client_message_id', {
       conversation_id: conversationId, user_id: user.id, client_message_id: messageId,
       role: 'user', content: messageText
     }, key, { Prefer: 'resolution=merge-duplicates,return=minimal' });
     if (message.status < 200 || message.status >= 300) return attachmentFailure(409, 'message_creation', 'message_creation_failed', 'Message could not be persisted');
-    const inserted = await supaRequest('POST', 'ai_chat_message_attachments', {
+    const inserted = await supaRequest('POST', 'ai_chat_message_attachments?on_conflict=conversation_id,client_message_id,file_id,attachment_order', {
       conversation_id: conversationId, client_message_id: messageId, file_id: fileId,
       attachment_order: Number(body.order) || 0, page_number: Number(body.page) || null
     }, key, { Prefer: 'resolution=merge-duplicates,return=minimal' });
