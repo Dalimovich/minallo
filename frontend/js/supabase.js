@@ -199,6 +199,11 @@ var _sb = {
       _sbClearStoredSession();
       localStorage.removeItem('ss_state');
       sessionStorage.removeItem('ss_last_active');
+      // QA audit (2026-10-13): this unscoped sessionStorage key survives a
+      // same-tab sign-out -> sign-in cycle (sessionStorage isn't cleared by
+      // supabase's own sign-out, only by closing the tab) and can restore the
+      // PREVIOUS account's open course/file into the NEW account's chatbot.
+      sessionStorage.removeItem('minallo:chatbot-open-pdf');
       // Chat history, AI-generated study material, drafts and connected-account
       // tokens are private user data. Wipe so a different user signing into the
       // same browser can never see (or use) any of it.
@@ -234,7 +239,13 @@ var _sb = {
           'ss_last_section',
           'ss_university',
           'ss_pdfed_recents',
-          'ss_yt_playlists'
+          'ss_yt_playlists',
+          // QA audit (2026-10-13): unscoped, not uid-namespaced like the
+          // ss_ncb_*:<uid> keys above — left account A's course NAME visible
+          // to account B after a same-tab sign-out/sign-in (no file-content
+          // leak; backend ownership checks still held), via
+          // workspace-library.ts's RECENT_COURSE_KEY.
+          'minallo:chatbot-recent-course'
         ];
         var _qaKeys = [];
         for (var _i = 0; _i < localStorage.length; _i++) {
@@ -257,6 +268,13 @@ var _sb = {
         }
         // Drop the legacy unscoped key in case an older client wrote to it.
         localStorage.removeItem('ss_user_courses');
+        // QA audit (2026-10-13): window.activeCourseId is a plain in-memory
+        // global (set by course-view.ts/workspace-library.ts/pdf-viewer.ts),
+        // never reset here — it survived a same-tab account switch and let a
+        // stale course id/name from account A render under account B via any
+        // #portal=courses&course=<id> navigation. Reset before the next
+        // sign-in can apply a profile.
+        window.activeCourseId = null;
       } catch (e) {}
       // Profile + course caches keyed by ss_last_uid are read at app boot
       // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT

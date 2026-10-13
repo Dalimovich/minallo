@@ -326,6 +326,36 @@ test('applyProfile() only sets window._germanProfileLoaded=true when authoritati
   );
 });
 
+// ── cross-account activeCourseId/course-name leak (QA audit, 2026-10-13) ───
+// Signing out of account A and into account B in the same browser tab left
+// account A's course id/name visible to account B: window.activeCourseId
+// (a plain in-memory global) was never reset by signOut(), and two unscoped
+// storage keys (workspace-library.ts's RECENT_COURSE_KEY in localStorage,
+// PDF_SESSION_KEY in sessionStorage) were never swept, unlike the already
+// correctly-namespaced ss_ncb_*:<uid> / studyLibraryState() caches. No actual
+// file-content leak was found (backend ownership checks held) but the stale
+// course id/name rendering is itself a privacy/isolation defect.
+test('logout resets the in-memory activeCourseId global', () => {
+  assert.match(
+    SUPABASE_JS,
+    /window\.activeCourseId = null;/,
+    'signOut must reset window.activeCourseId so the next account on this browser never sees it'
+  );
+});
+
+test('logout sweeps the unscoped recent-course and open-pdf session keys', () => {
+  assert.match(
+    SUPABASE_JS,
+    /['"]minallo:chatbot-recent-course['"]/,
+    'signOut must remove the unscoped chatbot-recent-course key'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /sessionStorage\.removeItem\(\s*['"]minallo:chatbot-open-pdf['"]\s*\)/,
+    'signOut must remove the unscoped chatbot-open-pdf sessionStorage key'
+  );
+});
+
 test('every cache-sourced applyProfile() call site marks itself non-authoritative', () => {
   // loadUserData()'s cached-profile branch, before the real network fetch.
   assert.match(
