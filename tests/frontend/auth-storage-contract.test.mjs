@@ -161,6 +161,31 @@ test('auth-modal signup writes sb_sess_refresh to localStorage', () => {
   );
 });
 
+// ── ss_show_auth must not outlive a successful sign-in ──────────────────────
+// QA finding, 2026-10-13: clicking "Sign in" on the landing page sets
+// sessionStorage ss_show_auth='true' (auth-bootstrap.js) so boot shows the
+// modal instead of silently auto-restoring a session. Nothing cleared it on
+// success — only the sign-OUT paths (_showModal's own cleanup,
+// _clearSavedAuth) did. Every reload after a landing-page-triggered sign-in
+// hit supabase.js's `showAuth` boot check again, re-showing a stale modal
+// and returning early WITHOUT verifying the stored session or calling
+// _enterApp — leaving window._currentUser null (and anything that depends on
+// it, e.g. course data via _loadUserCourses) despite a perfectly valid
+// stored token. Confirmed live: profiles.courses had real data server-side
+// that never reached window.SEMS client-side.
+test('a successful SIGNED_IN clears ss_show_auth so the next boot does not re-show a stale modal', () => {
+  const signedInStart = AUTH_MODAL.indexOf("if (event === 'SIGNED_IN')");
+  assert.ok(signedInStart >= 0, "onAuthStateChange SIGNED_IN branch not found in auth-modal.ts");
+  const signedInEnd = AUTH_MODAL.indexOf("else if (event === 'SIGNED_OUT')", signedInStart);
+  assert.ok(signedInEnd > signedInStart, "could not locate the end of the SIGNED_IN branch");
+  const branch = AUTH_MODAL.slice(signedInStart, signedInEnd);
+  assert.match(
+    branch,
+    /sessionStorage\.removeItem\(\s*['"]ss_show_auth['"]\s*\)/,
+    'the SIGNED_IN handler must clear ss_show_auth so a later reload restores the session instead of re-showing the modal'
+  );
+});
+
 // ── Google One Tap matches the password-flow storage shape ─────────────────
 test('Google One Tap writes sb_sess_token to sessionStorage (not localStorage)', () => {
   // Persisting the bearer access token in localStorage was a security

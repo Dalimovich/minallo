@@ -441,6 +441,15 @@ export function initAuthModal(options: AuthModalOptions): AuthModalHandle {
   if (sb && sb.auth && typeof sb.auth.onAuthStateChange === 'function') {
     sb.auth.onAuthStateChange((event: string) => {
       if (event === 'SIGNED_IN') {
+        // Set when the user clicks "Sign in" from the landing page (see
+        // auth-bootstrap.js) so boot shows the modal instead of silently
+        // restoring a session. Never cleared on success before this — every
+        // reload after a landing-page-triggered sign-in hit that same branch
+        // again (supabase.js's `showAuth` check), re-showing a stale modal
+        // and skipping session restore/`_enterApp` entirely, which left
+        // `_currentUser` null (and course data, which depends on it, never
+        // loading) despite a perfectly valid stored session.
+        try { sessionStorage.removeItem('ss_show_auth'); } catch { /* ignore */ }
         const currentUser = getCurrentUser();
         if (currentUser) enterApp(currentUser);
         resetActivityTimer();
