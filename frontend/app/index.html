@@ -28,6 +28,10 @@
   <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
   <meta name="theme-color" content="#0b1220" />
 
+  <!-- Boot logo animation inputs (see js/boot-logo.js), fetched as early as possible. -->
+  <link rel="preload" as="image" href="/assets/minallo-boot-logo.png" fetchpriority="high" />
+  <link rel="preload" as="image" href="/assets/minallo-boot-timemap.png" fetchpriority="high" />
+
   <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
     rel="stylesheet"
@@ -45,7 +49,10 @@
        Keep modal markup hidden even if a stylesheet is delayed or lazy. */
     /* Boot cover: the only thing painted before the final interface. It is
        in the raw HTML so it is the first frame; js/boot-cover.js owns its
-       removal (html.mn-boot-done). Logo only — no text, no spinner. */
+       removal (html.mn-boot-done). Logo only — no text, no spinner.
+       The logo is animated by js/boot-logo.js (pen-written "m", dot pop,
+       glitter). Until that script takes over, and whenever it can't run,
+       the static <img> shows the same logo. */
     #minalloBootCover {
       position: fixed;
       inset: 0;
@@ -54,8 +61,32 @@
       place-items: center;
       background: #031323;
     }
-    #minalloBootCover img { width: 88px; height: 88px; display: block; }
     #minalloBootCover .mn-boot-stack { display: grid; justify-items: center; gap: 22px; }
+    #minalloBootCover .mn-boot-logo { position: relative; width: 112px; height: 112px; }
+    #minalloBootCover .mn-boot-logo > img,
+    #minalloBootCover .mn-boot-logo > canvas,
+    #minalloBootCover .mn-boot-logo > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #minalloBootCover .mn-boot-logo > svg { overflow: visible; pointer-events: none; }
+    #minalloBootCover .mn-boot-logo > canvas,
+    #minalloBootCover .mn-boot-logo > svg { visibility: hidden; }
+    #minalloBootCover.mn-boot-anim .mn-boot-logo > img { visibility: hidden; }
+    #minalloBootCover.mn-boot-anim .mn-boot-logo > canvas,
+    #minalloBootCover.mn-boot-anim .mn-boot-logo > svg { visibility: visible; }
+    #minalloBootCover.mn-boot-anim .mn-boot-logo { transform: scale(.88); will-change: transform; }
+    #minalloBootCover [data-boot-dot] { transform-origin: 82.8% 27%; transform: scale(0); }
+    #minalloBootCover .mn-boot-spark { opacity: 0; transform-box: fill-box; transform-origin: center; }
+    #minalloBootCover .mn-boot-logo.go { animation: mnBootGrow 2.7s cubic-bezier(.4,0,.2,1) forwards; }
+    #minalloBootCover .mn-boot-logo.go [data-boot-dot] { animation: mnBootPop .55s cubic-bezier(.34,1.56,.64,1) 1.65s forwards; }
+    #minalloBootCover .mn-boot-logo.go .mn-boot-spark { animation: mnBootSpark 1s ease-out forwards; }
+    #minalloBootCover .mn-boot-logo.done [data-boot-dot] { transform: scale(1); animation: mnBootShine 2.8s ease-in-out infinite; }
+    @keyframes mnBootGrow { from { transform: scale(.88); } to { transform: scale(1); } }
+    @keyframes mnBootPop { 0% { transform: scale(0); } 70% { transform: scale(1.18); } 100% { transform: scale(1); } }
+    @keyframes mnBootShine { 0%, 100% { opacity: 1; } 50% { opacity: .86; } }
+    @keyframes mnBootSpark {
+      0% { opacity: 0; transform: translate(0, 0) scale(.2) rotate(0); }
+      30% { opacity: 1; }
+      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1) rotate(90deg); }
+    }
     #minalloBootRecovery {
       display: grid; justify-items: center; gap: 12px;
       color: #9fb3c8; font: 500 14px/1.4 system-ui, sans-serif; text-align: center;
@@ -78,13 +109,21 @@
   <body class="night">
     <div id="minalloBootCover" aria-label="Minallo">
       <div class="mn-boot-stack">
-        <img src="/assets/favicon.png" alt="Minallo" width="88" height="88" decoding="sync" fetchpriority="high" />
+        <div class="mn-boot-logo">
+          <img src="/assets/minallo-boot-logo.png" alt="Minallo" width="112" height="112" decoding="sync" fetchpriority="high" />
+          <canvas data-boot-m width="512" height="512" aria-hidden="true"></canvas>
+          <canvas data-boot-dot width="512" height="512" aria-hidden="true"></canvas>
+          <svg viewBox="0 0 512 512" aria-hidden="true"><g data-boot-sparks></g></svg>
+        </div>
         <div id="minalloBootRecovery" hidden>
           <span data-boot-msg></span>
           <span><button type="button" data-boot-retry></button> <button type="button" data-boot-out></button></span>
         </div>
       </div>
     </div>
+    <!-- Not deferred on purpose: it must start the logo animation before the
+         first paint. It is small and only touches #minalloBootCover. -->
+    <script src="/js/boot-logo.js?v=1"></script>
     <!-- SECTIONS ARE INJECTED HERE BY loader.js (auth/signup/portal/modals). -->
     <div id="ss-sections-root"></div>
 

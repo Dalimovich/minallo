@@ -37,6 +37,7 @@ frontend/js/**/*.js.map
 !frontend/js/app-storage.js
 !frontend/js/auth-bootstrap.js
 !frontend/js/boot-cover.js
+!frontend/js/boot-logo.js
 !frontend/js/config.js
 !frontend/js/runtime-config.js
 !frontend/js/dependencies.js
