@@ -29,8 +29,8 @@
   <meta name="theme-color" content="#0b1220" />
 
   <!-- Boot logo animation inputs (see js/boot-logo.js), fetched as early as possible. -->
-  <link rel="preload" as="image" href="/assets/minallo-boot-logo.png" fetchpriority="high" />
-  <link rel="preload" as="image" href="/assets/minallo-boot-timemap.png" fetchpriority="high" />
+  <link rel="preload" as="image" href="/assets/minallo-boot-logo.png?v=1" fetchpriority="high" />
+  <link rel="preload" as="image" href="/assets/minallo-boot-timemap.png?v=1" fetchpriority="high" />
 
   <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
   <link
@@ -110,7 +110,7 @@
     <div id="minalloBootCover" aria-label="Minallo">
       <div class="mn-boot-stack">
         <div class="mn-boot-logo">
-          <img src="/assets/minallo-boot-logo.png" alt="Minallo" width="112" height="112" decoding="sync" fetchpriority="high" />
+          <img src="/assets/minallo-boot-logo.png?v=1" alt="Minallo" width="112" height="112" decoding="sync" fetchpriority="high" />
           <canvas data-boot-m width="512" height="512" aria-hidden="true"></canvas>
           <canvas data-boot-dot width="512" height="512" aria-hidden="true"></canvas>
           <svg viewBox="0 0 512 512" aria-hidden="true"><g data-boot-sparks></g></svg>

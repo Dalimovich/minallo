@@ -23,8 +23,8 @@
     if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   } catch (e) {}
 
-  var LOGO = '/assets/minallo-boot-logo.png';
-  var TIMEMAP = '/assets/minallo-boot-timemap.png';
+  var LOGO = '/assets/minallo-boot-logo.png?v=1';
+  var TIMEMAP = '/assets/minallo-boot-timemap.png?v=1';
   var SIZE = 512;            // both images are 512x512
   var WRITE_MS = 1700;       // pen stroke duration
   var FEATHER = 0.06;        // soft pen-tip length, as a fraction of the path

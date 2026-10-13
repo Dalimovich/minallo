@@ -19,12 +19,12 @@ async function withPage({ reducedMotion = 'no-preference', missingTimemap = fals
   try {
     const page = await browser.newPage({ reducedMotion });
     await page.route('https://boot-logo.test/**', (route) => {
-      const url = route.request().url();
-      if (url.endsWith('/assets/minallo-boot-logo.png')) return route.fulfill({ contentType: 'image/png', body: LOGO });
-      if (url.endsWith('/assets/minallo-boot-timemap.png')) {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/assets/minallo-boot-logo.png') return route.fulfill({ contentType: 'image/png', body: LOGO });
+      if (path === '/assets/minallo-boot-timemap.png') {
         return missingTimemap ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ contentType: 'image/png', body: TIMEMAP });
       }
-      if (url.endsWith('/js/boot-logo.js')) return route.fulfill({ contentType: 'text/javascript', body: script });
+      if (path === '/js/boot-logo.js') return route.fulfill({ contentType: 'text/javascript', body: script });
       return route.fulfill({
         contentType: 'text/html',
         body: `<!doctype html><html><head><style>body{background:#031323;margin:0}${style}</style></head>
