@@ -55,6 +55,7 @@ import {
 } from './services/pdf-service.js';
 import { openFile as _openFile } from './features/pdf-viewer/pdf-viewer.js';
 import { initPdfTabs } from './features/pdf-viewer/pdf-tabs.js';
+import { captureSelectedPdfRegion } from './features/pdf-viewer/active-pdf-context.js';
 import {
   createCheckoutSession as _createCheckoutSession,
   createPortalSession as _createPortalSession,
@@ -475,6 +476,11 @@ document.getElementById('pdfBody')?.addEventListener('mouseup', () => {
   setTimeout(() => {
     const sel = window.getSelection();
     if (sel && sel.toString().trim().length > 3) showSelectionBanner(sel.toString().trim());
+    // Must run in this same still-live-selection window (V6 fix): by the time
+    // the chat textarea is clicked to type the question, the browser has
+    // already collapsed the Selection, so capturing it here is the only
+    // chance to hand it to getActivePdfContext() later at send time.
+    captureSelectedPdfRegion();
   }, 30);
 });
 
