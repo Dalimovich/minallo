@@ -226,3 +226,29 @@ def test_inner_stream_silence_emits_keepalive(monkeypatch) -> None:
     statuses = [event for event in events if b'"status": "reading_question"' in event]
     assert len(statuses) >= 2
     assert sum(b'"done": true' in event for event in events) == 1
+
+
+def test_evidence_unavailable_refusal_overwrites_the_stale_success_provenance() -> None:
+    # QA V8 (2026-10-13): a declined draft (task/evidence identity mismatch)
+    # kept whatever sourceScope/sourceLabel/sources the SOURCE DECISION had
+    # already set earlier in the request — e.g. "course_files" / a 2-item
+    # citation list — so the frontend badge (driven purely by sourceScope,
+    # setBubbleSubtitle in shell.ts) showed success ("Using: Course files")
+    # over a response the backend itself had just refused to give.
+    from app.routers.stream import _mark_evidence_unavailable_refusal
+
+    evt = {
+        "sourceScope": "course_files",
+        "sourceLabel": "Using: Course files",
+        "sources": [{"page": 1}, {"page": 2}],
+        "model": "gpt-4o",  # unrelated fields must survive untouched
+    }
+
+    _mark_evidence_unavailable_refusal(evt)
+
+    assert evt["confidence"] == "low"
+    assert evt["unsupported"] is True
+    assert evt["sourceScope"] == "unavailable"
+    assert evt["sourceLabel"] is None
+    assert evt["sources"] == []
+    assert evt["model"] == "gpt-4o"

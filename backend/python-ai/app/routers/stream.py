@@ -825,6 +825,24 @@ def _source_meta(decision: SourceDecision, *, cache_hit: bool | None = None) -> 
     return decision.metadata(include_debug=_source_debug_enabled(), cache_hit=cache_hit)
 
 
+def _mark_evidence_unavailable_refusal(evt: dict[str, Any]) -> None:
+    """Correct an event's provenance after its draft was replaced by a safe
+    refusal (the task/evidence-identity guard below). Without this, evt still
+    carries whatever sourceScope/sourceLabel/sources the SOURCE DECISION set
+    earlier in the request (e.g. "course_files" / "Sources (2)"), and the
+    frontend's badge is driven purely by sourceScope (setBubbleSubtitle in
+    shell.ts) — so a declined answer kept showing a success badge ("Using:
+    Course files") (QA V8, 2026-10-13). "unavailable" falls through
+    setBubbleSubtitle's default case to "Answer source unavailable"; clearing
+    sources/sourceLabel drops the now-false citation footer.
+    """
+    evt["confidence"] = "low"
+    evt["unsupported"] = True
+    evt["sourceScope"] = "unavailable"
+    evt["sourceLabel"] = None
+    evt["sources"] = []
+
+
 def _stream_static_answer(
     *,
     text: str,
@@ -6251,8 +6269,7 @@ async def _prepare_ask_stream_response(
                         full_text_buf.append(safe_text)
                         pending_token_events.clear()
                         yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
-                        evt["confidence"] = "low"
-                        evt["unsupported"] = True
+                        _mark_evidence_unavailable_refusal(evt)
                         evt["recovery"] = {
                             "code": "task_identity_mismatch",
                             "action": "reground_active_document",
