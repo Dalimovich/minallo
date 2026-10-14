@@ -881,6 +881,29 @@ def _mark_pending_index_page_evidence_provenance(evt: dict[str, Any]) -> None:
     evt["sourceLabel"] = "Using: Visible page (still indexing)"
 
 
+def _resolve_explicit_page_lookup(
+    *, active_document_id: str | None, visible_page: int | None, question: str,
+) -> tuple[int | None, str | None]:
+    """Resolve the page number for visible-page retrieval, honoring an
+    explicit page the student named in their own text ("explain page 11",
+    QA plan J2) over whatever the viewer reports as currently open.
+
+    Returns (effective_page, clarification_text). When clarification_text
+    is set, the named page is ambiguous — no single document is already
+    identified to resolve it against — and effective_page is None; the
+    caller must ask rather than guess which of possibly several course
+    files "page 11" means.
+    """
+    from ..services.grounding_contract import extract_explicit_page_number  # noqa: WPS433
+    explicit_page_number = extract_explicit_page_number(question)
+    if explicit_page_number and not active_document_id:
+        return None, (
+            f"Which file should Minallo use for page {explicit_page_number}? "
+            "Please open or select the PDF first."
+        )
+    return explicit_page_number or visible_page, None
+
+
 def _stream_static_answer(
     *,
     text: str,
@@ -5376,13 +5399,25 @@ async def _prepare_ask_stream_response(
             status_sink("identifying_question")
         from ..services.retrieval import retrieve_visible_page_chunks  # noqa: WPS433
         visible_page_chunks = []
-        if payload.activeDocumentId and payload.visiblePage:
+        effective_visible_page, page_lookup_clarification = _resolve_explicit_page_lookup(
+            active_document_id=payload.activeDocumentId,
+            visible_page=payload.visiblePage,
+            question=resolved_question,
+        )
+        if page_lookup_clarification:
+            return _stream_static_answer(
+                text=page_lookup_clarification,
+                decision=source_decision,
+                answer_mode="clarification",
+                status_key="checking_completeness",
+            )
+        if payload.activeDocumentId and effective_visible_page:
             visible_page_chunks = await run_in_threadpool(
                 lambda: retrieve_visible_page_chunks(
                     user_id=user_id,
                     course_id=payload.courseId,
                     document_id=payload.activeDocumentId,
-                    page_number=payload.visiblePage or 1,
+                    page_number=effective_visible_page or 1,
                 )
             )
         identity_gate_required = bool(

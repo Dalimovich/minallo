@@ -377,6 +377,41 @@ def test_identity_guard_defers_to_page_evidence_only_when_both_conditions_hold()
     )
 
 
+# QA plan J2 ("explain page 11"): the named page overrides whatever the
+# viewer reports as currently open, but only when a single document is
+# already identified to resolve it against.
+
+def test_explicit_page_lookup_overrides_the_viewers_reported_page() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id="doc-1", visible_page=1, question="Explain page 11.",
+    )
+    assert page == 11
+    assert clarification is None
+
+
+def test_explicit_page_lookup_falls_back_to_viewer_page_without_a_named_page() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id="doc-1", visible_page=5, question="Explain this diagram.",
+    )
+    assert page == 5
+    assert clarification is None
+
+
+def test_explicit_page_lookup_asks_instead_of_guessing_without_a_document() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id=None, visible_page=None, question="Explain page 11.",
+    )
+    assert page is None
+    assert clarification is not None
+    assert "page 11" in clarification
+
+
 def test_pending_index_page_evidence_provenance_is_honest_not_a_success_badge() -> None:
     from app.routers.stream import _mark_pending_index_page_evidence_provenance
 

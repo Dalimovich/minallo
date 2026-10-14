@@ -6,6 +6,7 @@ from app.services.grounding_contract import (
     RequestedDocumentAccess,
     ResolvedDocumentAccess,
     ViewerContext,
+    extract_explicit_page_number,
     grounding_cache_payload,
     resolve_document_access,
     select_processing_pipeline,
@@ -149,3 +150,65 @@ def test_full_document_regex_does_not_false_positive_on_bare_all() -> None:
     )
     assert access is ResolvedDocumentAccess.RELEVANCE
     assert reason is AccessResolutionReason.RELEVANCE_DEFAULT
+
+
+# QA plan J2 ("explain page 11") — explicit page-number lookup.
+
+def test_extract_explicit_page_number_recognizes_page_seite_and_folie() -> None:
+    assert extract_explicit_page_number("Can you explain page 11?") == 11
+    assert extract_explicit_page_number("Erklär mir Seite 11.") == 11
+    assert extract_explicit_page_number("Was steht auf Folie 11?") == 11
+    assert extract_explicit_page_number("See p. 11 for the proof.") == 11
+    assert extract_explicit_page_number("No page named here.") is None
+
+
+def test_explicit_page_number_does_not_false_positive_on_exercise_labels() -> None:
+    # "Aufgabe 11" names an exercise, not a page — a bare number with no
+    # page/Seite/Folie noun must never be treated as a page reference.
+    assert extract_explicit_page_number("How is Aufgabe 11 solved?") is None
+
+
+def test_explicit_page_reference_resolves_to_visible_page_without_viewer_context() -> None:
+    # No viewer_context at all — the student may not have anything open;
+    # naming the page is evidence on its own (unlike _VISIBLE_PAGE_RE's
+    # "this/current page", which is meaningless without a viewer).
+    access, reason = resolve_document_access(
+        question="Explain page 11.", requested=None, viewer_context=None,
+    )
+    assert access is ResolvedDocumentAccess.VISIBLE_PAGE
+    assert reason is AccessResolutionReason.EXPLICIT_PAGE_REFERENCE
+
+
+def test_explicit_page_reference_outranks_a_stale_open_viewer_page() -> None:
+    access, reason = resolve_document_access(
+        question="Explain page 11.", requested=None,
+        viewer_context=ViewerContext(documentId="A", revision="r1", visiblePage=1),
+    )
+    assert access is ResolvedDocumentAccess.VISIBLE_PAGE
+    assert reason is AccessResolutionReason.EXPLICIT_PAGE_REFERENCE
+
+
+# Realistic German university-course phrasing (QA plan J2: a BWL slide deck
+# asking about a named page; J1-style Statik lecture wording), not just the
+# bare synthetic "Seite 11" fragment above.
+
+def test_german_bwl_lecture_page_reference_in_a_full_sentence() -> None:
+    assert extract_explicit_page_number(
+        "Können Sie mir bitte Folie 11 der Vorlesung erklären, "
+        "da steht etwas zur Unternehmensumwelt."
+    ) == 11
+    access, reason = resolve_document_access(
+        question="Erklär mir Seite 11, da geht es um den Bezugsrahmen.",
+        requested=None, viewer_context=None,
+    )
+    assert access is ResolvedDocumentAccess.VISIBLE_PAGE
+    assert reason is AccessResolutionReason.EXPLICIT_PAGE_REFERENCE
+
+
+def test_german_statik_lecture_exercise_reference_is_not_a_page_number() -> None:
+    # "Seite" (page) and "Aufgabe" (exercise) are different concepts in the
+    # same lecture style the QA plan uses (J1, Statik) -- an exercise number
+    # must never be misread as a page request.
+    assert extract_explicit_page_number(
+        "Wie löst man Aufgabe 11 zum Festlager und Loslager?"
+    ) is None
