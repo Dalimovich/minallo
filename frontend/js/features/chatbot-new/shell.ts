@@ -8171,6 +8171,30 @@ function loadChatStore(): void {
   }
 }
 
+// Security fix (QA2-1, 2026-10-15): initNewChatbotShell() — and therefore
+// loadChatStore() — runs once, as soon as the chatbot view mounts, which is
+// before the sign-in modal is even submitted. At that point ncbCurrentUid()
+// resolves to '' (no window._currentUser, no ss_last_uid yet), so the
+// bare-key-to-uid migration inside loadChatStore() never gets a chance to
+// run for this tab: every ss_ncb_* read/write for the rest of the session
+// stays on the bare, unscoped keys instead of the per-uid ones. If a
+// different account later signs in on the same browser, THAT account's own
+// loadChatStore() migration would silently adopt whatever chat content was
+// left in the bare keys — an actual cross-account chat-content leak, not
+// just a stale course name.
+//
+// Call this once the signing-in user's uid is actually known (wired from
+// supabase.js's _enterApp via window.__ncbOnAccountResolved) so the
+// migration gets a second, now-correct chance to run before anything
+// meaningful has been saved under the wrong scope.
+export function reconcileChatStoreAccountScope(): void {
+  const root = document.getElementById('ncbRoot') as HTMLElement | null;
+  if (!root) return; // Shell hasn't mounted yet — its own init will already
+                      // call loadChatStore() with the correct uid.
+  loadChatStore();
+  renderSidebar(root);
+}
+
 function saveSourceLibrary(): void {
   try {
     localStorage.setItem(
@@ -10217,6 +10241,12 @@ function initKeyboardShortcuts(root: HTMLElement): void {
 (window as unknown as {
   selectChatbotPdfSource?: typeof selectChatbotPdfSource;
 }).selectChatbotPdfSource = selectChatbotPdfSource;
+// See reconcileChatStoreAccountScope()'s comment above (QA2-1 fix). Called
+// from supabase.js's _enterApp once a sign-in resolves a real uid, via a
+// plain window hook since that file is a classic script, not a module.
+(window as unknown as {
+  __ncbOnAccountResolved?: () => void;
+}).__ncbOnAccountResolved = reconcileChatStoreAccountScope;
 (window as unknown as {
   deselectChatbotSource?: typeof deselectChatbotSource;
 }).deselectChatbotSource = deselectChatbotSource;

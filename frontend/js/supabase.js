@@ -690,6 +690,15 @@ function _enterApp(user) {
     try {
       localStorage.setItem('ss_last_uid', user.id);
     } catch (e) {}
+    // QA2-1 fix (2026-10-15): the chatbot shell can mount (and run its
+    // one-time bare-key-to-uid chat-storage migration) before this uid is
+    // known — e.g. while the sign-in modal is still up. Give it a second,
+    // now-correct chance to migrate once the real uid is in hand, so no
+    // chat content is left sitting in an unscoped key for the next account
+    // on this browser to adopt. No-op if the shell hasn't mounted yet.
+    if (typeof window.__ncbOnAccountResolved === 'function') {
+      try { window.__ncbOnAccountResolved(); } catch (e) {}
+    }
     try {
       var _referralCode = localStorage.getItem('minallo_referral_code');
       var _claimedFor = localStorage.getItem('minallo_referral_claimed_for');
