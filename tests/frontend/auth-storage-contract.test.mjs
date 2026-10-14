@@ -378,6 +378,38 @@ test('logout clears the in-memory PDF viewer state (courseId/documentId/pdfDoc)'
   );
 });
 
+// ── account-change-via-refresh (release-readiness audit, 2026-10-14) ──────
+// A token refresh (NOT an explicit sign-out/sign-in) that resolves to a
+// DIFFERENT user than this tab last knew about — e.g. another tab in the
+// same browser signed into a different account and overwrote the shared
+// sb_sess_* storage this tab's own background refresh then read — must wipe
+// the OLD account's course/PDF/chat-scoped local state before adopting the
+// new identity, same as signOut()'s cross-account fix. An ORDINARY refresh
+// of the SAME user must not pay that cost on every refresh cycle.
+test('signOut and a cross-account token refresh share one account-state-wipe function', () => {
+  const defCount = (SUPABASE_JS.match(/function _sbClearAccountScopedState\(\)/g) || []).length;
+  assert.equal(defCount, 1, '_sbClearAccountScopedState must be defined exactly once and reused, not duplicated');
+  const callCount = (SUPABASE_JS.match(/_sbClearAccountScopedState\(\);/g) || []).length;
+  assert.equal(callCount, 2, 'expected exactly two call sites: signOut() and refreshSession()\'s user-id-mismatch branch');
+});
+
+test('refreshSession only wipes account-scoped state when the refreshed user id actually differs', () => {
+  const refreshBody = SUPABASE_JS.slice(
+    SUPABASE_JS.indexOf('refreshSession: function ()'),
+    SUPABASE_JS.indexOf('restoreSession: function ()')
+  );
+  assert.match(
+    refreshBody,
+    /d\.user\.id !== _currentUser\.id/,
+    'must compare the refreshed user id against the previously known _currentUser, not assume every refresh is the same user'
+  );
+  assert.match(
+    refreshBody,
+    /_currentUser && _currentUser\.id && d\.user\.id !== _currentUser\.id\) \{\s*\n\s*_sbClearAccountScopedState\(\);/,
+    'the wipe must be gated on the id-mismatch condition, not called unconditionally on every refresh'
+  );
+});
+
 test('every cache-sourced applyProfile() call site marks itself non-authoritative', () => {
   // loadUserData()'s cached-profile branch, before the real network fetch.
   assert.match(
