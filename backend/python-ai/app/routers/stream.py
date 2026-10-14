@@ -982,7 +982,7 @@ def _stream_live_answer(
         # record_usage before its own done yield for the same reason).
         if on_finish:
             on_finish(final)
-        yield _sse_bytes(json.dumps({
+        done_event: dict[str, Any] = {
             "done": True,
             "retrievalMode": final_decision.source_scope.value,
             "answerMode": answer_mode,
@@ -997,7 +997,16 @@ def _stream_live_answer(
             "completionTokens": final.get("completionTokens"),
             **extra_meta,
             **_source_meta(final_decision, cache_hit=False),
-        }, ensure_ascii=False))
+        }
+        # V11 (QA): explicit Internet mode whose web search genuinely failed
+        # (stream_web_answer's INTERNET_UNAVAILABLE_MESSAGE fallback, flagged
+        # via webSearchFailed) must not keep the optimistic "Using: Internet" /
+        # confidence=high badge from the pre-stream meta event above — same
+        # label-dishonesty shape _mark_evidence_unavailable_refusal already
+        # fixed for V8's evidence-identity guard refusals.
+        if answer_mode == "internet" and final.get("webSearchFailed"):
+            _mark_evidence_unavailable_refusal(done_event)
+        yield _sse_bytes(json.dumps(done_event, ensure_ascii=False))
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

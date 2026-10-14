@@ -114,7 +114,7 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
     settings = get_settings()
     if not settings.web_search_enabled:
         yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
-        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None, "webSearchFailed": True}
         return
 
     client = get_openai_client()
@@ -133,7 +133,7 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
     except Exception:  # noqa: BLE001
         log.exception("OpenAI web search stream failed to start")
         yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
-        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None, "webSearchFailed": True}
         return
 
     text_sent = False
@@ -154,8 +154,10 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
             usage = getattr(response, "usage", None) if response is not None else None
             # A valid answer whose citations didn't parse still streamed real
             # text above; only a genuinely empty completion falls back here.
+            completed_empty = False
             if not text_sent:
                 text = _extract_text(response) if response is not None else ""
+                completed_empty = not text
                 yield {"t": text or INTERNET_UNAVAILABLE_MESSAGE}
             yield {
                 "done": True,
@@ -163,6 +165,7 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
                 "model": settings.web_search_model,
                 "promptTokens": getattr(usage, "input_tokens", None) if usage else None,
                 "completionTokens": getattr(usage, "output_tokens", None) if usage else None,
+                **({"webSearchFailed": True} if completed_empty else {}),
             }
             return
         elif event_type in ("response.failed", "error"):
@@ -174,7 +177,7 @@ def stream_web_answer(question: str, *, query: str, max_tokens: int = 1400) -> I
             # fabricated success.
             if not text_sent:
                 yield {"t": INTERNET_UNAVAILABLE_MESSAGE}
-                yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None}
+                yield {"done": True, "webSources": [], "model": None, "promptTokens": None, "completionTokens": None, "webSearchFailed": True}
                 return
             message = getattr(event, "message", None) or f"web search stream ended with {event_type}"
             raise RuntimeError(message)

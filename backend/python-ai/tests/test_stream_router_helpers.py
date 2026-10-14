@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 
@@ -252,3 +253,83 @@ def test_evidence_unavailable_refusal_overwrites_the_stale_success_provenance() 
     assert evt["sourceLabel"] is None
     assert evt["sources"] == []
     assert evt["model"] == "gpt-4o"
+
+
+def test_internet_mode_web_search_failure_is_disclosed_not_badged_as_success() -> None:
+    # QA V11: explicit Internet mode whose web search genuinely failed
+    # (stream_web_answer falling back to INTERNET_UNAVAILABLE_MESSAGE) still
+    # carried the optimistic pre-stream "Using: Internet" / confidence=high
+    # badge on the final done event, because _stream_live_answer's confidence/
+    # unsupported were fixed before the stream ran and never reconsidered
+    # once stream_web_answer signalled webSearchFailed=True.
+    from app.routers.stream import _stream_live_answer
+    from app.services.source_router import CourseFileScope, SourceDecision, SourceMode, SourceScope
+
+    decision = SourceDecision(
+        selected_source_mode=SourceMode.INTERNET,
+        source_scope=SourceScope.INTERNET,
+        course_file_scope=CourseFileScope.ALL_COURSE_FILES,
+        source_label="Using: Internet",
+    )
+
+    def failed_web_search():
+        yield {"t": "Internet search is temporarily unavailable."}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None,
+               "completionTokens": None, "webSearchFailed": True}
+
+    response = _stream_live_answer(
+        events=failed_web_search(),
+        decision=decision,
+        answer_mode="internet",
+        request_id="req-1",
+        decision_for_done=lambda final: decision,
+        map_sources=lambda final: [],
+    )
+
+    async def consume():
+        return [chunk async for chunk in response.body_iterator]
+
+    chunks = asyncio.run(consume())
+    done = next(json.loads(c.decode()[len("data: "):]) for c in chunks if b'"done": true' in c)
+    assert done["confidence"] == "low"
+    assert done["unsupported"] is True
+    assert done["sourceScope"] == "unavailable"
+    assert done["sourceLabel"] is None
+    assert done["sources"] == []
+
+
+def test_internet_mode_successful_web_search_keeps_its_badge() -> None:
+    # Guards against over-correcting: a real web answer must NOT be downgraded
+    # just because it happens to carry no parsed webSources.
+    from app.routers.stream import _stream_live_answer
+    from app.services.source_router import CourseFileScope, SourceDecision, SourceMode, SourceScope
+
+    decision = SourceDecision(
+        selected_source_mode=SourceMode.INTERNET,
+        source_scope=SourceScope.INTERNET,
+        course_file_scope=CourseFileScope.ALL_COURSE_FILES,
+        source_label="Using: Internet",
+    )
+
+    def real_web_search():
+        yield {"t": "Torsion is a twisting deformation under torque."}
+        yield {"done": True, "webSources": [], "model": "gpt-4o", "promptTokens": 10, "completionTokens": 20}
+
+    response = _stream_live_answer(
+        events=real_web_search(),
+        decision=decision,
+        answer_mode="internet",
+        request_id="req-2",
+        decision_for_done=lambda final: decision,
+        map_sources=lambda final: [],
+    )
+
+    async def consume():
+        return [chunk async for chunk in response.body_iterator]
+
+    chunks = asyncio.run(consume())
+    done = next(json.loads(c.decode()[len("data: "):]) for c in chunks if b'"done": true' in c)
+    assert done["confidence"] == "high"
+    assert done["unsupported"] is False
+    assert done["sourceScope"] == "internet"
+    assert done["sourceLabel"] == "Using: Internet"
