@@ -333,3 +333,67 @@ def test_internet_mode_successful_web_search_keeps_its_badge() -> None:
     assert done["unsupported"] is False
     assert done["sourceScope"] == "internet"
     assert done["sourceLabel"] == "Using: Internet"
+
+
+# ── V8 completion (release-readiness audit, 2026-10-14) ───────────────────
+# Original V8 fix only corrected the BADGE on a declined answer. This closes
+# the deeper gap: a just-uploaded, still-indexing document has no real
+# retrieved chunks yet, so the identity-mismatch guard's "grounded identity"
+# is built from nothing — it can false-positive against a draft that was
+# actually correctly grounded in the VISIBLE PAGE. The guard must now defer
+# to the draft when real page evidence was available, but still reject when
+# it wasn't (honest limitation) or when the document is fully indexed (the
+# mismatch is then real and must still be caught — see IMG08).
+
+def test_identity_guard_defers_to_page_evidence_only_when_both_conditions_hold() -> None:
+    from app.routers.stream import _identity_guard_should_defer_to_page_evidence
+
+    # Indexing pending + a rendered page image → defer (trust the draft).
+    assert _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=[{"mediaType": "image/png", "data": "x"}],
+        open_file_context=None,
+    )
+    # Indexing pending + real visible-page TEXT (no image) → defer.
+    assert _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=None,
+        open_file_context="Preis=80, variable Stueckkosten=50, Fixkosten=300",
+    )
+    # Indexing pending but NO page evidence at all → do not defer (honest
+    # limitation is the correct outcome, not trusting an ungrounded draft).
+    assert not _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=None,
+        open_file_context="   ",
+    )
+    # Document fully indexed (not pending) even with page evidence present →
+    # do not defer; a real mismatch on an indexed document must still be
+    # caught (this is the guard's actual fabrication-detection job).
+    assert not _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=False,
+        open_file_images=[{"mediaType": "image/png", "data": "x"}],
+        open_file_context=None,
+    )
+
+
+def test_pending_index_page_evidence_provenance_is_honest_not_a_success_badge() -> None:
+    from app.routers.stream import _mark_pending_index_page_evidence_provenance
+
+    evt = {
+        "sourceScope": "course_files",
+        "sourceLabel": "Using: Course files",
+        "sources": [{"page": 1}, {"page": 2}],
+        "confidence": "high",
+    }
+    _mark_pending_index_page_evidence_provenance(evt)
+    assert evt["indexingPending"] is True
+    # "active_document" is the existing, frontend-recognised sourceScope for
+    # "answered from the open document" (setBubbleSubtitle in shell.ts) — it
+    # must not claim "course_files" (implies the full document was indexed).
+    assert evt["sourceScope"] == "active_document"
+    assert "indexing" in evt["sourceLabel"].lower()
+    # Unrelated fields (confidence, prior sources list) are left untouched —
+    # this only corrects provenance, it doesn't re-run _mark_evidence_unavailable_refusal.
+    assert evt["confidence"] == "high"
+    assert evt["sources"] == [{"page": 1}, {"page": 2}]

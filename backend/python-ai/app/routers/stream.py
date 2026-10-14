@@ -843,6 +843,44 @@ def _mark_evidence_unavailable_refusal(evt: dict[str, Any]) -> None:
     evt["sources"] = []
 
 
+def _identity_guard_should_defer_to_page_evidence(
+    *,
+    active_document_indexing_pending: bool,
+    open_file_images: list[Any] | None,
+    open_file_context: str | None,
+) -> bool:
+    """True when a semantic/task-identity mismatch must NOT reject the draft.
+
+    The identity-mismatch guard compares a draft against a "grounded identity"
+    built from RETRIEVAL. While the active document is still indexing, there
+    are no real retrieved chunks yet, so that comparison is unreliable — it
+    can false-positive against a draft that was actually correctly grounded in
+    the VISIBLE PAGE instead (V8, QA release-readiness audit 2026-10-14: a
+    fresh upload, asked about page-1-visible content, got rejected this way).
+
+    Deferring requires BOTH: the document is genuinely still indexing (not
+    just any mismatch), AND the draft had real page evidence to work from
+    (an image or non-empty visible-page text) — not merely "some chunk
+    existed". Without the second condition this would also swallow genuine
+    fabrication on an already-indexed document, which the guard must keep
+    catching (see the IMG08 invented-exercise defect it protects against).
+    """
+    page_evidence_available = bool(open_file_images) or bool((open_file_context or "").strip())
+    return active_document_indexing_pending and page_evidence_available
+
+
+def _mark_pending_index_page_evidence_provenance(evt: dict[str, Any]) -> None:
+    """Correct an event's provenance when _identity_guard_should_defer_to_page_evidence
+    kept a draft that the identity-mismatch guard would otherwise have
+    rejected. The draft itself is kept as-is; only the source badge is
+    corrected so it never implies the full document was indexed or
+    retrieved — it answered from the visible page alone.
+    """
+    evt["indexingPending"] = True
+    evt["sourceScope"] = "active_document"
+    evt["sourceLabel"] = "Using: Visible page (still indexing)"
+
+
 def _stream_static_answer(
     *,
     text: str,
@@ -3442,6 +3480,24 @@ async def _prepare_ask_stream_response(
             doc_name_map.update(await run_in_threadpool(
                 lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
             ))
+
+    # V8 (QA release-readiness audit, 2026-10-14): a just-uploaded, still-
+    # indexing active document has no real retrieved chunks yet, so the
+    # identity-mismatch guard further below (built from retrieval) can false-
+    # positive against a draft that was actually correctly grounded in the
+    # VISIBLE PAGE. Distinguish "genuinely indexing" from "ready" using the
+    # same readiness check the explicit-selection path above already uses, so
+    # the guard can tell a pending-index false-positive from a real
+    # fabrication/mismatch on an already-indexed document (which must still
+    # be caught — see the IMG08 invented-exercise defect this guard protects
+    # against).
+    active_document_row = (
+        dict(preflight.get("documents") or {}).get(payload.activeDocumentId or "")
+        if preflight else None
+    )
+    active_document_indexing_pending = bool(
+        active_document_row and _selected_document_readiness_issue(active_document_row)
+    )
 
     from ..services.reference_resolution import (  # noqa: WPS433
         decide_evidence,
@@ -6269,20 +6325,43 @@ async def _prepare_ask_stream_response(
                         open_file_images
                         and _FALSE_VISUAL_DENIAL_RE.search("".join(full_text_buf))
                     )
-                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
-                        safe_text = (
-                            "Minallo could not reliably match the draft to the active "
-                            "exercise and requested quantity. The draft was not shown."
-                        )
+                    pending_index_with_page_evidence = _identity_guard_should_defer_to_page_evidence(
+                        active_document_indexing_pending=active_document_indexing_pending,
+                        open_file_images=open_file_images,
+                        open_file_context=payload.openFileContext,
+                    )
+                    if (
+                        (semantic_mismatches or obligation_failures)
+                        and high_risk_validation
+                        and not pending_index_with_page_evidence
+                    ):
+                        if active_document_indexing_pending:
+                            # Indexing genuinely pending AND the visible page alone
+                            # wasn't enough — honest limitation naming the real
+                            # cause, not the generic high-risk-guard wording.
+                            active_file_name = doc_name_map.get(payload.activeDocumentId or "") or "this document"
+                            safe_text = (
+                                f'"{active_file_name}" is still being indexed, and the '
+                                "visible page alone was not enough to answer this "
+                                "reliably. Please try again once indexing finishes."
+                            )
+                        else:
+                            safe_text = (
+                                "Minallo could not reliably match the draft to the active "
+                                "exercise and requested quantity. The draft was not shown."
+                            )
                         full_text_buf.clear()
                         full_text_buf.append(safe_text)
                         pending_token_events.clear()
                         yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
                         _mark_evidence_unavailable_refusal(evt)
+                        evt["indexingPending"] = active_document_indexing_pending
                         evt["recovery"] = {
                             "code": "task_identity_mismatch",
                             "action": "reground_active_document",
                         }
+                    elif pending_index_with_page_evidence and (semantic_mismatches or obligation_failures):
+                        _mark_pending_index_page_evidence_provenance(evt)
                     elif false_visual_denial:
                         from ..services.visual_repair import (  # noqa: WPS433
                             repair_false_visual_denial_sync,
