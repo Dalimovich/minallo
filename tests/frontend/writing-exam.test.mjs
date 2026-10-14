@@ -62,6 +62,7 @@ function harness({ failSave = false, generic = false } = {}) {
     if (name.includes('writing-coach-ai')) return { analyzeParagraph: async body => { calls.push({ path: 'generic', body }); return analysis; } };
     if (name.includes('ai-error')) return { friendlyAiErrorMessage: e => e.message };
     if (name.includes('german-profile')) return { getGermanLearnerProfile: () => ({ targetLevel: window._germanLevel || '' }) };
+    if (name.includes('storage-service')) return { getItem: (k, d = null) => (storage.has(k) ? storage.get(k) : d) };
     return { transitionLearnerWorkspace: async () => {} };
   });
   coach.initWritingCoach(); coach.openWritingCoach();
@@ -112,4 +113,17 @@ test('generic Writing Coach keeps profile controls, saved draft and original end
   assert.equal(h.calls[0].path, 'generic');
   assert.equal(h.calls[0].body.profileLevel, 'B2');
   assert.equal(h.calls.some(c => c.path === 'generate'), false);
+});
+
+test('explanation language reuses the app-wide ss_lang setting, defaulting to English', async () => {
+  const h = harness({ generic: true });
+  h.el('wcAnalyze').fire('click'); await h.tick();
+  assert.equal(h.calls[0].body.explanationLanguage, 'English');
+});
+
+test('explanation language is German when ss_lang is de', async () => {
+  const h = harness({ generic: true });
+  h.storage.set('ss_lang', 'de');
+  h.el('wcAnalyze').fire('click'); await h.tick();
+  assert.equal(h.calls[0].body.explanationLanguage, 'German');
 });
