@@ -52,6 +52,29 @@ def test_user_correction_invalidates_prior_answer_and_keeps_active_question():
     assert "exercise 13.11" in result.resolved_request
 
 
+def test_correction_after_translation_still_targets_the_original_exercise():
+    # QA J3 (minallo-student-test-plan.md): "ask for a translation, then
+    # challenge a fact in it" — translation and correction are each tested
+    # independently elsewhere, but never chained. The translated turn's own
+    # text ("in Arabic please") carries no exercise label, so this confirms
+    # _active_questions still finds "13.11" from the ORIGINAL answer two
+    # turns back rather than losing it once a translation turn sits between.
+    result = resolve_dialogue(
+        "not 10, the professor marked 12",
+        previous_turns=turns(
+            ("user", "How is Aufgabe 13.11 solved?"),
+            ("assistant", "The result is 10."),
+            ("user", "in Arabic please"),
+            ("assistant", "النتيجة هي 10."),
+        ),
+        response_language="en",
+    )
+    assert result.dialogue_act == DialogueAct.CORRECT_ASSISTANT
+    assert result.active_question == "13.11"
+    assert result.invalidate_previous_answer
+    assert "exercise 13.11" in result.resolved_request
+
+
 def test_explicit_corrected_question_number_outranks_old_reference():
     result = resolve_dialogue(
         "No, I mean Aufgabe 13.6",
