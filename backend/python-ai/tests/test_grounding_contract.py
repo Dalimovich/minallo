@@ -140,6 +140,17 @@ def test_summarize_whole_document_resolves_to_full_document_summarization() -> N
     assert document_extraction is False
 
 
+def test_all_definitions_in_a_chapter_resolves_to_full_document_extraction() -> None:
+    # QA plan J2: "all definitions in chapter 2" must scan exhaustively, not
+    # fall through to a few semantic-search chunks.
+    for question in (
+        "Give me all definitions in chapter 2.",
+        "Alle Definitionen in Kapitel 2 bitte.",
+    ):
+        access, _reason = resolve_document_access(question=question, requested=None, viewer_context=None)
+        assert access is ResolvedDocumentAccess.FULL_DOCUMENT, question
+
+
 def test_full_document_regex_does_not_false_positive_on_bare_all() -> None:
     """"all" alone, with no document/item noun nearby, must not trigger
     full-document processing — that's the whole reason _FULL_DOCUMENT_RE
