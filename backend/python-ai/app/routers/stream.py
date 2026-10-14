@@ -825,6 +825,85 @@ def _source_meta(decision: SourceDecision, *, cache_hit: bool | None = None) -> 
     return decision.metadata(include_debug=_source_debug_enabled(), cache_hit=cache_hit)
 
 
+def _mark_evidence_unavailable_refusal(evt: dict[str, Any]) -> None:
+    """Correct an event's provenance after its draft was replaced by a safe
+    refusal (the task/evidence-identity guard below). Without this, evt still
+    carries whatever sourceScope/sourceLabel/sources the SOURCE DECISION set
+    earlier in the request (e.g. "course_files" / "Sources (2)"), and the
+    frontend's badge is driven purely by sourceScope (setBubbleSubtitle in
+    shell.ts) — so a declined answer kept showing a success badge ("Using:
+    Course files") (QA V8, 2026-10-13). "unavailable" falls through
+    setBubbleSubtitle's default case to "Answer source unavailable"; clearing
+    sources/sourceLabel drops the now-false citation footer.
+    """
+    evt["confidence"] = "low"
+    evt["unsupported"] = True
+    evt["sourceScope"] = "unavailable"
+    evt["sourceLabel"] = None
+    evt["sources"] = []
+
+
+def _identity_guard_should_defer_to_page_evidence(
+    *,
+    active_document_indexing_pending: bool,
+    open_file_images: list[Any] | None,
+    open_file_context: str | None,
+) -> bool:
+    """True when a semantic/task-identity mismatch must NOT reject the draft.
+
+    The identity-mismatch guard compares a draft against a "grounded identity"
+    built from RETRIEVAL. While the active document is still indexing, there
+    are no real retrieved chunks yet, so that comparison is unreliable — it
+    can false-positive against a draft that was actually correctly grounded in
+    the VISIBLE PAGE instead (V8, QA release-readiness audit 2026-10-14: a
+    fresh upload, asked about page-1-visible content, got rejected this way).
+
+    Deferring requires BOTH: the document is genuinely still indexing (not
+    just any mismatch), AND the draft had real page evidence to work from
+    (an image or non-empty visible-page text) — not merely "some chunk
+    existed". Without the second condition this would also swallow genuine
+    fabrication on an already-indexed document, which the guard must keep
+    catching (see the IMG08 invented-exercise defect it protects against).
+    """
+    page_evidence_available = bool(open_file_images) or bool((open_file_context or "").strip())
+    return active_document_indexing_pending and page_evidence_available
+
+
+def _mark_pending_index_page_evidence_provenance(evt: dict[str, Any]) -> None:
+    """Correct an event's provenance when _identity_guard_should_defer_to_page_evidence
+    kept a draft that the identity-mismatch guard would otherwise have
+    rejected. The draft itself is kept as-is; only the source badge is
+    corrected so it never implies the full document was indexed or
+    retrieved — it answered from the visible page alone.
+    """
+    evt["indexingPending"] = True
+    evt["sourceScope"] = "active_document"
+    evt["sourceLabel"] = "Using: Visible page (still indexing)"
+
+
+def _resolve_explicit_page_lookup(
+    *, active_document_id: str | None, visible_page: int | None, question: str,
+) -> tuple[int | None, str | None]:
+    """Resolve the page number for visible-page retrieval, honoring an
+    explicit page the student named in their own text ("explain page 11",
+    QA plan J2) over whatever the viewer reports as currently open.
+
+    Returns (effective_page, clarification_text). When clarification_text
+    is set, the named page is ambiguous — no single document is already
+    identified to resolve it against — and effective_page is None; the
+    caller must ask rather than guess which of possibly several course
+    files "page 11" means.
+    """
+    from ..services.grounding_contract import extract_explicit_page_number  # noqa: WPS433
+    explicit_page_number = extract_explicit_page_number(question)
+    if explicit_page_number and not active_document_id:
+        return None, (
+            f"Which file should Minallo use for page {explicit_page_number}? "
+            "Please open or select the PDF first."
+        )
+    return explicit_page_number or visible_page, None
+
+
 def _stream_static_answer(
     *,
     text: str,
@@ -964,7 +1043,7 @@ def _stream_live_answer(
         # record_usage before its own done yield for the same reason).
         if on_finish:
             on_finish(final)
-        yield _sse_bytes(json.dumps({
+        done_event: dict[str, Any] = {
             "done": True,
             "retrievalMode": final_decision.source_scope.value,
             "answerMode": answer_mode,
@@ -979,7 +1058,16 @@ def _stream_live_answer(
             "completionTokens": final.get("completionTokens"),
             **extra_meta,
             **_source_meta(final_decision, cache_hit=False),
-        }, ensure_ascii=False))
+        }
+        # V11 (QA): explicit Internet mode whose web search genuinely failed
+        # (stream_web_answer's INTERNET_UNAVAILABLE_MESSAGE fallback, flagged
+        # via webSearchFailed) must not keep the optimistic "Using: Internet" /
+        # confidence=high badge from the pre-stream meta event above — same
+        # label-dishonesty shape _mark_evidence_unavailable_refusal already
+        # fixed for V8's evidence-identity guard refusals.
+        if answer_mode == "internet" and final.get("webSearchFailed"):
+            _mark_evidence_unavailable_refusal(done_event)
+        yield _sse_bytes(json.dumps(done_event, ensure_ascii=False))
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -3416,6 +3504,24 @@ async def _prepare_ask_stream_response(
                 lambda: _verify_user_owns_documents(user_id, payload.courseId, [payload.activeDocumentId])
             ))
 
+    # V8 (QA release-readiness audit, 2026-10-14): a just-uploaded, still-
+    # indexing active document has no real retrieved chunks yet, so the
+    # identity-mismatch guard further below (built from retrieval) can false-
+    # positive against a draft that was actually correctly grounded in the
+    # VISIBLE PAGE. Distinguish "genuinely indexing" from "ready" using the
+    # same readiness check the explicit-selection path above already uses, so
+    # the guard can tell a pending-index false-positive from a real
+    # fabrication/mismatch on an already-indexed document (which must still
+    # be caught — see the IMG08 invented-exercise defect this guard protects
+    # against).
+    active_document_row = (
+        dict(preflight.get("documents") or {}).get(payload.activeDocumentId or "")
+        if preflight else None
+    )
+    active_document_indexing_pending = bool(
+        active_document_row and _selected_document_readiness_issue(active_document_row)
+    )
+
     from ..services.reference_resolution import (  # noqa: WPS433
         decide_evidence,
         recovery_message,
@@ -5293,13 +5399,25 @@ async def _prepare_ask_stream_response(
             status_sink("identifying_question")
         from ..services.retrieval import retrieve_visible_page_chunks  # noqa: WPS433
         visible_page_chunks = []
-        if payload.activeDocumentId and payload.visiblePage:
+        effective_visible_page, page_lookup_clarification = _resolve_explicit_page_lookup(
+            active_document_id=payload.activeDocumentId,
+            visible_page=payload.visiblePage,
+            question=resolved_question,
+        )
+        if page_lookup_clarification:
+            return _stream_static_answer(
+                text=page_lookup_clarification,
+                decision=source_decision,
+                answer_mode="clarification",
+                status_key="checking_completeness",
+            )
+        if payload.activeDocumentId and effective_visible_page:
             visible_page_chunks = await run_in_threadpool(
                 lambda: retrieve_visible_page_chunks(
                     user_id=user_id,
                     course_id=payload.courseId,
                     document_id=payload.activeDocumentId,
-                    page_number=payload.visiblePage or 1,
+                    page_number=effective_visible_page or 1,
                 )
             )
         identity_gate_required = bool(
@@ -6242,21 +6360,43 @@ async def _prepare_ask_stream_response(
                         open_file_images
                         and _FALSE_VISUAL_DENIAL_RE.search("".join(full_text_buf))
                     )
-                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
-                        safe_text = (
-                            "Minallo could not reliably match the draft to the active "
-                            "exercise and requested quantity. The draft was not shown."
-                        )
+                    pending_index_with_page_evidence = _identity_guard_should_defer_to_page_evidence(
+                        active_document_indexing_pending=active_document_indexing_pending,
+                        open_file_images=open_file_images,
+                        open_file_context=payload.openFileContext,
+                    )
+                    if (
+                        (semantic_mismatches or obligation_failures)
+                        and high_risk_validation
+                        and not pending_index_with_page_evidence
+                    ):
+                        if active_document_indexing_pending:
+                            # Indexing genuinely pending AND the visible page alone
+                            # wasn't enough — honest limitation naming the real
+                            # cause, not the generic high-risk-guard wording.
+                            active_file_name = doc_name_map.get(payload.activeDocumentId or "") or "this document"
+                            safe_text = (
+                                f'"{active_file_name}" is still being indexed, and the '
+                                "visible page alone was not enough to answer this "
+                                "reliably. Please try again once indexing finishes."
+                            )
+                        else:
+                            safe_text = (
+                                "Minallo could not reliably match the draft to the active "
+                                "exercise and requested quantity. The draft was not shown."
+                            )
                         full_text_buf.clear()
                         full_text_buf.append(safe_text)
                         pending_token_events.clear()
                         yield _sse_bytes(json.dumps({"t": safe_text}, ensure_ascii=False))
-                        evt["confidence"] = "low"
-                        evt["unsupported"] = True
+                        _mark_evidence_unavailable_refusal(evt)
+                        evt["indexingPending"] = active_document_indexing_pending
                         evt["recovery"] = {
                             "code": "task_identity_mismatch",
                             "action": "reground_active_document",
                         }
+                    elif pending_index_with_page_evidence and (semantic_mismatches or obligation_failures):
+                        _mark_pending_index_page_evidence_provenance(evt)
                     elif false_visual_denial:
                         from ..services.visual_repair import (  # noqa: WPS433
                             repair_false_visual_denial_sync,

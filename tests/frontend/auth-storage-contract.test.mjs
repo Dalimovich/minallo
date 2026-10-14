@@ -326,6 +326,90 @@ test('applyProfile() only sets window._germanProfileLoaded=true when authoritati
   );
 });
 
+// ── cross-account activeCourseId/course-name leak (QA audit, 2026-10-13) ───
+// Signing out of account A and into account B in the same browser tab left
+// account A's course id/name visible to account B: window.activeCourseId
+// (a plain in-memory global) was never reset by signOut(), and two unscoped
+// storage keys (workspace-library.ts's RECENT_COURSE_KEY in localStorage,
+// PDF_SESSION_KEY in sessionStorage) were never swept, unlike the already
+// correctly-namespaced ss_ncb_*:<uid> / studyLibraryState() caches. No actual
+// file-content leak was found (backend ownership checks held) but the stale
+// course id/name rendering is itself a privacy/isolation defect.
+test('logout resets the in-memory activeCourseId global', () => {
+  assert.match(
+    SUPABASE_JS,
+    /window\.activeCourseId = null;/,
+    'signOut must reset window.activeCourseId so the next account on this browser never sees it'
+  );
+});
+
+test('logout sweeps the unscoped recent-course and open-pdf session keys', () => {
+  assert.match(
+    SUPABASE_JS,
+    /['"]minallo:chatbot-recent-course['"]/,
+    'signOut must remove the unscoped chatbot-recent-course key'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /sessionStorage\.removeItem\(\s*['"]minallo:chatbot-open-pdf['"]\s*\)/,
+    'signOut must remove the unscoped chatbot-open-pdf sessionStorage key'
+  );
+});
+
+// ── cross-account PDF viewer state leak (V12 follow-up, 2026-10-14) ───────
+// getActivePdfContext() doesn't gate on PDF viewer DOM visibility, only on
+// __minalloPdfViewerState (courseId/documentId/pdfDoc) — a plain in-memory
+// module store signOut() never touched. Discovered while fixing V12 (German-
+// learner mode dropping file/page context): once learners were also allowed
+// to use getActivePdfContext(), the same still-open-PDF-from-account-A risk
+// that activeCourseId already closed for the course NAME would have reopened
+// for the PDF's actual identity/text if B asked a question before opening
+// any file of their own.
+test('logout clears the in-memory PDF viewer state (courseId/documentId/pdfDoc)', () => {
+  assert.match(
+    SUPABASE_JS,
+    /import\(['"]\.\/features\/pdf-viewer\/active-pdf-context\.js['"]\)/,
+    'signOut must dynamically import active-pdf-context.js (classic script, no static import)'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /clearActivePdfViewerState\(\)/,
+    'signOut must call clearActivePdfViewerState() so the next account on this browser never inherits an open PDF identity'
+  );
+});
+
+// ── account-change-via-refresh (release-readiness audit, 2026-10-14) ──────
+// A token refresh (NOT an explicit sign-out/sign-in) that resolves to a
+// DIFFERENT user than this tab last knew about — e.g. another tab in the
+// same browser signed into a different account and overwrote the shared
+// sb_sess_* storage this tab's own background refresh then read — must wipe
+// the OLD account's course/PDF/chat-scoped local state before adopting the
+// new identity, same as signOut()'s cross-account fix. An ORDINARY refresh
+// of the SAME user must not pay that cost on every refresh cycle.
+test('signOut and a cross-account token refresh share one account-state-wipe function', () => {
+  const defCount = (SUPABASE_JS.match(/function _sbClearAccountScopedState\(\)/g) || []).length;
+  assert.equal(defCount, 1, '_sbClearAccountScopedState must be defined exactly once and reused, not duplicated');
+  const callCount = (SUPABASE_JS.match(/_sbClearAccountScopedState\(\);/g) || []).length;
+  assert.equal(callCount, 2, 'expected exactly two call sites: signOut() and refreshSession()\'s user-id-mismatch branch');
+});
+
+test('refreshSession only wipes account-scoped state when the refreshed user id actually differs', () => {
+  const refreshBody = SUPABASE_JS.slice(
+    SUPABASE_JS.indexOf('refreshSession: function ()'),
+    SUPABASE_JS.indexOf('restoreSession: function ()')
+  );
+  assert.match(
+    refreshBody,
+    /d\.user\.id !== _currentUser\.id/,
+    'must compare the refreshed user id against the previously known _currentUser, not assume every refresh is the same user'
+  );
+  assert.match(
+    refreshBody,
+    /_currentUser && _currentUser\.id && d\.user\.id !== _currentUser\.id\) \{\s*\n\s*_sbClearAccountScopedState\(\);/,
+    'the wipe must be gated on the id-mismatch condition, not called unconditionally on every refresh'
+  );
+});
+
 test('every cache-sourced applyProfile() call site marks itself non-authoritative', () => {
   // loadUserData()'s cached-profile branch, before the real network fetch.
   assert.match(

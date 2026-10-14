@@ -5,6 +5,43 @@ from types import SimpleNamespace
 from app.services import document_extraction as extraction
 
 
+# QA plan J2: "all definitions in chapter 2" — chapter-boundary resolution
+# from an explicit "Chapter N"/"Kapitel N" text heading.
+
+def test_requested_chapter_number_recognizes_english_and_german() -> None:
+    assert extraction.requested_chapter_number("all definitions in chapter 2") == 2
+    assert extraction.requested_chapter_number("alle Definitionen in Kapitel 2") == 2
+    assert extraction.requested_chapter_number("no chapter named here") is None
+
+
+def test_resolve_chapter_range_bounds_to_the_next_differently_numbered_heading() -> None:
+    pages = [
+        {"page_number": 1, "cleaned_text": "Kapitel 1\nEinfuehrung."},
+        {"page_number": 2, "cleaned_text": "Mehr zu Kapitel 1."},
+        {"page_number": 3, "cleaned_text": "Kapitel 2\nUnternehmensumwelt."},
+        {"page_number": 4, "cleaned_text": "Mehr zu Kapitel 2."},
+        {"page_number": 5, "cleaned_text": "Kapitel 3\nStrategie."},
+    ]
+    assert extraction.resolve_chapter_range(2, pages) == (3, 4)
+
+
+def test_resolve_chapter_range_extends_to_the_last_page_when_it_is_the_final_chapter() -> None:
+    pages = [
+        {"page_number": 1, "cleaned_text": "Chapter 1\nIntro."},
+        {"page_number": 2, "cleaned_text": "Chapter 2\nThe rest of the book."},
+        {"page_number": 3, "cleaned_text": "Still chapter 2 content."},
+    ]
+    assert extraction.resolve_chapter_range(2, pages) == (2, 3)
+
+
+def test_resolve_chapter_range_returns_none_without_a_matching_heading() -> None:
+    pages = [
+        {"page_number": n, "cleaned_text": f"Folie {n}: some slide content."}
+        for n in range(1, 4)
+    ]
+    assert extraction.resolve_chapter_range(2, pages) is None
+
+
 def test_all_kurzfragen_classifies_as_document_wide_extraction() -> None:
     matched, correction, target = extraction.classify_document_extraction(
         "can you extract all the kurzfragen questions in this exam and their answers?"

@@ -23,6 +23,7 @@ import {
   type ActivePdfContext,
   type OpenFileImage
 } from '../pdf-viewer/active-pdf-context.js';
+import { isLearnerFileScope } from '../german/learner-files.js';
 import {
   createAIThinkingStatus,
   getThinkingContext,
@@ -574,6 +575,21 @@ function isLearnerAccount(): boolean {
 function resolveRequestCourseId(chat: SavedChat): string {
   if (isLearnerAccount()) return '';
   return String(chat.courseId || '') || currentVisibleCourseId();
+}
+
+// V12 (QA, 2026-10-13): a learner question about their OWN open file (German
+// Files — isLearnerFileScope(ctx.courseId) true, per learner-files.ts) must
+// reach the backend with that file's identity/page text, exactly like the
+// student path — the previous blanket `isLearner ? null : getActivePdfContext()`
+// discarded it unconditionally, so a learner asking about a file they had
+// open got "please upload the file" every time. A real SEMS course PDF left
+// open from a prior student-mode session (isLearnerAccount()'s own doc
+// comment above) is the actual stale state to guard against, so that case
+// alone still returns null.
+function activePdfContextForCurrentRole(): ActivePdfContext | null {
+  const ctx = getActivePdfContext();
+  if (!ctx) return null;
+  return isLearnerAccount() && !isLearnerFileScope(ctx.courseId) ? null : ctx;
 }
 
 function restoreActiveChatCourse(): void {
@@ -1595,7 +1611,7 @@ async function streamAiReply(
   });
   if (!assistantMessage.requestSnapshot) {
     const isLearner = isLearnerAccount();
-    const pdf = isLearner ? null : getActivePdfContext();
+    const pdf = activePdfContextForCurrentRole();
     const directAttachment = sourceUser?.attachmentRefs?.[0];
     // A course-scoped attachment reference (has .courseId — e.g. a prior
     // "Import from Course" pick) must not carry into a learner request; a
@@ -3732,7 +3748,7 @@ function ragEligibility(
     };
   }
   const selected = isLearner ? [] : sourceLibrary.items.filter((s) => active.selectedSourceIds.includes(s.id));
-  const openPdf = isLearner ? null : getActivePdfContext();
+  const openPdf = activePdfContextForCurrentRole();
   // Missing incidental viewer state is resolved by backend evidence planning;
   // it must not block questions that do not require the visible page.
   // Screenshots always stay on the explicit visual stream. With an open PDF
@@ -4045,8 +4061,21 @@ async function streamFromAskStream(
   // than threading a separate `effective*` variable through the rest of the
   // function) means every existing read below — snapshot capture, the
   // page-drift check, the viewerContext fallback — is covered for free.
-  const effectiveCourseId = learnerAccount ? '' : courseId;
-  if (learnerAccount) activePdfContext = null;
+  // V12 (QA, 2026-10-13): forcing both of these to null/'' for EVERY learner
+  // request (as this used to) also discarded a learner's own currently-open
+  // file — courseId='' doesn't just lose retrieval scope, it makes the
+  // backend's _verify_user_owns_documents(user_id, courseId, [activeDocumentId])
+  // 404 the document (its real course_id column is the learner-file-scope,
+  // e.g. "german-files", not ''), so even sending activeDocumentId alongside
+  // an empty courseId would have been silently rejected server-side. A real
+  // SEMS course id reaching here while learnerAccount is true is exactly the
+  // stale pre-role-switch state isLearnerAccount()'s doc comment warns about,
+  // so that case alone still gets neutralized.
+  const learnerOwnFileScope = learnerAccount && isLearnerFileScope(courseId);
+  const effectiveCourseId = learnerAccount && !learnerOwnFileScope ? '' : courseId;
+  if (learnerAccount && !(activePdfContext && isLearnerFileScope(activePdfContext.courseId))) {
+    activePdfContext = null;
+  }
   // Defense-in-depth: `submitted` is the requestSnapshot the caller ATTACHED
   // to this message when it was first created — for a "regenerate" on a
   // message created before a role switch, that snapshot's sourceMode/

@@ -3000,9 +3000,13 @@
         var feedbackHtml = '';
         if (answer) {
           var isCorrect = answer.status === 'correct';
+          var isPartial = answer.status === 'partial';
+          var feedbackTitle = isCorrect
+            ? '✓ Correct'
+            : (isPartial ? answer.correctCount + ' / ' + answer.totalCount + ' pairs correct' : 'Not quite.');
           feedbackHtml =
             '<div class="gl-reading-feedback ' + (isCorrect ? 'gl-fb-correct' : 'gl-fb-incorrect') + '">' +
-            '<div class="gl-reading-feedback-title">' + (isCorrect ? '✓ Correct' : 'Not quite.') + '</div>' +
+            '<div class="gl-reading-feedback-title">' + feedbackTitle + '</div>' +
             (!isCorrect && answer.selectedLabel
               ? '<div class="gl-reading-feedback-line">Your answer:<br><strong>' + _glEscape(answer.selectedLabel) + '</strong></div>' +
                 '<div class="gl-reading-feedback-line">Correct answer:<br><strong>' + _glEscape(answer.correctLabel || '') + '</strong></div>'
@@ -3175,12 +3179,19 @@
           var correctTf = selTf === q.answer;
           rd.answers[rd.index] = { status: correctTf ? 'correct' : 'review', selected: selTf, selectedLabel: selTf, correctLabel: q.answer };
         } else if (q.type === 'match') {
-          var allRight = rd.passage.paragraphs.every(function (_, pIdx) {
-            return Number(rd.matchChoices[pIdx]) === q.answer[pIdx];
-          });
           var allFilled = rd.passage.paragraphs.every(function (_, pIdx) { return rd.matchChoices[pIdx] !== undefined && rd.matchChoices[pIdx] !== ''; });
           if (!allFilled) return;
-          rd.answers[rd.index] = { status: allRight ? 'correct' : 'review', selected: null, selectedLabel: null, correctLabel: null };
+          // Each paragraph↔heading pair is independently gradable — don't
+          // collapse a 3/4 into one atomic pass/fail (G3 QA finding).
+          var matchCorrectCount = rd.passage.paragraphs.filter(function (_, pIdx) {
+            return Number(rd.matchChoices[pIdx]) === q.answer[pIdx];
+          }).length;
+          var matchTotal = rd.passage.paragraphs.length;
+          var matchStatus = matchCorrectCount === matchTotal ? 'correct' : (matchCorrectCount > 0 ? 'partial' : 'review');
+          rd.answers[rd.index] = {
+            status: matchStatus, selected: null, selectedLabel: null, correctLabel: null,
+            correctCount: matchCorrectCount, totalCount: matchTotal
+          };
         } else {
           return;
         }
@@ -3202,6 +3213,11 @@
         rdRenderQuestion();
       }
 
+      function rdFmtScore(n) {
+        var r = Math.round(n * 10) / 10;
+        return r % 1 === 0 ? String(r) : r.toFixed(1);
+      }
+
       function rdShowEnd() {
         rd.done = true;
         var total = rd.questions.length;
@@ -3212,10 +3228,11 @@
           var a = rd.answers[idx];
           if (!byCat[q.category]) byCat[q.category] = { correct: 0, total: 0 };
           byCat[q.category].total++;
-          if (a && a.status === 'correct') {
-            correctCount++;
-            byCat[q.category].correct++;
-          }
+          // 'match' can be partially correct (per-pair credit); every other
+          // type is genuinely atomic (single MC/TF/short answer).
+          var credit = a && a.status === 'correct' ? 1 : (a && a.status === 'partial' ? a.correctCount / a.totalCount : 0);
+          correctCount += credit;
+          byCat[q.category].correct += credit;
         });
         var pct = total ? Math.round((correctCount / total) * 100) : 0;
         var weakest = null;
@@ -3231,12 +3248,12 @@
         end.style.display = '';
         end.innerHTML =
           '<h3 class="gl-reading-end-title">Reading complete</h3>' +
-          '<div class="gl-reading-end-score">' + correctCount + ' / ' + total + ' correct</div>' +
+          '<div class="gl-reading-end-score">' + rdFmtScore(correctCount) + ' / ' + total + ' correct</div>' +
           '<div class="gl-reading-end-pct">' + pct + '%</div>' +
           '<div class="gl-reading-breakdown">' +
           Object.keys(byCat).filter(function (c) { return byCat[c].total > 0; }).map(function (cat) {
             var c = byCat[cat];
-            return '<div class="gl-reading-breakdown-row"><span>' + _glEscape(cat) + '</span><b>' + c.correct + '/' + c.total + '</b></div>';
+            return '<div class="gl-reading-breakdown-row"><span>' + _glEscape(cat) + '</span><b>' + rdFmtScore(c.correct) + '/' + c.total + '</b></div>';
           }).join('') +
           '</div>' +
           (weakest ? '<div class="gl-reading-recommend">Recommended next: <b>Practice ' + _glEscape(weakest.toLowerCase()) + ' questions</b></div>' : '') +

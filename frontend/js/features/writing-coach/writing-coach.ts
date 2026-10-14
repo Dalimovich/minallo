@@ -18,12 +18,14 @@ import {
   InsufficientContext,
   TaskType,
   WritingAnalysis,
+  type ExplanationLanguage,
 } from './writing-coach-ai.js';
 import { friendlyAiErrorMessage } from '../../services/ai-error-message.js';
 import { transitionLearnerWorkspace } from '../chatbot-new/experience-mode.js';
 import { WritingExamSession, writingExamRequest, writingProfileReady, type WritingGrade } from './writing-exam.js';
 
 import { getGermanLearnerProfile } from '../auth/german-profile.js';
+import { getItem } from '../../services/storage-service.js';
 
 const DRAFT_KEY = 'ss_writing_coach_draft';
 const TASK_KEY = 'ss_writing_coach_task';
@@ -37,6 +39,14 @@ const DEFAULT_TASK: TaskType = 'freier_text';
  * value is for display and diagnostics only. */
 function _profileLevel(): string {
   return getGermanLearnerProfile().targetLevel.trim();
+}
+
+/** Reuses the existing app-wide interface-language setting (Settings page,
+ * `ss_lang`) as the grading feedback's explanation language — the product
+ * has no separate "native language" preference, and this is the only
+ * language choice the learner has actually made. */
+export function _explanationLanguage(): ExplanationLanguage {
+  return getItem('ss_lang', 'en') === 'de' ? 'German' : 'English';
 }
 
 function _activeTaskType(): TaskType {
@@ -356,6 +366,7 @@ async function _analyze(): Promise<void> {
       text,
       profileLevel: level,
       taskType: _activeTaskType(),
+      explanationLanguage: _explanationLanguage(),
       signal: _activeAbort.signal,
     });
     _renderResults(analysis);

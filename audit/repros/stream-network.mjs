@@ -16,6 +16,11 @@ const context={console,TextDecoder,TextEncoder,DOMException,AbortController,SseP
  sanitizeChatbotDiagrams:x=>x,stripSourceMarkers:x=>x,
  createSoftStreamReveal:()=>({push:()=>{},finish:async()=>{}}),
  authenticatedFetch:async()=>({ok:true,body:{getReader:()=>({read:async()=>{if(!tokenSent){tokenSent=true;return {done:false,value:new TextEncoder().encode('data: {"t":"Useful partial explanation"}\n\n')};}throw new TypeError('network disconnected');},cancel:async()=>{}})}}),
+ // V12 (2026-10-13) added these dependencies to streamFromAskStream after this
+ // repro was first written; stub them neutral (non-learner) so the pre-existing
+ // STATE-01 probe below still exercises the same source-mode/scope race.
+ isLearnerAccount:()=>false,isLearnerFileScope:()=>false,resolveTutorModeForTurn:()=>'default',
+ structuredClone:globalThis.structuredClone,
 };
 vm.createContext(context);vm.runInContext(code,context);
 const message={id:'assistant',requestSnapshot:{}};

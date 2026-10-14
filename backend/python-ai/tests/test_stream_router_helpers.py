@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 
 
@@ -226,3 +227,208 @@ def test_inner_stream_silence_emits_keepalive(monkeypatch) -> None:
     statuses = [event for event in events if b'"status": "reading_question"' in event]
     assert len(statuses) >= 2
     assert sum(b'"done": true' in event for event in events) == 1
+
+
+def test_evidence_unavailable_refusal_overwrites_the_stale_success_provenance() -> None:
+    # QA V8 (2026-10-13): a declined draft (task/evidence identity mismatch)
+    # kept whatever sourceScope/sourceLabel/sources the SOURCE DECISION had
+    # already set earlier in the request — e.g. "course_files" / a 2-item
+    # citation list — so the frontend badge (driven purely by sourceScope,
+    # setBubbleSubtitle in shell.ts) showed success ("Using: Course files")
+    # over a response the backend itself had just refused to give.
+    from app.routers.stream import _mark_evidence_unavailable_refusal
+
+    evt = {
+        "sourceScope": "course_files",
+        "sourceLabel": "Using: Course files",
+        "sources": [{"page": 1}, {"page": 2}],
+        "model": "gpt-4o",  # unrelated fields must survive untouched
+    }
+
+    _mark_evidence_unavailable_refusal(evt)
+
+    assert evt["confidence"] == "low"
+    assert evt["unsupported"] is True
+    assert evt["sourceScope"] == "unavailable"
+    assert evt["sourceLabel"] is None
+    assert evt["sources"] == []
+    assert evt["model"] == "gpt-4o"
+
+
+def test_internet_mode_web_search_failure_is_disclosed_not_badged_as_success() -> None:
+    # QA V11: explicit Internet mode whose web search genuinely failed
+    # (stream_web_answer falling back to INTERNET_UNAVAILABLE_MESSAGE) still
+    # carried the optimistic pre-stream "Using: Internet" / confidence=high
+    # badge on the final done event, because _stream_live_answer's confidence/
+    # unsupported were fixed before the stream ran and never reconsidered
+    # once stream_web_answer signalled webSearchFailed=True.
+    from app.routers.stream import _stream_live_answer
+    from app.services.source_router import CourseFileScope, SourceDecision, SourceMode, SourceScope
+
+    decision = SourceDecision(
+        selected_source_mode=SourceMode.INTERNET,
+        source_scope=SourceScope.INTERNET,
+        course_file_scope=CourseFileScope.ALL_COURSE_FILES,
+        source_label="Using: Internet",
+    )
+
+    def failed_web_search():
+        yield {"t": "Internet search is temporarily unavailable."}
+        yield {"done": True, "webSources": [], "model": None, "promptTokens": None,
+               "completionTokens": None, "webSearchFailed": True}
+
+    response = _stream_live_answer(
+        events=failed_web_search(),
+        decision=decision,
+        answer_mode="internet",
+        request_id="req-1",
+        decision_for_done=lambda final: decision,
+        map_sources=lambda final: [],
+    )
+
+    async def consume():
+        return [chunk async for chunk in response.body_iterator]
+
+    chunks = asyncio.run(consume())
+    done = next(json.loads(c.decode()[len("data: "):]) for c in chunks if b'"done": true' in c)
+    assert done["confidence"] == "low"
+    assert done["unsupported"] is True
+    assert done["sourceScope"] == "unavailable"
+    assert done["sourceLabel"] is None
+    assert done["sources"] == []
+
+
+def test_internet_mode_successful_web_search_keeps_its_badge() -> None:
+    # Guards against over-correcting: a real web answer must NOT be downgraded
+    # just because it happens to carry no parsed webSources.
+    from app.routers.stream import _stream_live_answer
+    from app.services.source_router import CourseFileScope, SourceDecision, SourceMode, SourceScope
+
+    decision = SourceDecision(
+        selected_source_mode=SourceMode.INTERNET,
+        source_scope=SourceScope.INTERNET,
+        course_file_scope=CourseFileScope.ALL_COURSE_FILES,
+        source_label="Using: Internet",
+    )
+
+    def real_web_search():
+        yield {"t": "Torsion is a twisting deformation under torque."}
+        yield {"done": True, "webSources": [], "model": "gpt-4o", "promptTokens": 10, "completionTokens": 20}
+
+    response = _stream_live_answer(
+        events=real_web_search(),
+        decision=decision,
+        answer_mode="internet",
+        request_id="req-2",
+        decision_for_done=lambda final: decision,
+        map_sources=lambda final: [],
+    )
+
+    async def consume():
+        return [chunk async for chunk in response.body_iterator]
+
+    chunks = asyncio.run(consume())
+    done = next(json.loads(c.decode()[len("data: "):]) for c in chunks if b'"done": true' in c)
+    assert done["confidence"] == "high"
+    assert done["unsupported"] is False
+    assert done["sourceScope"] == "internet"
+    assert done["sourceLabel"] == "Using: Internet"
+
+
+# ── V8 completion (release-readiness audit, 2026-10-14) ───────────────────
+# Original V8 fix only corrected the BADGE on a declined answer. This closes
+# the deeper gap: a just-uploaded, still-indexing document has no real
+# retrieved chunks yet, so the identity-mismatch guard's "grounded identity"
+# is built from nothing — it can false-positive against a draft that was
+# actually correctly grounded in the VISIBLE PAGE. The guard must now defer
+# to the draft when real page evidence was available, but still reject when
+# it wasn't (honest limitation) or when the document is fully indexed (the
+# mismatch is then real and must still be caught — see IMG08).
+
+def test_identity_guard_defers_to_page_evidence_only_when_both_conditions_hold() -> None:
+    from app.routers.stream import _identity_guard_should_defer_to_page_evidence
+
+    # Indexing pending + a rendered page image → defer (trust the draft).
+    assert _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=[{"mediaType": "image/png", "data": "x"}],
+        open_file_context=None,
+    )
+    # Indexing pending + real visible-page TEXT (no image) → defer.
+    assert _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=None,
+        open_file_context="Preis=80, variable Stueckkosten=50, Fixkosten=300",
+    )
+    # Indexing pending but NO page evidence at all → do not defer (honest
+    # limitation is the correct outcome, not trusting an ungrounded draft).
+    assert not _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=True,
+        open_file_images=None,
+        open_file_context="   ",
+    )
+    # Document fully indexed (not pending) even with page evidence present →
+    # do not defer; a real mismatch on an indexed document must still be
+    # caught (this is the guard's actual fabrication-detection job).
+    assert not _identity_guard_should_defer_to_page_evidence(
+        active_document_indexing_pending=False,
+        open_file_images=[{"mediaType": "image/png", "data": "x"}],
+        open_file_context=None,
+    )
+
+
+# QA plan J2 ("explain page 11"): the named page overrides whatever the
+# viewer reports as currently open, but only when a single document is
+# already identified to resolve it against.
+
+def test_explicit_page_lookup_overrides_the_viewers_reported_page() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id="doc-1", visible_page=1, question="Explain page 11.",
+    )
+    assert page == 11
+    assert clarification is None
+
+
+def test_explicit_page_lookup_falls_back_to_viewer_page_without_a_named_page() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id="doc-1", visible_page=5, question="Explain this diagram.",
+    )
+    assert page == 5
+    assert clarification is None
+
+
+def test_explicit_page_lookup_asks_instead_of_guessing_without_a_document() -> None:
+    from app.routers.stream import _resolve_explicit_page_lookup
+
+    page, clarification = _resolve_explicit_page_lookup(
+        active_document_id=None, visible_page=None, question="Explain page 11.",
+    )
+    assert page is None
+    assert clarification is not None
+    assert "page 11" in clarification
+
+
+def test_pending_index_page_evidence_provenance_is_honest_not_a_success_badge() -> None:
+    from app.routers.stream import _mark_pending_index_page_evidence_provenance
+
+    evt = {
+        "sourceScope": "course_files",
+        "sourceLabel": "Using: Course files",
+        "sources": [{"page": 1}, {"page": 2}],
+        "confidence": "high",
+    }
+    _mark_pending_index_page_evidence_provenance(evt)
+    assert evt["indexingPending"] is True
+    # "active_document" is the existing, frontend-recognised sourceScope for
+    # "answered from the open document" (setBubbleSubtitle in shell.ts) — it
+    # must not claim "course_files" (implies the full document was indexed).
+    assert evt["sourceScope"] == "active_document"
+    assert "indexing" in evt["sourceLabel"].lower()
+    # Unrelated fields (confidence, prior sources list) are left untouched —
+    # this only corrects provenance, it doesn't re-run _mark_evidence_unavailable_refusal.
+    assert evt["confidence"] == "high"
+    assert evt["sources"] == [{"page": 1}, {"page": 2}]

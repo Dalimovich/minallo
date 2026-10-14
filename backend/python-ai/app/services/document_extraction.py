@@ -42,11 +42,57 @@ _TARGET_RE = re.compile(
     re.IGNORECASE,
 )
 _ITEM_ID_RE = re.compile(r"^\s*(\d+(?:\.\d+)*(?:[a-z])?)\s*$", re.IGNORECASE)
+# "Chapter 2"/"Kapitel 2" explicit text headings only — deliberately NOT the
+# bare "2." numbered-heading pattern resolve_section_family uses (that one
+# needs a following family keyword like "Kurzfragen" to disambiguate from
+# an ordinary numbered list item; a bare chapter number has no such anchor
+# and would false-positive constantly on normal prose). No visual/OCR
+# heading data is consulted here either — a deck whose chapter titles are
+# image-only text will not match, and the caller must then honestly decline
+# rather than guess a boundary (QA plan J2: "all definitions in chapter 2").
+_CHAPTER_HEADING_RE = re.compile(r"(?im)^\s*(?:chapter|kapitel)\s+(\d{1,2})\b")
 
 
 def requested_section_number(target: str) -> str | None:
     match = re.match(r"^\s*(\d+)\s*\.\s*", target or "")
     return match.group(1) if match else None
+
+
+def requested_chapter_number(question: str) -> int | None:
+    match = re.search(r"\b(?:chapter|kapitel)\s+(\d{1,2})\b", question or "", re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def resolve_chapter_range(
+    requested_chapter: int, pages: list[dict[str, Any]],
+) -> tuple[int, int] | None:
+    """Finds chapter N's page range from an explicit "Chapter N"/"Kapitel N"
+    text heading and whichever differently-numbered chapter heading comes
+    next (same "next heading bounds the end" technique resolve_section_family
+    uses). Returns None rather than a guess when no such heading is found —
+    the caller must disclose that, not silently scan the whole document
+    under the chapter's label."""
+    headings: list[tuple[int, int, int]] = []
+    for page in pages:
+        page_number = int(page["page_number"])
+        for match in _CHAPTER_HEADING_RE.finditer(page.get("cleaned_text") or ""):
+            headings.append((page_number, match.start(), int(match.group(1))))
+    headings.sort(key=lambda value: (value[0], value[1]))
+    start = next((heading for heading in headings if heading[2] == requested_chapter), None)
+    if start is None:
+        return None
+    later = [
+        heading for heading in headings
+        if (heading[0], heading[1]) > (start[0], start[1]) and heading[2] != requested_chapter
+    ]
+    next_heading = min(later, default=None, key=lambda value: (value[0], value[1]))
+    if next_heading is None:
+        end_page = max((int(page["page_number"]) for page in pages), default=start[0])
+    elif next_heading[0] == start[0]:
+        end_page = start[0]
+    else:
+        end_page = next_heading[0] - 1
+    return start[0], max(start[0], end_page)
 
 
 def item_belongs_to_requested_section(item_id: str, target: str) -> bool:

@@ -555,12 +555,23 @@ def _label_confirmed_by_last_turn_pair(
     left over from further back in history and the conversation has since
     moved to an unlabeled topic (e.g. a plain conceptual question) that the
     correction is actually objecting to.
+
+    A pure translation request ("in Arabic please") is a verbatim restate of
+    the active answer, not a topic change (resolve_dialogue already routes
+    it to TurnRelation.CONTINUATION) — its own text, and the translated
+    reply's text, routinely drop the exercise's numeric label even though
+    both turns are still squarely about it (QA J3: "ask for a translation,
+    then challenge a fact in it"). Treat that pair as always confirming
+    whatever label was already active, the same way the student's own
+    message does above.
     """
     if label is None:
         return True
     if last_user and label in _labels(last_user):
         return True
     if last_assistant and label in _labels(last_assistant):
+        return True
+    if last_user and _TRANSLATION_RE.match(last_user):
         return True
     return False
 

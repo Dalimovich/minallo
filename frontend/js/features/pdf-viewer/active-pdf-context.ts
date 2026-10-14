@@ -119,6 +119,27 @@ export function isPdfViewerVisible(): boolean {
   return !!view && !view.hidden && getComputedStyle(view).display !== 'none';
 }
 
+// A browser text Selection is only live between mouseup and the next click —
+// clicking into the chat textarea to type a question collapses it first, so
+// getActivePdfContext() can never read window.getSelection() at send time and
+// see anything. The viewer's own mouseup handler calls this immediately
+// (while the selection is still live) so the region survives until send.
+// Keyed by documentId so a later document switch can never leak a stale
+// region across documents (checked again in getActivePdfContext()).
+let capturedSelection: { region: StableRegionProvenance; text: string; documentId: string } | null = null;
+
+export function captureSelectedPdfRegion(): void {
+  const viewer = window as ViewerWindow;
+  const state = viewer.__minalloPdfViewerState;
+  const documentId = String(state?.documentId || '').trim();
+  const revision = String(state?.revision || '').trim();
+  const selection = window.getSelection?.() || null;
+  const region = regionFromSelection(selection, document.getElementById('pdfViewerWrap'), revision);
+  capturedSelection = region && documentId
+    ? { region, text: selection?.toString().trim() || '', documentId }
+    : null;
+}
+
 export function getActivePdfContext(): ActivePdfContext | null {
   const viewer = window as ViewerWindow;
   validateActivePdfViewerState();
@@ -145,12 +166,9 @@ export function getActivePdfContext(): ActivePdfContext | null {
         : 'empty_scanned_page';
   const revision = String(state?.revision || '').trim() || undefined;
   const sourceFingerprint = String(state?.fingerprint || revision || '').trim() || undefined;
-  const selection = window.getSelection?.() || null;
-  const selected = regionFromSelection(
-    selection,
-    document.getElementById('pdfViewerWrap'),
-    revision || '',
-  );
+  const selected = capturedSelection && capturedSelection.documentId === documentId
+    ? capturedSelection
+    : null;
   return {
     courseId,
     documentId,
@@ -162,7 +180,7 @@ export function getActivePdfContext(): ActivePdfContext | null {
     viewerInstanceId: String(state?.openSequence || ''),
     pageText,
     pageTextStatus,
-    selectedRegion: selected ? { ...selected, text: selection?.toString().trim() || undefined } : undefined,
+    selectedRegion: selected ? { ...selected.region, text: selected.text || undefined } : undefined,
   };
 }
 

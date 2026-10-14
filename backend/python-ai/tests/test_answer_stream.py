@@ -65,6 +65,86 @@ def test_professor_solution_followup_targets_visible_pdf() -> None:
     assert _detect_question_language("not the professor marked 11").name == "ENGLISH"
 
 
+# ── QA J1: course-faithfulness / rejecting a correct student correction ────
+# Repro (report-2026-10-12.md §23): a Festlager/Einspannung reaction-type
+# question was answered wrong, then the student's correct quotation from the
+# course PDF ("But page 3 says a Festlager only has...") was dismissed. Two
+# independent gaps caused this: (1) the correction-opener regex missed "but"/
+# "however"/"isn't" etc., so the correction overlay never fired; (2) no rule
+# told the model a document's own definition outranks its generic/training
+# knowledge of the same term. Both are fixed generically, not by hardcoding
+# anything statics-specific.
+
+
+def test_user_correction_detector_catches_common_openers_not_just_no_wrong() -> None:
+    from app.services.answer_stream import _is_user_correction
+
+    # The exact J1 repro phrasing, and other common correction openers that
+    # the original "no/not/wrong/actually" word-list missed entirely.
+    assert _is_user_correction(
+        "But page 3 says a Festlager only has horizontal and vertical "
+        "reaction force, no moment. Isn't A a Festlager, not a fixed support?"
+    )
+    assert _is_user_correction("However, the document defines it differently.")
+    assert _is_user_correction("Isn't that a Festlager, not a fixed support?")
+    assert _is_user_correction("Wait, that doesn't match what the PDF says.")
+    assert _is_user_correction("Aber auf Seite 3 steht etwas anderes.")
+    # An ordinary new question using the same words mid-sentence is NOT a
+    # correction opener (anchored at the start, so false positives stay rare).
+    assert not _is_user_correction("What is the difference between a Festlager and an Einspannung?")
+
+
+def test_user_correction_overlay_points_at_all_evidence_not_just_visible_page() -> None:
+    """The quoted definition may live on a retrieved page, not the one
+    currently visible — the overlay must not tell the model to only
+    re-check Source 0 when the disputed claim could be in COURSE CONTEXT."""
+    from app.services.answer_stream import _user_correction_overlay
+
+    overlay = _user_correction_overlay(
+        "But page 3 says a Festlager has no moment reaction.",
+        has_visible_context=True,
+        has_history=True,
+    )
+    assert "COURSE CONTEXT" in overlay
+    assert "different page than the one currently visible" in overlay
+    assert "explicitly acknowledge your previous answer was wrong" in overlay
+    assert "never treat a student's quotation as automatically true without checking" in overlay
+
+    overlay_no_visible = _user_correction_overlay(
+        "But the document defines it differently.",
+        has_visible_context=False,
+        has_history=True,
+    )
+    assert "COURSE CONTEXT" in overlay_no_visible
+
+
+def test_evidence_priority_rules_cover_definitional_conflicts_not_just_numbers() -> None:
+    """AUTHORITATIVE-SOURCE CONFLICT POLICY already covered conflicting numeric
+    givens; it said nothing about a term's DEFINITION conflicting with the
+    model's generic/training knowledge of that term — exactly what let the
+    Festlager/Einspannung mix-up survive despite correct retrieved evidence."""
+    from app.services.answer_stream import EVIDENCE_PRIORITY_RULES
+
+    assert "DOCUMENT DEFINITIONS OUTRANK GENERAL KNOWLEDGE" in EVIDENCE_PRIORITY_RULES
+    assert "state what THAT DOCUMENT says" in EVIDENCE_PRIORITY_RULES
+    assert "AUTHORITATIVE-SOURCE CONFLICT POLICY" in EVIDENCE_PRIORITY_RULES
+    assert "UNTRUSTED DOCUMENT DATA" in EVIDENCE_PRIORITY_RULES
+
+
+def test_user_correction_overlay_does_not_blindly_trust_the_student() -> None:
+    """Directive requirement: no blanket rule that all user quotations are
+    automatically true — the model must still check before agreeing."""
+    from app.services.answer_stream import _user_correction_overlay
+
+    overlay = _user_correction_overlay(
+        "No, that's not what the document says.",
+        has_visible_context=True,
+        has_history=True,
+    )
+    assert "does not support the student's quotation" in overlay
+    assert "without checking it against the evidence" in overlay
+
+
 # ── Previous-turns trimming ─────────────────────────────────────────────────
 
 

@@ -98,6 +98,140 @@ function _sbClearStoredSession() {
   } catch (e) {}
 }
 
+// Wipes every local/session-storage key and in-memory global that is scoped
+// to the PREVIOUS account, not the credentials/token themselves (those are
+// handled separately by _sbClearStoredSession / the caller). Extracted out of
+// signOut() (2026-10-14, account-change audit) so refreshSession() can call
+// the exact same sweep when a token refresh resolves to a DIFFERENT user than
+// this tab last knew about — e.g. another tab in this same browser signed
+// into a different Minallo account and overwrote the shared sb_sess_*
+// storage keys this tab's own background refresh then read. Without this, a
+// token refresh (not an explicit sign-out/sign-in) could silently swap this
+// tab's identity to the other account while still rendering the OLD
+// account's course name, open PDF and chat history on screen.
+function _sbClearAccountScopedState() {
+  localStorage.removeItem('ss_state');
+  sessionStorage.removeItem('ss_last_active');
+  // QA audit (2026-10-13): this unscoped sessionStorage key survives a
+  // same-tab sign-out -> sign-in cycle (sessionStorage isn't cleared by
+  // supabase's own sign-out, only by closing the tab) and can restore the
+  // PREVIOUS account's open course/file into the NEW account's chatbot.
+  sessionStorage.removeItem('minallo:chatbot-open-pdf');
+  // Chat history, AI-generated study material, drafts and connected-account
+  // tokens are private user data. Wipe so a different user signing into the
+  // same browser can never see (or use) any of it.
+  try {
+    var _wipePrefixes = [
+      // Per-course AI chat history (course rail).
+      'ss_course_qa_',
+      // Legacy per-file chat transcripts (storage-service loadChat/saveChat).
+      'ss_chat_',
+      // Generated summary markdown / cheatsheet pointers per course.
+      'minallo_sum_last_',
+      'minallo_cs_last_',
+      // Per-course file-list caches, counters and progress.
+      'ss_uf_cache_',
+      'ss_fc_',
+      'ss_progress_total_',
+      'ss_opened_',
+      'ss_lastopen_'
+    ];
+    var _wipeExact = [
+      'ss_stats',
+      // Legacy unscoped chatbot store (pre per-uid scoping). The scoped
+      // ss_ncb_*:<uid> keys stay — they're namespaced per user id, so a
+      // different account can't read them and chats survive a re-login.
+      'ss_ncb_chats_v1',
+      'ss_ncb_active_v1',
+      'ss_ncb_sources_v1',
+      'ncb_tutor_mode',
+      // Writing-coach drafts are private user text.
+      'ss_writing_coach_draft',
+      'ss_writing_coach_task',
+      'ss_focus_timer_v1',
+      'ss_last_section',
+      'ss_university',
+      'ss_pdfed_recents',
+      'ss_yt_playlists',
+      // QA audit (2026-10-13): unscoped, not uid-namespaced like the
+      // ss_ncb_*:<uid> keys above — left account A's course NAME visible
+      // to account B after a same-tab sign-out/sign-in (no file-content
+      // leak; backend ownership checks still held), via
+      // workspace-library.ts's RECENT_COURSE_KEY.
+      'minallo:chatbot-recent-course'
+    ];
+    var _qaKeys = [];
+    for (var _i = 0; _i < localStorage.length; _i++) {
+      var _k = localStorage.key(_i);
+      if (!_k) continue;
+      var _hit = _wipeExact.indexOf(_k) !== -1;
+      for (var _wp = 0; !_hit && _wp < _wipePrefixes.length; _wp++) {
+        if (_k.indexOf(_wipePrefixes[_wp]) === 0) _hit = true;
+      }
+      if (_hit) _qaKeys.push(_k);
+    }
+    _qaKeys.forEach(function (k) { localStorage.removeItem(k); });
+  } catch (e) {}
+  // Wipe in-memory course state so the next account on this browser
+  // doesn't see the previous user's courses (the per-user-id localStorage
+  // cache stays — it's already namespaced, just not visible to other UIDs).
+  try {
+    if (typeof SEMS !== 'undefined' && SEMS) {
+      Object.keys(SEMS).forEach(function (sid) { SEMS[sid].courses = []; });
+    }
+    // Drop the legacy unscoped key in case an older client wrote to it.
+    localStorage.removeItem('ss_user_courses');
+    // QA audit (2026-10-13): window.activeCourseId is a plain in-memory
+    // global (set by course-view.ts/workspace-library.ts/pdf-viewer.ts),
+    // never reset here — it survived a same-tab account switch and let a
+    // stale course id/name from account A render under account B via any
+    // #portal=courses&course=<id> navigation. Reset before the next
+    // sign-in can apply a profile.
+    window.activeCourseId = null;
+    // QA (V12 follow-up, 2026-10-14): __minalloPdfViewerState (courseId,
+    // documentId, pdfDoc, page text) is a plain in-memory module store,
+    // also never reset here — getActivePdfContext() doesn't gate on PDF
+    // viewer DOM visibility, so account B's very first request could
+    // still have carried account A's still-open PDF's identity/text if
+    // B asks a question before ever opening a file of their own. Dynamic
+    // import matches this classic script's existing pattern for reaching
+    // a TS module (see flashcards.js's authenticated-fetch import).
+    import('./features/pdf-viewer/active-pdf-context.js')
+      .then(function (m) { m.clearActivePdfViewerState(); })
+      .catch(function () {});
+  } catch (e) {}
+  // Profile + course caches keyed by ss_last_uid are read at app boot
+  // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT
+  // user signing in on the same browser flashes the previous user's
+  // name / courses for a moment. Clear both.
+  //
+  // Also wipe onboarding answers — both the unscoped legacy keys
+  // (ss_user_type/ss_major/ss_vertiefung) and the per-uid variants
+  // (ss_user_type_<uid>/ss_german_test_<uid>/ss_german_level_<uid>).
+  // These don't directly leak across users since user-data.ts loads the
+  // signed-in user's profile from Supabase on next login, but they're
+  // stale account data that ought to come off when the user logs out.
+  try {
+    for (var _pi = localStorage.length - 1; _pi >= 0; _pi--) {
+      var _pk = localStorage.key(_pi);
+      if (!_pk) continue;
+      if (
+        _pk.indexOf('profile_cache_') === 0 ||
+        _pk.indexOf('ss_user_type_') === 0 ||
+        _pk.indexOf('ss_german_test_') === 0 ||
+        _pk.indexOf('ss_german_level_') === 0
+      ) localStorage.removeItem(_pk);
+    }
+    localStorage.removeItem('ss_last_uid');
+    localStorage.removeItem('ss_user_type');
+    localStorage.removeItem('ss_major');
+    localStorage.removeItem('ss_vertiefung');
+    // Also drop the device-trial marker so a re-login on the same
+    // browser doesn't keep "you already used your trial" stuck on.
+    localStorage.removeItem('minallo_trial_used');
+  } catch (e) {}
+}
+
 // Decode the JWT exp claim to milliseconds. Returns 0 if the token is missing,
 // malformed, or the payload doesn't have a numeric exp. Fail-closed: anything
 // non-parseable looks expired, which forces a refresh — same fallback the
@@ -197,97 +331,7 @@ var _sb = {
       _currentUser = null;
       _ssAuth('signed-out', { source: 'signOut' });
       _sbClearStoredSession();
-      localStorage.removeItem('ss_state');
-      sessionStorage.removeItem('ss_last_active');
-      // Chat history, AI-generated study material, drafts and connected-account
-      // tokens are private user data. Wipe so a different user signing into the
-      // same browser can never see (or use) any of it.
-      try {
-        var _wipePrefixes = [
-          // Per-course AI chat history (course rail).
-          'ss_course_qa_',
-          // Legacy per-file chat transcripts (storage-service loadChat/saveChat).
-          'ss_chat_',
-          // Generated summary markdown / cheatsheet pointers per course.
-          'minallo_sum_last_',
-          'minallo_cs_last_',
-          // Per-course file-list caches, counters and progress.
-          'ss_uf_cache_',
-          'ss_fc_',
-          'ss_progress_total_',
-          'ss_opened_',
-          'ss_lastopen_'
-        ];
-        var _wipeExact = [
-          'ss_stats',
-          // Legacy unscoped chatbot store (pre per-uid scoping). The scoped
-          // ss_ncb_*:<uid> keys stay — they're namespaced per user id, so a
-          // different account can't read them and chats survive a re-login.
-          'ss_ncb_chats_v1',
-          'ss_ncb_active_v1',
-          'ss_ncb_sources_v1',
-          'ncb_tutor_mode',
-          // Writing-coach drafts are private user text.
-          'ss_writing_coach_draft',
-          'ss_writing_coach_task',
-          'ss_focus_timer_v1',
-          'ss_last_section',
-          'ss_university',
-          'ss_pdfed_recents',
-          'ss_yt_playlists'
-        ];
-        var _qaKeys = [];
-        for (var _i = 0; _i < localStorage.length; _i++) {
-          var _k = localStorage.key(_i);
-          if (!_k) continue;
-          var _hit = _wipeExact.indexOf(_k) !== -1;
-          for (var _wp = 0; !_hit && _wp < _wipePrefixes.length; _wp++) {
-            if (_k.indexOf(_wipePrefixes[_wp]) === 0) _hit = true;
-          }
-          if (_hit) _qaKeys.push(_k);
-        }
-        _qaKeys.forEach(function (k) { localStorage.removeItem(k); });
-      } catch (e) {}
-      // Wipe in-memory course state so the next account on this browser
-      // doesn't see the previous user's courses (the per-user-id localStorage
-      // cache stays — it's already namespaced, just not visible to other UIDs).
-      try {
-        if (typeof SEMS !== 'undefined' && SEMS) {
-          Object.keys(SEMS).forEach(function (sid) { SEMS[sid].courses = []; });
-        }
-        // Drop the legacy unscoped key in case an older client wrote to it.
-        localStorage.removeItem('ss_user_courses');
-      } catch (e) {}
-      // Profile + course caches keyed by ss_last_uid are read at app boot
-      // (app.ts) BEFORE auth resolves. If we leave them behind, the NEXT
-      // user signing in on the same browser flashes the previous user's
-      // name / courses for a moment. Clear both.
-      //
-      // Also wipe onboarding answers — both the unscoped legacy keys
-      // (ss_user_type/ss_major/ss_vertiefung) and the per-uid variants
-      // (ss_user_type_<uid>/ss_german_test_<uid>/ss_german_level_<uid>).
-      // These don't directly leak across users since user-data.ts loads the
-      // signed-in user's profile from Supabase on next login, but they're
-      // stale account data that ought to come off when the user logs out.
-      try {
-        for (var _pi = localStorage.length - 1; _pi >= 0; _pi--) {
-          var _pk = localStorage.key(_pi);
-          if (!_pk) continue;
-          if (
-            _pk.indexOf('profile_cache_') === 0 ||
-            _pk.indexOf('ss_user_type_') === 0 ||
-            _pk.indexOf('ss_german_test_') === 0 ||
-            _pk.indexOf('ss_german_level_') === 0
-          ) localStorage.removeItem(_pk);
-        }
-        localStorage.removeItem('ss_last_uid');
-        localStorage.removeItem('ss_user_type');
-        localStorage.removeItem('ss_major');
-        localStorage.removeItem('ss_vertiefung');
-        // Also drop the device-trial marker so a re-login on the same
-        // browser doesn't keep "you already used your trial" stuck on.
-        localStorage.removeItem('minallo_trial_used');
-      } catch (e) {}
+      _sbClearAccountScopedState();
       try {
         sessionStorage.removeItem('ss_logged_in');
       } catch (e) {}
@@ -369,6 +413,19 @@ var _sb = {
         .then(function (result) {
           var d = result.body;
           if (d.access_token) {
+            // Account-change audit (2026-10-14): an ordinary refresh always
+            // renews the SAME user's session, but this tab's refresh token
+            // (read fresh from storage above, not cached) can belong to a
+            // DIFFERENT account if another tab in this same browser signed
+            // into one meanwhile and overwrote the shared sb_sess_* keys.
+            // Without this check, _currentUser would silently become the new
+            // account while this tab kept rendering the OLD account's course
+            // name / open PDF / chat history on screen — the same leak class
+            // signOut()'s cross-account fix closed, just reached via a
+            // background refresh instead of an explicit sign-out/sign-in.
+            if (d.user && d.user.id && _currentUser && _currentUser.id && d.user.id !== _currentUser.id) {
+              _sbClearAccountScopedState();
+            }
             _sbToken = d.access_token;
             window._sbToken = d.access_token;
             _currentUser = d.user || _currentUser;

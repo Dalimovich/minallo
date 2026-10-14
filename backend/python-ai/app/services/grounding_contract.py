@@ -34,6 +34,7 @@ class AccessResolutionReason(StrEnum):
     EXPLICIT_UI_HINT = "explicit_ui_hint"
     NATURAL_LANGUAGE_FULL_DOCUMENT_INTENT = "natural_language_full_document_intent"
     VISIBLE_PAGE_REFERENCE = "visible_page_reference"
+    EXPLICIT_PAGE_REFERENCE = "explicit_page_reference"
     RELEVANCE_DEFAULT = "relevance_default"
     POLICY_OVERRIDE = "policy_override"
 
@@ -90,8 +91,8 @@ class GroundingResolution(BaseModel):
 # (?:\s+\w+){0,2} gap tolerates an intervening article/adjective ("alle
 # RESTLICHEN Aufgaben", "keine AUFGABE auslassen") without losing the
 # adjacency requirement entirely.
-_DOCUMENT_ITEM_NOUNS_EN = r"pdf|document|file|lecture|exam|script|page|chapter|section|question|exercise|kurzfrage|formula"
-_DOCUMENT_ITEM_NOUNS_DE = r"pdf|dokument|datei|skript|vorlesung|pr[üu]fung|seite|kapitel|frage|aufgabe|kurzfrage|formel"
+_DOCUMENT_ITEM_NOUNS_EN = r"pdf|document|file|lecture|exam|script|page|chapter|section|question|exercise|kurzfrage|formula|definition"
+_DOCUMENT_ITEM_NOUNS_DE = r"pdf|dokument|datei|skript|vorlesung|pr[üu]fung|seite|kapitel|frage|aufgabe|kurzfrage|formel|definition"
 _FULL_DOCUMENT_RE = re.compile(
     rf"\b(?:{_EXHAUSTIVE_QUANTIFIER_WORDS})\b(?:\s+\w+){{0,2}}\s+"
     rf"(?:{_DOCUMENT_ITEM_NOUNS_EN})s?\b|"
@@ -107,6 +108,29 @@ _VISIBLE_PAGE_RE = re.compile(
     r"(?:seite|formel|abbildung|diagramm|frage|abschnitt)\b",
     re.IGNORECASE,
 )
+# An explicit page/slide NUMBER ("explain page 11", "Seite 11", "Folie 11")
+# is a different signal from _VISIBLE_PAGE_RE above: it names a page the
+# student may not currently have open at all, rather than referring to
+# whatever page the viewer happens to show right now (QA plan J2: "explain
+# page 11" on a 300-page deck). "Folie"/"slide" covers German lecture-deck
+# numbering, which students use interchangeably with "page" for a PDF of
+# slides. This intentionally means the PDF's own physical page position —
+# index_manifest.CanonicalPage.page_number IS that position, and nothing in
+# the indexing pipeline records a separate "printed page label" (e.g. a
+# cover/TOC offset), so there is no other number to resolve against.
+_EXPLICIT_PAGE_RE = re.compile(
+    r"\b(?:page|p\.|seite|s\.|folie|slide)\s*#?\s*(\d{1,4})\b",
+    re.IGNORECASE,
+)
+
+
+def extract_explicit_page_number(question: str) -> int | None:
+    """The page number the student literally named, or None."""
+    match = _EXPLICIT_PAGE_RE.search(question or "")
+    if not match:
+        return None
+    number = int(match.group(1))
+    return number if number >= 1 else None
 # By the time select_processing_pipeline runs, resolve_document_access has
 # already confirmed this is a FULL_DOCUMENT request (an exhaustive
 # quantifier matched) — so naming a find/list-able item type (the shared
@@ -141,6 +165,11 @@ def resolve_document_access(
         )
     if requested is RequestedDocumentAccess.VISIBLE_PAGE:
         return ResolvedDocumentAccess.VISIBLE_PAGE, AccessResolutionReason.EXPLICIT_UI_HINT
+    # Checked before the viewer_context-gated branch below, and without
+    # requiring viewer_context at all: a named page number is evidence on
+    # its own, independent of whatever the viewer currently shows.
+    if extract_explicit_page_number(question) is not None:
+        return ResolvedDocumentAccess.VISIBLE_PAGE, AccessResolutionReason.EXPLICIT_PAGE_REFERENCE
     if viewer_context and _VISIBLE_PAGE_RE.search(question):
         return ResolvedDocumentAccess.VISIBLE_PAGE, AccessResolutionReason.VISIBLE_PAGE_REFERENCE
     return ResolvedDocumentAccess.RELEVANCE, AccessResolutionReason.RELEVANCE_DEFAULT
