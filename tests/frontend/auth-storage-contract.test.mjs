@@ -28,6 +28,7 @@ const USER_DATA_TS = read('frontend/js/features/auth/user-data.ts');
 const APP_TS = read('frontend/js/app.ts');
 const LOADER_TS = read('frontend/js/loader.ts');
 const CHATBOT_DISPATCHER = read('frontend/views/chatbot/chatbot.js');
+const SHELL_TS = read('frontend/js/features/chatbot-new/shell.ts');
 
 test('free accounts are not shown the paywall automatically during login', () => {
   assert.doesNotMatch(
@@ -429,4 +430,101 @@ test('every cache-sourced applyProfile() call site marks itself non-authoritativ
       `app.ts applyProfile(${call[1]}) reads from profile_cache_<uid> and must pass { authoritative: false }`
     );
   }
+});
+
+// ── old-dashboard-route leak vector (QA 2.0, 2026-10-14) ───────────────────
+// The original cross-account leak (course NAME visible to the next account)
+// was reachable via a stale hash into the retired standalone course
+// dashboard, which reads window.activeCourseId and the unscoped
+// ss_opened_<courseId>/ss_lastopen_<courseId>/ss_state keys written by
+// course-view.ts/courses-render.ts/courses-layout.ts. activeCourseId is
+// covered above; this test proves the prefix/exact sweeps in
+// _sbClearAccountScopedState also still cover the course-view keys that
+// feed that legacy route specifically (not just the chatbot's own keys),
+// so the leak stays closed regardless of which UI route is reachable.
+test('logout sweeps the course-view keys the retired dashboard route reads (ss_opened_*, ss_lastopen_*, ss_state)', () => {
+  assert.match(
+    SUPABASE_JS,
+    /['"]ss_opened_['"]/,
+    'signOut must sweep every ss_opened_<courseId> key by prefix'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /['"]ss_lastopen_['"]/,
+    'signOut must sweep every ss_lastopen_<courseId> key by prefix'
+  );
+  assert.match(
+    SUPABASE_JS,
+    /localStorage\.removeItem\(\s*['"]ss_state['"]\s*\)/,
+    'signOut must remove the unscoped ss_state key (holds the last open course/file)'
+  );
+});
+
+// ── chat-store bare-key migration race (QA 2.0 / QA2-1, 2026-10-15) ───────
+// initNewChatbotShell() mounts (and runs loadChatStore()'s one-time
+// bare-key→uid migration) before the sign-in modal is even submitted, so
+// ncbCurrentUid() can resolve to '' at that single call. The migration then
+// never gets a second chance to run for the rest of that tab's session:
+// every ss_ncb_chats_v1/active_v1/sources_v1 read+write stays on the bare,
+// unscoped key instead of the per-uid one. If a DIFFERENT account signs in
+// on the same browser later, that account's own loadChatStore() migration
+// adopts whatever real chat content got left in the bare keys — an actual
+// cross-account chat-content leak (not just a stale course name), via a
+// normal, common sign-in timing rather than an obscure hash route.
+test('a sign-in gives the chat-store migration a second, uid-aware chance via a guarded window hook', () => {
+  const enterAppStart = SUPABASE_JS.indexOf('function _enterApp(user)');
+  assert.ok(enterAppStart >= 0, '_enterApp not found in supabase.js');
+  const enterAppEnd = SUPABASE_JS.indexOf('\nfunction _showModal()', enterAppStart);
+  assert.ok(enterAppEnd > enterAppStart, 'could not locate the end of _enterApp');
+  const body = SUPABASE_JS.slice(enterAppStart, enterAppEnd);
+
+  assert.match(
+    body,
+    /localStorage\.setItem\('ss_last_uid', user\.id\);[\s\S]{0,700}typeof window\.__ncbOnAccountResolved === 'function'/,
+    '_enterApp must call the chat-store reconciliation hook after ss_last_uid is set (the point the real uid is known), guarded against the shell not having mounted yet'
+  );
+  assert.match(
+    body,
+    /try \{ window\.__ncbOnAccountResolved\(\); \} catch \(e\) \{\}/,
+    'the hook call must be wrapped so a chatbot-shell error can never break sign-in'
+  );
+});
+
+test('shell.ts exposes the reconciliation hook and it re-runs the real migration, not a reimplementation', () => {
+  const fnStart = SHELL_TS.indexOf('export function reconcileChatStoreAccountScope');
+  assert.ok(fnStart >= 0, 'reconcileChatStoreAccountScope must exist and be exported');
+  const fnEnd = SHELL_TS.indexOf('\nfunction saveSourceLibrary', fnStart);
+  assert.ok(fnEnd > fnStart, 'could not locate the end of reconcileChatStoreAccountScope');
+  const fnBody = SHELL_TS.slice(fnStart, fnEnd);
+
+  assert.match(
+    fnBody,
+    /const root = document\.getElementById\('ncbRoot'\)/,
+    'must no-op before the shell has mounted, rather than operate on a missing root'
+  );
+  assert.match(fnBody, /if \(!root\) return;/);
+  assert.match(
+    fnBody,
+    /\bloadChatStore\(\);/,
+    'must re-run the real loadChatStore() migration, not a parallel reimplementation of the bare-key sweep'
+  );
+  assert.match(
+    fnBody,
+    /renderSidebar\(root\);/,
+    'must refresh the visible chat list after a migration, so a UI already rendered from the bare keys does not stay stale'
+  );
+
+  assert.match(
+    SHELL_TS,
+    /__ncbOnAccountResolved\?\s*:\s*\(\)\s*=>\s*void;[\s\S]{0,40}\}\)\.__ncbOnAccountResolved = reconcileChatStoreAccountScope;/,
+    'reconcileChatStoreAccountScope must be exposed on window as __ncbOnAccountResolved for supabase.js (a classic script) to call'
+  );
+});
+
+test('loadChatStore\'s bare-key migration still targets exactly the three ss_ncb_* bases', () => {
+  // Guards the premise of the two tests above: if a future refactor adds a
+  // fourth NCB-prefixed storage key without adding it to this migration
+  // array, that key would silently reproduce the same leak class.
+  const migrationStart = SHELL_TS.indexOf('[NCB_STORE_KEY_BASE, NCB_ACTIVE_KEY_BASE, NCB_SOURCES_KEY_BASE].forEach');
+  assert.ok(migrationStart >= 0, 'the bare-key migration array not found in loadChatStore()');
 });
