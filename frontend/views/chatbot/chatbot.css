@@ -211,6 +211,22 @@ body.ncb-fullbleed .ncb-main {
   transition: background 0.15s ease;
 }
 
+/* QA2-4: off-canvas drawer toggle for .ncb-sidebar below ~520px. Hidden by
+   default; shown by the ≤520px block in mobile-responsive.css, which also
+   gives .ncb-sidebar its fixed-position/transform drawer treatment. */
+.ncb-mobile-sidebar-btn {
+  display: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
 /* Hidden until the context panel is collapsed. The global .ncb-root [hidden]
    rule already enforces display:none when the attribute is set. */
 
@@ -4104,10 +4120,13 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   .ncb-panel-open-btn { display: grid !important; }
 }
 
-/* ≤ 768px: sidebar forced to its collapsed 88px icon strip. The collapse
-   button still works as a toggle; the body class on the sidebar is just
-   overridden visually by this rule. */
-@media (max-width: 768px) {
+/* 521px–768px (tablet): sidebar forced to its collapsed 88px icon strip. The
+   collapse button still works as a toggle; the body class on the sidebar is
+   just overridden visually by this rule. Scoped above 520px because below
+   that the sidebar becomes a full off-canvas drawer instead — see the
+   QA2-4 block in mobile-responsive.css — and would conflict with this
+   icon-rail treatment. */
+@media (min-width: 521px) and (max-width: 768px) {
   .ncb-sidebar,
   .ncb-sidebar[data-collapsed="false"],
   .ncb-sidebar[data-collapsed="true"] {
@@ -4177,6 +4196,17 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   .ncb-modal { max-width: 100%; border-radius: 1rem; }
   .ncb-modal-body { padding: 14px; }
   .ncb-modal-foot { padding: 12px 14px; }
+
+  /* QA2-3: at true phone widths the ≤1024px overlay above is still only
+     min(360px, 90vw) with a translucent backdrop, so the chat behind it
+     bleeds through and a sliver of the main view stays exposed with no
+     backdrop at all. Go full-viewport width and fully opaque here instead. */
+  .ncb-context,
+  .ncb-card[data-context-open="true"] .ncb-context,
+  .ncb-card[data-context-open="false"] .ncb-context {
+    width: 100vw;
+    background: #020617;
+  }
 }
 
 /* ============ PR-10: chat-row menu, rename, retry, clear-all ============ */
@@ -4286,9 +4316,11 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   border-color: rgba(220, 38, 38, 0.40);
   background: rgba(220, 38, 38, 0.08);
 }
-/* Hide clear-all when sidebar is collapsed (icon-only). */
+/* Hide clear-all when sidebar is collapsed (icon-only). Scoped above 520px
+   per QA2-4 — below that the sidebar is a full drawer, not an icon rail,
+   and clear-all needs to stay reachable there. */
 .ncb-sidebar[data-collapsed="true"] .ncb-clear-all { display: none; }
-@media (max-width: 768px) {
+@media (min-width: 521px) and (max-width: 768px) {
   .ncb-sidebar .ncb-clear-all { display: none; }
 }
 

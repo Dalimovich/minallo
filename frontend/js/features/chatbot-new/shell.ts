@@ -272,9 +272,48 @@ function initSidebar(root: HTMLElement): void {
   if (!sidebar) return;
 
   bindCollapse(sidebar);
+  bindMobileSidebarToggle(root, sidebar);
   bindChatItems(sidebar);
   bindNewChat(sidebar);
   bindSearch(sidebar);
+}
+
+// QA2-4 — below ~520px (see mobile-responsive.css) .ncb-sidebar is an
+// off-canvas drawer instead of the always-visible/icon-rail layouts used
+// above that width. Wires the header toggle + scrim + Escape + picking a
+// chat/new-chat to open and close it, mirroring the existing #portal
+// .sidebar ham/scrim pattern in app.ts. Idempotent like bindCollapse.
+function bindMobileSidebarToggle(root: HTMLElement, sidebar: HTMLElement): void {
+  const toggle = root.querySelector<HTMLButtonElement>('.ncb-mobile-sidebar-btn');
+  const scrim = root.querySelector<HTMLElement>('.ncb-sidebar-scrim');
+  if (!toggle || !scrim || toggle.dataset.ncbBound === '1') return;
+  toggle.dataset.ncbBound = '1';
+
+  function openDrawer(): void {
+    sidebar.classList.add('ncb-mob-open');
+    scrim!.classList.add('show');
+    toggle!.setAttribute('aria-expanded', 'true');
+  }
+  function closeDrawer(): void {
+    sidebar.classList.remove('ncb-mob-open');
+    scrim!.classList.remove('show');
+    toggle!.setAttribute('aria-expanded', 'false');
+  }
+
+  toggle.addEventListener('click', () => {
+    if (sidebar.classList.contains('ncb-mob-open')) closeDrawer();
+    else openDrawer();
+  });
+  scrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar.classList.contains('ncb-mob-open')) closeDrawer();
+  });
+  sidebar.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('.ncb-chat-item, .ncb-new-chat-btn')) closeDrawer();
+  });
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 520) closeDrawer();
+  });
 }
 
 function bindCollapse(sidebar: HTMLElement): void {
