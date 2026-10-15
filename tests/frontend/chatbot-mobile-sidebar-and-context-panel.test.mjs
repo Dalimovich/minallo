@@ -84,6 +84,17 @@ test('QA2-5: the aria-label survives even where the sidebar still visually hides
   assert.match(chatbotCss, /\.ncb-sidebar\[data-collapsed="true"\][\s\S]*?\.ncb-new-chat-btn span,/);
 });
 
+test('regression: the mobile sidebar toggle hides while the context panel is open, so it cannot overlap the panel\'s own close button', () => {
+  // Caught live: .ncb-context-close-btn (inside the now full-bleed QA2-3
+  // panel) and .ncb-mobile-sidebar-btn (in the outer header) render close
+  // enough in the top-right band to overlap at phone width, stealing taps
+  // meant for "close panel". The fix hides the toggle whenever the panel
+  // is open, mirroring how .ncb-panel-open-btn already hides itself there.
+  const block = /@media \(max-width: 1024px\) \{[\s\S]*?\n\}/.exec(chatbotCss)?.[0];
+  assert.ok(block, 'expected the ≤1024px context-panel media block in chatbot.css');
+  assert.match(block, /\.ncb-card\[data-context-open="true"\] \.ncb-mobile-sidebar-btn \{\s*display: none !important;/);
+});
+
 test('i18n: cb_open_sidebar exists for both English and German', () => {
   const lang = readFileSync('frontend/js/features/settings/language.ts', 'utf8');
   assert.match(lang, /cb_open_sidebar: 'Open chat history'/);
