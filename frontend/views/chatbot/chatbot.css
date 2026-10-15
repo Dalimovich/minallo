@@ -4118,15 +4118,6 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
      the [hidden] state JS sets — it doubles as the open button when closed
      AND lets the user close again from the panel itself. */
   .ncb-panel-open-btn { display: grid !important; }
-  /* QA2-4 regression guard: when the context panel is open and full-bleed
-     (QA2-3), its own close button renders in the same top-right header
-     band as .ncb-mobile-sidebar-btn, close enough to overlap and steal
-     taps meant for "close panel" — caught live during manual verification.
-     Hide the sidebar toggle while context is open, same as .ncb-panel-open-btn
-     already does; the user closes the panel first, then opens the drawer. */
-  .ncb-card[data-context-open="true"] .ncb-mobile-sidebar-btn {
-    display: none !important;
-  }
 }
 
 /* 521px–768px (tablet): sidebar forced to its collapsed 88px icon strip. The

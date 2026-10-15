@@ -286,8 +286,29 @@ function initSidebar(root: HTMLElement): void {
 function bindMobileSidebarToggle(root: HTMLElement, sidebar: HTMLElement): void {
   const toggle = root.querySelector<HTMLButtonElement>('.ncb-mobile-sidebar-btn');
   const scrim = root.querySelector<HTMLElement>('.ncb-sidebar-scrim');
+  const card = root.querySelector<HTMLElement>('.ncb-card');
   if (!toggle || !scrim || toggle.dataset.ncbBound === '1') return;
   toggle.dataset.ncbBound = '1';
+
+  // .ncb-mobile-sidebar-btn lives in .ncb-header, a SIBLING of .ncb-card
+  // (not a descendant) — a CSS `.ncb-card[data-context-open="true"] ...`
+  // selector can never match it, so a live-browser check caught this the
+  // CSS-only version missed: when the (now full-bleed, see QA2-3) context
+  // panel opens, its own close button renders in the same top-right header
+  // band as this toggle and the two overlap, stealing taps. Mirror the
+  // open state onto the toggle directly instead, via whatever path opened
+  // it (.ncb-panel-open-btn, .ncb-context-close-btn, or future code).
+  if (card) {
+    const syncContextState = (): void => {
+      const open = card.getAttribute('data-context-open') === 'true';
+      toggle.style.setProperty('display', open ? 'none' : '', open ? 'important' : undefined);
+    };
+    syncContextState();
+    new MutationObserver(syncContextState).observe(card, {
+      attributes: true,
+      attributeFilter: ['data-context-open'],
+    });
+  }
 
   function openDrawer(): void {
     sidebar.classList.add('ncb-mob-open');

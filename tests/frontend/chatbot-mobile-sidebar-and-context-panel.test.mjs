@@ -85,14 +85,31 @@ test('QA2-5: the aria-label survives even where the sidebar still visually hides
 });
 
 test('regression: the mobile sidebar toggle hides while the context panel is open, so it cannot overlap the panel\'s own close button', () => {
-  // Caught live: .ncb-context-close-btn (inside the now full-bleed QA2-3
-  // panel) and .ncb-mobile-sidebar-btn (in the outer header) render close
-  // enough in the top-right band to overlap at phone width, stealing taps
-  // meant for "close panel". The fix hides the toggle whenever the panel
-  // is open, mirroring how .ncb-panel-open-btn already hides itself there.
-  const block = /@media \(max-width: 1024px\) \{[\s\S]*?\n\}/.exec(chatbotCss)?.[0];
-  assert.ok(block, 'expected the ≤1024px context-panel media block in chatbot.css');
-  assert.match(block, /\.ncb-card\[data-context-open="true"\] \.ncb-mobile-sidebar-btn \{\s*display: none !important;/);
+  // Caught live, not by the first version of this test: .ncb-context-close-btn
+  // (inside the now full-bleed QA2-3 panel) and .ncb-mobile-sidebar-btn (in
+  // the outer header) render close enough in the top-right band to overlap
+  // at phone width, stealing taps meant for "close panel". A first attempt
+  // fixed this with a `.ncb-card[data-context-open="true"] .ncb-mobile-sidebar-btn`
+  // CSS rule — it read correctly and this test's regex matched it, but it
+  // can NEVER match in the browser: .ncb-mobile-sidebar-btn lives in
+  // .ncb-header, a SIBLING of .ncb-card, not a descendant. Only an actual
+  // live-browser check caught that. The real fix mirrors the open state
+  // onto the toggle via a MutationObserver instead, which works regardless
+  // of which pre-existing control (panel-open-btn, context-close-btn, …)
+  // changes the attribute.
+  const fn = shell.slice(shell.indexOf('function bindMobileSidebarToggle('));
+  assert.match(fn, /querySelector<HTMLElement>\('\.ncb-card'\)/);
+  assert.match(fn, /new MutationObserver\(syncContextState\)\.observe\(card, \{/);
+  assert.match(fn, /attributeFilter: \['data-context-open'\]/);
+  assert.match(fn, /card\.getAttribute\('data-context-open'\) === 'true'/);
+  assert.match(fn, /toggle\.style\.setProperty\('display', open \? 'none' : '', open \? 'important' : undefined\)/);
+  // The dead selector must not come back.
+  assert.doesNotMatch(chatbotCss, /\.ncb-card\[data-context-open="true"\] \.ncb-mobile-sidebar-btn/);
+  // Structural guard: the toggle must stay outside <main>/.ncb-card, which
+  // is exactly why the CSS descendant-selector approach could never work.
+  const mainStart = html.indexOf('<main class="ncb-main">');
+  const toggleIndex = html.indexOf('class="ncb-mobile-sidebar-btn"');
+  assert.ok(toggleIndex >= 0 && toggleIndex < mainStart, 'toggle must render before <main>, i.e. outside .ncb-card');
 });
 
 test('i18n: cb_open_sidebar exists for both English and German', () => {
