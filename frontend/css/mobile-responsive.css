@@ -448,8 +448,47 @@
     border-radius: 0 !important;
   }
 
+  /* QA2-4: the sidebar used to just vanish below this width with no way
+     back in. Give it an off-canvas drawer instead, mirroring #portal
+     .sidebar's own ham/scrim pattern above. Opened/closed by
+     .ncb-mobile-sidebar-btn + .ncb-sidebar-scrim via shell.ts
+     bindMobileSidebarToggle(). The tablet icon-rail rules in chatbot.css
+     are scoped above 520px (see their own comments) so they don't fight
+     this drawer layout. */
   .ncb-sidebar {
-    display: none !important;
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    z-index: 300;
+    width: min(300px, calc(100vw - 44px)) !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0 !important;
+    border-radius: 0 20px 20px 0;
+    transform: translateX(-105%) !important;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 12px 0 42px rgba(0, 0, 0, 0.42);
+  }
+
+  .ncb-sidebar.ncb-mob-open {
+    transform: translateX(0) !important;
+  }
+
+  .ncb-mobile-sidebar-btn {
+    display: grid !important;
+  }
+
+  .ncb-sidebar-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 299;
+    background: rgba(2, 6, 23, 0.56);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+  }
+
+  .ncb-sidebar-scrim.show {
+    display: block;
   }
 
   .ncb-header {
