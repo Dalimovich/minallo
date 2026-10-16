@@ -1060,3 +1060,100 @@ def test_final_no_summary_check_absent_without_a_prohibition(monkeypatch) -> Non
     ):
         _, user_message = _run_stream_answer_and_capture_both_messages(monkeypatch, question, _PAGE6_TEXT)
         assert "FINAL NO-SUMMARY CHECK" not in user_message
+
+
+def _run_stream_answer_with_figure_and_capture_messages(
+    monkeypatch, question: str, page_text: str,
+) -> tuple[str, str, int]:
+    """Same technique as _run_stream_answer_and_capture_both_messages, plus
+    forcing the figure-attach branch (_should_attach_retrieved_figure /
+    _figure_page_image_parts) regardless of the real retrieval/math-mode
+    heuristics that normally gate it — those heuristics aren't what this
+    boundary test is checking; only the resulting user_message ORDER is.
+    Returns (system_message, user_message_text, image_part_count)."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+    monkeypatch.setattr(
+        answer_stream, "_should_attach_retrieved_figure", lambda **kwargs: True,
+    )
+    monkeypatch.setattr(
+        answer_stream,
+        "_figure_page_image_parts",
+        lambda used_chunks, max_images: [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,FAKE"}}
+        ],
+    )
+
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    system_message = next(m["content"] for m in messages if m["role"] == "system")
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert isinstance(user_content, list), "figure attach must send image parts, not a bare string"
+    text_parts = [p["text"] for p in user_content if p.get("type") == "text"]
+    image_parts = [p for p in user_content if p.get("type") == "image_url"]
+    assert len(text_parts) == 1
+    return system_message, text_parts[0], len(image_parts)
+
+
+def test_final_no_summary_check_is_the_true_tail_even_with_a_figure_attached(monkeypatch) -> None:
+    """Closes the review finding: _FIGURE_READ_INSTRUCTION used to be appended
+    AFTER final_negation_user_reminder, so a figure-attached request with an
+    explicit no-summary prohibition (e.g. "explain this diagram in detail,
+    don't summarize") lost the user-message reminder's tail position — the
+    same dilution bug the reminder exists to fix, one level down. The reminder
+    now moves past the figure-instruction block, so it must be the literal
+    tail regardless of figure attachment, and the figure instruction, image
+    attachment and page grounding must all still be present and intact."""
+    question = "Explain the diagram on this page in detail. Do not summarize it."
+    system_message, user_message, image_count = _run_stream_answer_with_figure_and_capture_messages(
+        monkeypatch, question, _PAGE6_TEXT,
+    )
+
+    assert "EXERCISE FIGURE" in user_message
+    assert "FINAL NO-SUMMARY CHECK" in user_message
+    assert user_message.index("FINAL NO-SUMMARY CHECK") > user_message.index("EXERCISE FIGURE")
+    assert user_message.rstrip().endswith(
+        "delete that closing section and stop after the last new point instead."
+    )
+
+    # Figure/image attachment and page grounding remain intact.
+    assert image_count == 1
+    assert "Wirtschaft" in user_message
+    assert "COURSE CONTEXT:" in user_message
+
+    # The system-message reminder (the first half of the fix) is unaffected
+    # by any of this — still the true tail of the system prompt.
+    assert "FINAL REMINDER" in system_message
+
+
+def test_figure_attached_request_without_prohibition_gets_no_reminder(monkeypatch) -> None:
+    """Control: an ordinary figure-vision request with no summary prohibition
+    must get the figure instruction but neither reminder."""
+    question = "Explain the diagram on this page in detail."
+    system_message, user_message, image_count = _run_stream_answer_with_figure_and_capture_messages(
+        monkeypatch, question, _PAGE6_TEXT,
+    )
+    assert image_count == 1
+    assert "EXERCISE FIGURE" in user_message
+    assert "FINAL NO-SUMMARY CHECK" not in user_message
+    assert "FINAL REMINDER" not in system_message

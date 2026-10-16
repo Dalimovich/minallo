@@ -2246,8 +2246,6 @@ def stream_answer(
             "and write the entire answer only in that same language. This rule applies "
             "to every language and writing system."
         )
-    user_message += final_negation_user_reminder(question)
-
     # Auto-attach the exercise/figure page bitmap on math/exercise questions so
     # the vision model can read dimensions and geometry off the drawing — most
     # of an engineering exercise's data lives in the figure, which OCR loses.
@@ -2278,6 +2276,11 @@ def stream_answer(
             user_message += _FIGURE_READ_INSTRUCTION
         else:
             log.info("figure-vision: will_attach_figure was set but no image rendered")
+    # Moved here, after the figure-instruction block above: that block also
+    # appends to user_message, so putting the reminder before it (as the
+    # original placement did) let the figure instruction dilute it again —
+    # the same ordering bug this reminder exists to fix, one level down.
+    user_message += final_negation_user_reminder(question)
 
     image_parts = [*open_image_parts, *figure_image_parts]
     log.info(
