@@ -826,6 +826,66 @@ def intent_style_instruction(intent: AcademicIntent | str | None, question: str 
     return "\n".join(lines)
 
 
+# Live acceptance testing on the BWL page-6 "Explain ... do not summarize it"
+# request (PR #27 follow-up) found that intent_style_instruction's prohibition
+# line above was not enough: in 3/3 live runs the model still closed with a
+# heading like "Summary of Development" / "Summary of Evolution" and a
+# condensed recap paragraph. Two causes, both confirmed by reading the actual
+# assembled prompt rather than assumed from the passing boundary test:
+#   1. Position — callers append several more generic structure/formatting
+#      blocks (ADAPTIVE_TABLE_LAYOUT_RULE, SEMANTIC_LEARNING_BLOCK_RULE,
+#      SHARED_ANSWER_INTEGRITY_RULES, then the grounding-policy line) AFTER
+#      intent_style_instruction's return, so the prohibition sits mid-prompt,
+#      not closest to the student's own question where models weight
+#      instructions most heavily.
+#   2. Wording — it bans an exact "Summary"/"Zusammenfassend" phrase, which
+#      the model satisfied in form (a differently-worded heading, a recap
+#      with no banned trigger word) while violating the actual intent.
+# This function is a second, maximally-positioned, more specific reminder for
+# the same already-detected prohibition — not a new condition, not a new
+# model call. Callers append its output LAST, after every other system-prompt
+# block (including the grounding-policy line), right before the COURSE
+# CONTEXT / user question. That costs nothing in prompt-cache terms: this
+# text depends on the student's own question, so it was never part of the
+# cacheable static prefix no matter where it sits.
+def final_negation_reminder(question: str | None) -> str:
+    if not _SUMMARY_PROHIBITION_RE.search(question or ""):
+        return ""
+    return (
+        "\n\nFINAL REMINDER (highest priority for this answer — overrides any "
+        "heading/structure guidance earlier in this prompt): the student "
+        "explicitly said not to summarize. Do not end the answer with a "
+        "closing section that restates or condenses what you already "
+        "explained, under ANY title — \"Summary\", \"Summary of ...\", "
+        "\"Recap\", \"Takeaways\", \"Conclusion\", \"Zusammenfassung\", "
+        "\"Zusammenfassend\" — or as an untitled closing paragraph that just "
+        "repeats the main points. Stop writing immediately after the last "
+        "new substantive point. Keep every citation and sourced detail "
+        "already in the answer — only the closing recap is forbidden."
+    )
+
+
+# Same detected prohibition, repeated at the end of the USER message (after
+# COURSE CONTEXT) rather than the system prompt. This mirrors an existing,
+# already-proven pattern in this codebase: answer_stream.py's "FINAL LANGUAGE
+# CHECK" repeats the language instruction at the same point for the same
+# reason — a long COURSE CONTEXT block sits between the system prompt and
+# the end of the user message, and the model weights the text closest to
+# where it starts generating most heavily. final_negation_reminder (system
+# prompt) and this function are deliberately redundant, not alternatives.
+def final_negation_user_reminder(question: str | None) -> str:
+    if not _SUMMARY_PROHIBITION_RE.search(question or ""):
+        return ""
+    return (
+        "\n\nFINAL NO-SUMMARY CHECK: You were told above not to summarize. "
+        "Re-read your answer before finishing it — if it ends with any "
+        "\"Summary\"/\"Summary of ...\"/\"Recap\"/\"Takeaways\"/\"Conclusion\"/"
+        "\"Zusammenfassung\" heading, or a closing paragraph that just "
+        "restates what you already explained, delete that closing section "
+        "and stop after the last new point instead."
+    )
+
+
 __all__ = (
     "AcademicIntent",
     "NEGATED_QUIZ_RE",
@@ -834,6 +894,8 @@ __all__ = (
     "chitchat_answer",
     "academic_intent_from_turn",
     "classify_academic_intent",
+    "final_negation_reminder",
+    "final_negation_user_reminder",
     "intent_allows_missing_input",
     "intent_is_math_like",
     "intent_is_self_contained",

@@ -37,6 +37,8 @@ from .access_control import heavy_model_cap_reached
 from .answer_intent import (
     AcademicIntent,
     classify_academic_intent,
+    final_negation_reminder,
+    final_negation_user_reminder,
     wants_per_source_coverage,
 )
 from .answer import (
@@ -2203,6 +2205,16 @@ def stream_answer(
         has_visible_context=include_source_zero,
         has_history=bool(previous_turns),
     )
+    # Appended LAST, after every other system-prompt block — see
+    # final_negation_reminder's docstring (answer_intent.py) for why position
+    # matters. The original placement (right after apply_grounding_policy_prompt
+    # above) was NOT actually last: the intent-resolution/dialogue/language/
+    # exercise/correction overlays above all append to system_prompt after that
+    # point, so the reminder was being diluted by the very mechanism it was
+    # written to fix. Moved here, past every later overlay, so it is the true
+    # tail of the system prompt (user_message, built next, is a separate
+    # message and doesn't affect this ordering).
+    system_prompt += final_negation_reminder(question)
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:
