@@ -48,6 +48,7 @@ from .answer import (
     MINALLO_APP_CONTEXT,
     SEMANTIC_LEARNING_BLOCK_RULE,
     SHARED_ANSWER_INTEGRITY_RULES,
+    STATICS_SUPPORT_RULE,
     _APP_ONLY_SYSTEM_PROMPT,
     _build_context_block,
     detect_exam_style,
@@ -2096,6 +2097,16 @@ def stream_answer(
             " silently changing what the page shows."
         )
     system_prompt += EVIDENCE_PRIORITY_RULES
+    # QA J1/F6 live re-verification (2026-10-16): EVIDENCE_PRIORITY_RULES alone
+    # did not stop the model mistranslating "Festlager" as English "fixed
+    # support" on the first turn, even with the document's own Festlager
+    # definition cited in sources — the model isn't aware it just performed a
+    # lossy translation, so it never recognises this as the "conflict" that
+    # rule talks about. chat.py/general_answer.py (the non-grounded paths)
+    # already carry the concrete STATICS_SUPPORT_RULE for exactly this reason;
+    # the course-grounded streaming path (this file, the one J1 actually
+    # reproduces on) was missing it.
+    system_prompt += STATICS_SUPPORT_RULE
     # ── Workspace awareness (layer 2 of the three knowledge layers) ──────────
     # The live workspace block carries the student's real course data (file/
     # quiz/deck/exam counts, weak topics, current tab). It rides EVERY course

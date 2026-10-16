@@ -131,6 +131,24 @@ def test_evidence_priority_rules_cover_definitional_conflicts_not_just_numbers()
     assert "UNTRUSTED DOCUMENT DATA" in EVIDENCE_PRIORITY_RULES
 
 
+def test_statics_support_rule_reaches_the_course_grounded_streaming_path() -> None:
+    """Live re-verification (2026-10-16) of the merged J1/F6 fix found
+    EVIDENCE_PRIORITY_RULES alone insufficient: with QA-Statik.pdf uploaded and
+    page 3's own "Festlager: horizontale und vertikale Lagerkraft" definition
+    cited in the retrieved sources, the model still answered "support A is a
+    fixed support... does have a moment reaction" — a false-friend mistranslation
+    (German "fest" -> English "fixed support") the model doesn't recognise as a
+    conflict with the document, so the generic "trust the document" rule never
+    engages. STATICS_SUPPORT_RULE already prevents this on the non-grounded
+    chat.py/general_answer.py paths (test_chat_routing.py); it must also reach
+    this course-grounded streaming path, where J1 actually reproduces live."""
+    from app.services.answer_stream import STATICS_SUPPORT_RULE
+
+    assert "Festlager" in STATICS_SUPPORT_RULE
+    assert "NO moment" in STATICS_SUPPORT_RULE
+    assert "Einspannung" in STATICS_SUPPORT_RULE
+
+
 def test_user_correction_overlay_does_not_blindly_trust_the_student() -> None:
     """Directive requirement: no blanket rule that all user quotations are
     automatically true — the model must still check before agreeing."""
