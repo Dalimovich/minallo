@@ -554,6 +554,22 @@ def test_academic_is_there_questions_are_not_app_support(q: str) -> None:
     assert not is_app_question(q)
 
 
+@pytest.mark.parametrize("q", [
+    "Explain the illustration on this page",
+    "What does this page say about torsion?",
+    "Summarize this page",
+    "Can you explain the diagram on this page in detail?",
+])
+def test_pdf_page_reference_is_not_an_app_question(q: str) -> None:
+    """'this page' overwhelmingly means the PDF page the student currently
+    has open, not a page of the Minallo web app itself — misclassifying it
+    here drops the student into the app-navigation fast path, which
+    discards retrieval AND the visible-page context entirely (QA
+    intent-routing audit; the student asked about THEIR document, not
+    about Minallo's own UI)."""
+    assert not is_app_question(q)
+
+
 # ── Review fix #7 — RetrievalCompleteness ─────────────────────────────────
 
 

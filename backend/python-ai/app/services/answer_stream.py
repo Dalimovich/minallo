@@ -1768,7 +1768,6 @@ def stream_answer(
         answer_mode = "app"
         academic_intent = AcademicIntent.APP_QUESTION
     else:
-        routing_question = question
         open_context_targets_visible_problem = open_ctx and (deictic or problem_mode is not None)
         routing_chunks = used_chunks
         synthetic_routing_chunks: list[RetrievedChunk] = []
@@ -1806,10 +1805,17 @@ def stream_answer(
                 )
             )
         if routing_context_parts:
-            routing_question = (question.strip() + "\n\n" + "\n\n".join(routing_context_parts)).strip()
             routing_chunks = [*synthetic_routing_chunks, *used_chunks]
+        # Intent classification must read the STUDENT's own instruction, not
+        # a copy blended with visible-page/problem-solver text — that text is
+        # folded into routing_chunks instead so the CHUNK-based signals (e.g.
+        # visible math context) can see it, but classify_academic_intent's
+        # keyword regexes (summary, quiz, comparison, ...) would otherwise
+        # fire on whatever happens to be printed on the page (a lecture
+        # slide's own "Overview"/"Summary" heading) and silently override an
+        # explicit "explain"/"solve" request with a generic summary.
         academic_intent = classify_academic_intent(
-            routing_question,
+            question,
             routing_chunks,
             {
                 "app_question": app_question,
@@ -1818,7 +1824,7 @@ def stream_answer(
             },
         )
         system_prompt, answer_mode = pick_system_prompt(
-            routing_question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
+            question, effective_strength, routing_chunks, tutor_mode=tutor_mode_norm,
             weak_topics=weak_topics, intent=academic_intent,
             # Matches apply_grounding_policy_prompt's own string comparisons
             # below — those three policies are the ones that later append a

@@ -618,3 +618,135 @@ def test_workspace_question_path_does_not_crash_on_unbound_academic_intent() -> 
     )
     first_chunk = next(gen)
     assert isinstance(first_chunk, bytes)
+
+
+# ── Intent-routing: a visible page's own wording must not override the
+# student's actual request ──────────────────────────────────────────────
+#
+# The visible-page slice is blended into a LOCAL "routing_question" so the
+# chunk/math-context signals can see it, but that same blended string was
+# also handed to classify_academic_intent — whose keyword regexes (quiz,
+# summary, comparison, ...) are meant to read the STUDENT's own instruction,
+# not arbitrary page text. A lecture slide's own "Overview"/"Summary"
+# heading could therefore silently flip an explicit "explain the
+# illustration" request into AcademicIntent.COURSE_SUMMARY, producing a
+# generic summary instead of the requested explanation.
+
+
+def test_visible_page_heading_does_not_override_explicit_explain_request(monkeypatch) -> None:
+    from app.services import answer, answer_stream
+    from app.services.answer_intent import AcademicIntent
+
+    original = answer.intent_style_instruction
+    captured: list = []
+
+    def _spy(intent):
+        captured.append(intent)
+        return original(intent)
+
+    monkeypatch.setattr(answer, "intent_style_instruction", _spy)
+
+    # The visible page itself contains a "Summary" heading elsewhere on the
+    # slide — incidental to the student's actual, explicit request below.
+    open_ctx = (
+        "Chapter 4 — Overview\n\n"
+        "Figure 4.2 shows a free-body diagram of the beam.\n\n"
+        "Summary: reaction forces balance applied loads.\n"
+    )
+    gen = answer_stream.stream_answer(
+        question="Explain the illustration on this page",
+        chunks=[],
+        doc_names={},
+        open_file_context=open_ctx,
+    )
+    next(gen)
+
+    assert captured, "intent_style_instruction was never called"
+    assert captured[0] != AcademicIntent.COURSE_SUMMARY
+
+
+def test_visible_page_heading_does_not_override_explicit_solve_request(monkeypatch) -> None:
+    """Same contamination risk for a step-by-step solve request sharing a
+    page with an end-of-chapter formula recap."""
+    from app.services import answer, answer_stream
+    from app.services.answer_intent import AcademicIntent
+
+    original = answer.intent_style_instruction
+    captured: list = []
+
+    def _spy(intent):
+        captured.append(intent)
+        return original(intent)
+
+    monkeypatch.setattr(answer, "intent_style_instruction", _spy)
+
+    open_ctx = (
+        "Zusammenfassung: wichtige Formeln dieses Kapitels.\n\n"
+        "Aufgabe 4.2: Bestimme die Reaktionskraft am Lager A.\n"
+    )
+    gen = answer_stream.stream_answer(
+        question="Help me solve this exercise step by step",
+        chunks=[],
+        doc_names={},
+        open_file_context=open_ctx,
+    )
+    next(gen)
+
+    assert captured, "intent_style_instruction was never called"
+    assert captured[0] != AcademicIntent.COURSE_SUMMARY
+
+
+def test_quiz_request_is_not_hijacked_by_page_summary_heading(monkeypatch) -> None:
+    """A genuine quiz request must stay QUIZ_GENERATION even though the
+    visible page carries a 'Summary' heading alongside the quizzable
+    material."""
+    from app.services import answer, answer_stream
+    from app.services.answer_intent import AcademicIntent
+
+    original = answer.intent_style_instruction
+    captured: list = []
+
+    def _spy(intent):
+        captured.append(intent)
+        return original(intent)
+
+    monkeypatch.setattr(answer, "intent_style_instruction", _spy)
+
+    open_ctx = "Summary: key points of chapter 4 on torsion and shear.\n"
+    gen = answer_stream.stream_answer(
+        question="Quiz me on this topic",
+        chunks=[],
+        doc_names={},
+        open_file_context=open_ctx,
+    )
+    next(gen)
+
+    assert captured, "intent_style_instruction was never called"
+    assert captured[0] == AcademicIntent.QUIZ_GENERATION
+
+
+def test_genuine_summary_request_still_classifies_as_summary(monkeypatch) -> None:
+    """The fix must not overcorrect: a real 'summarize'/'explain in detail'
+    request from the student still gets the matching template."""
+    from app.services import answer, answer_stream
+    from app.services.answer_intent import AcademicIntent
+
+    original = answer.intent_style_instruction
+    captured: list = []
+
+    def _spy(intent):
+        captured.append(intent)
+        return original(intent)
+
+    monkeypatch.setattr(answer, "intent_style_instruction", _spy)
+
+    gen = answer_stream.stream_answer(
+        question="Summarize this page",
+        chunks=[],
+        doc_names={},
+        open_file_context="Figure 4.2 shows a free-body diagram of the beam.\n",
+    )
+    next(gen)
+
+    assert captured, "intent_style_instruction was never called"
+    assert captured[0] == AcademicIntent.COURSE_SUMMARY

@@ -364,8 +364,12 @@ _SOURCE_REF_RE = re.compile(r"\bSources?\s+([0-9 ,andund&]+)\b", re.IGNORECASE)
 _APP_QUESTION_PATTERNS = [
     # Mentions Minallo by name as the subject
     re.compile(r"\bminallo\b", re.IGNORECASE),
-    # Demonstrative references to "this site / app / platform / website"
-    re.compile(r"\bthis\s+(site|app|website|platform|product|tool|service|page)\b", re.IGNORECASE),
+    # Demonstrative references to "this site / app / platform / website".
+    # Deliberately excludes "page": students overwhelmingly mean the open
+    # PDF page ("explain this page", "summarize this page"), not a page of
+    # the Minallo web app, and misrouting that here drops retrieval and the
+    # visible-page context entirely.
+    re.compile(r"\bthis\s+(site|app|website|platform|product|tool|service)\b", re.IGNORECASE),
     re.compile(r"\bthe\s+(site|app|website|platform)\s+(have|has|offer|contain|include|do|does|support)", re.IGNORECASE),
     # Sidebar / menu / navigation vocab
     re.compile(r"\b(sidebar|side\s*bar|navigation|menu|navbar|top\s*bar)\b", re.IGNORECASE),
