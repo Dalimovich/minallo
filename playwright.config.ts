@@ -20,16 +20,22 @@ export default defineConfig({
   workers: 1,
   reporter: [['html', { outputFolder: 'tests/e2e/report', open: 'never' }], ['list']],
   use: {
-    baseURL: process.env.E2E_BASE_URL || 'http://localhost:8788',
+    // Pages canonicalizes .html fragment URLs to HTTPS. The local server must
+    // speak HTTPS too or auth/portal fragment redirects stall before login.
+    baseURL: process.env.E2E_BASE_URL || 'https://localhost:8788',
+    // Only the automatically started local server uses a self-signed cert.
+    // Explicit remote targets retain normal certificate validation.
+    ignoreHTTPSErrors: !process.env.E2E_BASE_URL,
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
   },
   // Only spin up local dev server when not pointing at a remote URL (i.e. local runs only)
   webServer: process.env.E2E_BASE_URL ? undefined : {
-    command: 'npm run dev',
-    url: 'http://localhost:8788',
-    reuseExistingServer: true,
+    command: 'npm run dev -- --local-protocol https',
+    url: 'https://localhost:8788',
+    ignoreHTTPSErrors: true,
+    reuseExistingServer: !process.env.CI,
     timeout: 60000,
   },
   projects: [

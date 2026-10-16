@@ -14,10 +14,16 @@ const cover = index.match(/<div id="minalloBootCover"[\s\S]*?<\/div>\s*<\/div>\s
 const LOGO = readFileSync('frontend/assets/minallo-boot-logo.png');
 const TIMEMAP = readFileSync('frontend/assets/minallo-boot-timemap.png');
 
-async function withPage({ reducedMotion = 'no-preference', missingTimemap = false } = {}, fn) {
+async function withPage({ reducedMotion = 'no-preference', missingTimemap = false, manualClock = false } = {}, fn) {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ reducedMotion });
+    if (manualClock) {
+      // Freeze before the animation starts: image decoding and runner load must
+      // not consume any of the interval whose pixel delta we measure below.
+      await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
+      await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
+    }
     await page.route('https://boot-logo.test/**', (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/assets/minallo-boot-logo.png') return route.fulfill({ contentType: 'image/png', body: LOGO });
@@ -57,22 +63,24 @@ const revealed = (page) => page.evaluate(async () => {
 const visible = (page, sel) => page.evaluate((s) => getComputedStyle(document.querySelector(s)).visibility === 'visible', sel);
 
 test('the m is written gradually and ends as the exact logo, with no piece popping in at the end', { timeout: 60_000 }, async () => {
-  await withPage({}, async (page) => {
+  await withPage({ manualClock: true }, async (page) => {
+    await page.waitForSelector('.mn-boot-logo.go', { state: 'attached' });
     assert.equal(await visible(page, '.mn-boot-logo img'), false, 'static logo hidden while animating');
     assert.equal(await visible(page, '[data-boot-m]'), true);
 
     const samples = [];
     for (let i = 0; i < 9; i++) {
-      await page.waitForTimeout(200);
+      await page.clock.runFor(200);
       samples.push((await revealed(page)).fraction);
     }
     for (let i = 1; i < samples.length; i++) assert.ok(samples[i] >= samples[i - 1] - 1e-6, `never un-writes: ${samples}`);
     assert.ok(samples.some((f) => f > 0.15 && f < 0.85), `has a visible in-between state: ${samples}`);
-    // Largest jump between two 200ms samples: an even pen, not a late pop.
+    // Exactly 200ms of animation between samples, regardless of wall-clock
+    // time spent reading pixels or scheduling this test alongside other tests.
     const jumps = samples.slice(1).map((f, i) => f - samples[i]);
     assert.ok(Math.max(...jumps) < 0.45, `no sudden chunk: ${jumps}`);
 
-    await page.waitForTimeout(1200);
+    await page.clock.runFor(1200);
     const end = await revealed(page);
     assert.ok(end.fraction > 0.999, `fully written: ${end.fraction}`);
     assert.ok(end.worst <= 1, `every pixel matches the logo: worst alpha gap ${end.worst}`);
