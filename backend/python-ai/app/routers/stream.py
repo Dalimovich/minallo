@@ -1723,11 +1723,12 @@ async def ask_stream_endpoint(
             turn_resolution, evidence_requirement=EvidenceRequirement.COURSE_RETRIEVAL,
             requires_new_retrieval=True,
         )
-    # Semantic Student Intent Interpreter (PR 1, see
-    # docs/semantic-intent-layer-map.md). Flag defaults to "off": in that
-    # case this is never even computed, so the hot path is unchanged. See
-    # student_intent.intent_for_router for why "shadow" computes but never
-    # forwards to resolve_execution_plan, while "enabled" does.
+    # Semantic Student Intent Interpreter (PR 1 contract, PR 2 semantic
+    # path — see docs/semantic-intent-layer-map.md). Flag defaults to "off":
+    # in that case this is never even computed, so the hot path is
+    # unchanged. See student_intent.intent_for_router for why "shadow"
+    # computes (and may call the semantic model, per _needs_semantic_path)
+    # but never forwards to resolve_execution_plan, while "enabled" does.
     semantic_intent_mode = get_settings().semantic_intent_mode
     student_intent = None
     if semantic_intent_mode != "off":
@@ -1742,6 +1743,8 @@ async def ask_stream_endpoint(
                 grounding_request.viewerContext or payload.openFileContext
             ),
             mode=semantic_intent_mode,
+            previous_turns=preflight_turns,
+            user_id=user_id,
         )
         student_intent = intent_for_router(semantic_intent_mode, computed_intent)
     _task_profile, execution_plan = resolve_execution_plan(

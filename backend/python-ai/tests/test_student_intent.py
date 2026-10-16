@@ -1,29 +1,78 @@
-"""Tests for the Semantic Student Intent Interpreter (PR 1).
+"""Tests for the Semantic Student Intent Interpreter (PR 1 contract + PR 2
+semantic path).
 
 Covers the typed StudentIntent contract's deterministic adapter, the
-feature-flag states (off/shadow/enabled), the fail-closed semantic stub, and
-the flag-off parity guarantee at the real integration seam
+feature-flag states (off/shadow/enabled), the real semantic model call
+(schema validation, confidence floor, fail-closed fallback, usage metering),
+and the flag-off parity guarantee at the real integration seam
 (execution_router.resolve_execution_plan).
+
+IMPORTANT: every test that can reach `_needs_semantic_path`'s True branch
+(mode != "off" with an ambiguous/negated/code-switched/low-confidence
+message) MUST monkeypatch `si._semantic_model_call` or
+`openai_client.get_openai_client` — otherwise it would attempt a real,
+billed OpenAI call during `pytest`. `_FakeClient` below exists so that never
+has to happen for real.
 """
 
 import inspect
+import json
 
 import pytest
 
-from app.services import student_intent as si
+from app import config as config_module
+from app.services import openai_client, student_intent as si
 from app.services.answer_intent import AcademicIntent
-from app.services.dialogue_state import ConversationIntent, TurnRelation, resolve_dialogue
+from app.services.dialogue_state import ConversationIntent, resolve_dialogue
 from app.services.execution_router import resolve_execution_plan
 from app.services.grounding_contract import ResolvedDocumentAccess
 from app.services.student_intent import StudentIntent, interpret_student_intent
 
 
 def _interpret(message, *, previous_turns=None, resolved_access=ResolvedDocumentAccess.RELEVANCE,
-               has_visible_context=False, mode="off"):
+               has_visible_context=False, mode="off", user_id=None):
     dialogue = resolve_dialogue(message, previous_turns=previous_turns or [])
     return interpret_student_intent(
         message, dialogue=dialogue, resolved_access=resolved_access,
         has_visible_context=has_visible_context, mode=mode,
+        previous_turns=previous_turns, user_id=user_id,
+    )
+
+
+class _FakeClient:
+    """Fakes just enough of the OpenAI SDK surface for chat.completions.create
+    — same shape as test_dialogue_state.py's fake for resolve_dialogue_
+    semantically, so both call sites are tested the same way."""
+
+    def __init__(self, content: str | dict):
+        self._content = content if isinstance(content, str) else json.dumps(content)
+        self.captured_kwargs: dict = {}
+
+    def with_options(self, **_kwargs):
+        return self
+
+    @property
+    def chat(self):
+        outer = self
+
+        class _Completions:
+            @staticmethod
+            def create(**kwargs):
+                outer.captured_kwargs.update(kwargs)
+                message = type("Msg", (), {"content": outer._content})()
+                choice = type("Choice", (), {"message": message})()
+                return type("Completion", (), {"choices": [choice], "usage": None})()
+
+        return type("Chat", (), {"completions": _Completions()})()
+
+
+def _patch_model(monkeypatch, client: _FakeClient, model: str = "gpt-4o-mini"):
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: client)
+    monkeypatch.setattr(
+        config_module, "get_settings",
+        lambda: type("S", (), {
+            "openai_generate_model": model, "openai_reasoning_effort": "high",
+        })(),
     )
 
 
@@ -139,52 +188,202 @@ def test_new_topic_has_no_follow_up_type():
 
 
 # ---------------------------------------------------------------------------
-# Correction case — triggers the semantic-path heuristic, which in PR 1 is
-# stubbed to always fall back to the deterministic result.
+# Correction case — triggers the semantic-path heuristic and actually calls
+# the (fake) model.
 # ---------------------------------------------------------------------------
 
-def test_correction_triggers_semantic_path_but_falls_back_in_pr1():
+def test_correction_triggers_semantic_path_and_calls_the_model(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    # A reasoning-model id, same as test_dialogue_state.py's identical
+    # convention test — makes chat_completion_params actually surface
+    # reasoning_effort/max_completion_tokens so the override is observable.
+    _patch_model(monkeypatch, client, model="gpt-5-mini")
     turns = [{"role": "assistant", "text": "The answer is 42 N."}]
     intent = _interpret("No, that's wrong.", previous_turns=turns, mode="shadow")
-    assert intent.interpretation_source == "fallback"
+    assert intent.interpretation_source == "semantic_model"
+    assert intent.primary_task is AcademicIntent.GENERAL_COURSE_QA
+    # Reuses resolve_dialogue_semantically's exact call shape: low reasoning
+    # effort (short classification, not math work) and the bounded timeout.
+    assert client.captured_kwargs.get("reasoning_effort") == "low"
+    assert client.captured_kwargs.get("timeout") is openai_client.INTERACTIVE_CLASSIFIER_TIMEOUT
+    assert client.captured_kwargs.get("response_format") == {"type": "json_object"}
+
+
+def test_semantic_result_never_forwarded_in_shadow_mode(monkeypatch):
+    """Shadow mode must still call the model (for diagnostics) but the
+    SEMANTIC result must never reach the router (student_intent.
+    intent_for_router), per the explicit shadow-mode contract."""
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    turns = [{"role": "assistant", "text": "The answer is 42 N."}]
+    intent = _interpret("No, that's wrong.", previous_turns=turns, mode="shadow")
+    assert intent.interpretation_source == "semantic_model"  # computed
+    assert si.intent_for_router("shadow", intent) is None     # never forwarded
 
 
 # ---------------------------------------------------------------------------
 # German / mixed-language (code-switched) case.
 # ---------------------------------------------------------------------------
 
-def test_code_switched_message_triggers_semantic_path():
+def test_code_switched_message_triggers_semantic_path(monkeypatch):
     # Mixes ASCII English words with German diacritics in one message.
     message = "Please erkläre mir die Übung in English, kurz und präzise."
+    client = _FakeClient({
+        "primaryTask": "conceptual_explanation", "prohibitedTasks": [],
+        "depth": "brief", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.88,
+    })
+    _patch_model(monkeypatch, client)
     intent = _interpret(message, mode="shadow")
-    assert intent.interpretation_source == "fallback"
+    assert intent.interpretation_source == "semantic_model"
+    assert intent.depth == "brief"
     # The original wording — in whatever language/script mix it arrived in
     # — must still be preserved verbatim (invariant 1).
     assert intent.original_message == message
 
 
+def test_german_negation_prohibits_without_cancelling_primary_task(monkeypatch):
+    """The historical regression (see test_negated_summary_regression_* at
+    the top of this file) must hold in the semantic path too, in German."""
+    message = "Erkläre das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen."
+    client = _FakeClient({
+        "primaryTask": "conceptual_explanation", "prohibitedTasks": ["course_summary"],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.93,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret(
+        message, mode="enabled", resolved_access=ResolvedDocumentAccess.VISIBLE_PAGE,
+        has_visible_context=True,
+    )
+    assert intent.primary_task is not AcademicIntent.COURSE_SUMMARY
+    assert AcademicIntent.COURSE_SUMMARY in intent.prohibited_tasks
+    assert intent.interpretation_source == "semantic_model"
+
+
 # ---------------------------------------------------------------------------
-# Malformed-interpreter-response and timeout fallback cases — the stub call
-# must fail closed, never propagate, regardless of HOW it misbehaves.
+# Malformed-interpreter-response, conflicting-fields, low-confidence, and
+# timeout fallback cases — the semantic call must fail closed, never
+# propagate, regardless of HOW it misbehaves.
 # ---------------------------------------------------------------------------
 
 def test_malformed_semantic_response_falls_back(monkeypatch):
-    def _malformed(*, message, dialogue):
+    def _malformed(*, message, dialogue, previous_turns, base, user_id):
         raise ValueError("malformed structured-output response")
 
-    monkeypatch.setattr(si, "_semantic_model_stub", _malformed)
+    monkeypatch.setattr(si, "_semantic_model_call", _malformed)
     intent = _interpret("No, that's wrong.", mode="shadow")
     assert intent.interpretation_source == "fallback"
     assert isinstance(intent, StudentIntent)
 
 
 def test_semantic_timeout_falls_back(monkeypatch):
-    def _timeout(*, message, dialogue):
+    def _timeout(*, message, dialogue, previous_turns, base, user_id):
         raise TimeoutError("semantic classifier exceeded its budget")
 
-    monkeypatch.setattr(si, "_semantic_model_stub", _timeout)
+    monkeypatch.setattr(si, "_semantic_model_call", _timeout)
     intent = _interpret("No, that's wrong.", mode="shadow")
     assert intent.interpretation_source == "fallback"
+
+
+def test_invalid_primary_task_enum_falls_back(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "not_a_real_task", "prohibitedTasks": [],
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert intent.interpretation_source == "fallback"
+
+
+def test_primary_task_conflicting_with_its_own_prohibition_falls_back(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "course_summary", "prohibitedTasks": ["course_summary"],
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert intent.interpretation_source == "fallback"
+
+
+def test_low_confidence_semantic_result_falls_back(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.4,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert intent.interpretation_source == "fallback"
+
+
+def test_non_list_prohibited_tasks_falls_back(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": "course_summary",
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert intent.interpretation_source == "fallback"
+
+
+def test_non_boolean_confidence_falls_back(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": True,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert intent.interpretation_source == "fallback"
+
+
+# ---------------------------------------------------------------------------
+# Usage metering — privacy-safe (counts/model only, never message text) and
+# attributed to the requesting student when a user_id is supplied.
+# ---------------------------------------------------------------------------
+
+def test_semantic_call_records_usage(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "normal", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    recorded: dict = {}
+    from app.services import usage_meter
+    monkeypatch.setattr(usage_meter, "record_usage", lambda **kwargs: recorded.update(kwargs))
+    _interpret("No, that's wrong.", mode="shadow", user_id="student-123")
+    assert recorded.get("feature") == "semantic_intent"
+    assert recorded.get("user_id") == "student-123"
+
+
+# ---------------------------------------------------------------------------
+# Only "enabled" ever reaches the router — "shadow" never forwards the
+# model-backed result either (not just the deterministic one above).
+# ---------------------------------------------------------------------------
+
+def test_enabled_mode_forwards_semantic_result_to_the_router(monkeypatch):
+    client = _FakeClient({
+        "primaryTask": "general_course_qa", "prohibitedTasks": [],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret("No, that's wrong.", mode="enabled")
+    assert intent.interpretation_source == "semantic_model"
+    assert si.intent_for_router("enabled", intent) is intent
 
 
 # ---------------------------------------------------------------------------
@@ -267,33 +466,24 @@ def test_default_semantic_intent_mode_is_off():
     assert get_settings().semantic_intent_mode == "off"
 
 
-def test_enabled_mode_falls_back_to_deterministic_without_a_semantic_model():
-    """"enabled" with no semantic model configured (PR 1's only state: the
-    stub always returns None) must behave exactly like "off" deterministically
-    — same classification, just a different interpretation_source."""
+def test_enabled_mode_stays_deterministic_when_not_ambiguous():
+    """"enabled" never calls the model for an unambiguous message —
+    _needs_semantic_path gates the call, so this stays deterministic."""
     intent = _interpret("Summarize chapter 3 briefly.", mode="enabled")
     assert intent.primary_task is AcademicIntent.COURSE_SUMMARY
-    assert intent.interpretation_source in {"deterministic", "fallback"}
+    assert intent.interpretation_source == "deterministic"
 
 
 # ---------------------------------------------------------------------------
-# intent_for_router — the real PR 1 defect: shadow mode was forwarding its
-# computed StudentIntent into resolve_execution_plan, whose `signals` tuple
-# is serialized into the SSE `executionPlan` payload (ExecutionPlan.to_api,
-# app/routers/stream.py) — making "shadow" affect the response on the wire
-# despite the explicit contract that it never does. Fixed by gating the
-# forward on mode == "enabled" via student_intent.intent_for_router.
+# intent_for_router — shadow mode must never forward ANY computed
+# StudentIntent (deterministic or model-backed) into resolve_execution_plan,
+# whose `signals` tuple is serialized into the SSE `executionPlan` payload
+# (ExecutionPlan.to_api, app/routers/stream.py) — forwarding would make
+# "shadow" affect the response on the wire despite the explicit contract
+# that it never does. See test_semantic_result_never_forwarded_in_shadow_
+# mode / test_enabled_mode_forwards_semantic_result_to_the_router above for
+# the model-backed case.
 # ---------------------------------------------------------------------------
-
-def test_shadow_mode_never_forwards_intent_to_the_router():
-    intent = _interpret("No, that's wrong.", mode="shadow")
-    assert si.intent_for_router("shadow", intent) is None
-
-
-def test_enabled_mode_forwards_intent_to_the_router():
-    intent = _interpret("No, that's wrong.", mode="enabled")
-    assert si.intent_for_router("enabled", intent) is intent
-
 
 def test_off_mode_never_forwards_intent_to_the_router():
     assert si.intent_for_router("off", None) is None

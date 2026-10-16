@@ -1,10 +1,11 @@
-# Semantic Student Intent Layer — architecture map (PR 1)
+# Semantic Student Intent Layer — architecture map (PR 1 + PR 2)
 
 Traced against the actual call graph (not inferred from filenames) as of
 commit `035dcaca` on `main`. This is the map for the Semantic Student Intent
-Interpreter PR series. PR 1 (this one) adds the typed contract, a
-deterministic adapter, and feature-flagged (default **off**) wiring that
-changes nothing when disabled. PR 2's plan is at the bottom.
+Interpreter PR series. PR 1 added the typed contract, a deterministic
+adapter, and feature-flagged (default **off**) wiring that changes nothing
+when disabled. PR 2 (this update) replaces the stub with the actual bounded
+semantic model call — see "PR 2: the semantic path (implemented)" below.
 
 ## Where a message actually travels today
 
@@ -201,41 +202,76 @@ short version:
    cannot be resolved against an active exercise label or trusted visible
    context, `needs_clarification=True` — never a guessed resolution.
 
-## PR 2 plan (not built in this PR)
+## PR 2: the semantic path (implemented)
 
-- **Schema**: a small JSON schema mirroring `StudentIntent`'s fields
-  (enum values as strings), returned via `response_format={"type":
-  "json_object"}` the same way `resolve_dialogue_semantically()` already
-  does — reuse that call shape rather than inventing a second one.
-- **Model/cost**: cheapest available structured-output tier (mirrors
-  `resolve_dialogue_semantically`'s use of `openai_generate_model` at
-  `reasoning_effort="low"`), capped output tokens (~200), single
-  `max_retries=1`.
-- **Timeout**: reuse `INTERACTIVE_CLASSIFIER_TIMEOUT`
-  (`openai_client.py`) rather than defining a second timeout constant.
-- **Trigger conditions** (already stubbed as `_needs_semantic_path()` in
-  this PR, always returning the heuristic signal but never calling a model):
-  negation+conflicting instructions, multilingual/code-switched text,
-  compound tasks, corrections ("no, I meant..."), ambiguous scope, low
-  deterministic confidence (`< 0.7`).
-- **Fail-closed contract**: malformed JSON, schema violation, or timeout →
-  `interpretation_source="fallback"`, deterministic result kept, never a
-  thrown exception up to the request handler — same shape as
-  `resolve_dialogue_semantically`'s `except Exception` branch.
-- **Offline eval harness**: a fixture file of (message, previous_turns,
-  expected StudentIntent fields) tuples replayed against both the
-  deterministic adapter and the semantic call in shadow mode, diffing
-  agreement — lives in `tests/fixtures/` once PR 2 adds the model call,
-  not before (no fixtures are needed to test a function that never calls
-  out).
-- **Where it plugs in**: `interpret_student_intent()`'s `_semantic_model_stub`
-  function is the single seam — replacing its body with the real call is
-  the entire PR 2 diff at the interpreter layer. No other file in this map
-  needs to change shape again.
+`_semantic_model_stub` (always returned `None`) is replaced by
+`_semantic_model_call` in `student_intent.py`. The seam PR 1 predicted was
+the only one that needed to change — no other file in this map changed
+shape again except the call sites threading two new optional parameters
+through (`previous_turns`, `user_id`).
+
+- **Schema**: JSON object with 6 keys — `primaryTask`, `prohibitedTasks`,
+  `depth`, `teachingStyle`, `visualRequirement`, `confidence` — validated
+  strictly against `AcademicIntent`'s values, the 5 known `depth` strings,
+  and the 2 `teachingStyle` strings; a `primaryTask` that also appears in
+  `prohibitedTasks` is treated as malformed (can't simultaneously be wanted
+  and ruled out). `response_format={"type": "json_object"}`, same as
+  `resolve_dialogue_semantically()` — one call shape, not two.
+- **Model/cost**: `get_settings().openai_generate_model` at
+  `reasoning_effort="low"`, `max_tokens`/`max_completion_tokens` capped at
+  180 (classification only), single SDK `max_retries=1`,
+  `INTERACTIVE_CLASSIFIER_TIMEOUT` reused from `openai_client.py`. Per-
+  request call count is 1 by construction (one call site inside
+  `interpret_student_intent`, no loop) — there is no separate counter to
+  maintain. Usage metered via `usage_meter.record_usage(feature=
+  "semantic_intent", ...)`, the same mechanism every other OpenAI call site
+  in this codebase reports through; cost is derived at query time from the
+  recorded token counts, never estimated inline.
+- **Trigger conditions**: unchanged from PR 1's `_needs_semantic_path()` —
+  negation (the two existing regexes), multilingual/code-switched text,
+  corrections/rejections, low deterministic confidence (`< 0.7`). PR 2 does
+  not widen this heuristic (see the eval fixture's two `knownGap` cases for
+  why that was a deliberate choice, not an oversight).
+- **Confidence floor**: a second, independent threshold
+  (`_SEMANTIC_CONFIDENCE_FLOOR = 0.65`) on the MODEL's own returned
+  `confidence` — below it, the deterministic base is kept
+  (`interpretation_source` stays effectively deterministic via the
+  `"fallback"` path) rather than trusting an unsure classification.
+- **Fail-closed contract**: malformed JSON, schema violation, confidence
+  below the floor, or a transport failure/timeout → `interpretation_source=
+  "fallback"`, deterministic fields kept, never a thrown exception up to
+  the request handler — same shape as `resolve_dialogue_semantically`'s
+  `except Exception` branch.
+- **Merge semantics**: the semantic result only ever overrides
+  `primary_task`/`prohibited_tasks`/`depth`/`teaching_style`/
+  `visual_requirement`/`confidence` on top of the already-computed
+  deterministic `StudentIntent` (via `dataclasses.replace`) — `scope`,
+  `references_resolved`/`references_unresolved`/`needs_clarification`, and
+  `student_goal` are never touched, because the model never receives the
+  trusted UI metadata or conversation-resolution internals those are
+  derived from (invariants 3 and 4 hold unchanged).
+- **Offline eval harness**: `tests/fixtures/student_intent_eval_cases.json`
+  + `tests/test_student_intent_eval_fixture.py` — see that file's docstring
+  and `tests/fixtures/README.md`. Deterministic classification, the
+  escalation trigger, fail-closed fallback, and `resolve_execution_plan`
+  compatibility are all covered with zero model calls. Live model-accuracy
+  evaluation against this same corpus is not wired up yet (needs separate
+  authorization for paid calls).
+
+## Not built in PR 2 (future work)
+
 - **Deeper prompt wiring**: once trusted, thread `StudentIntent` into
   `pick_system_prompt()`/`intent_style_instruction()` as a second,
   cross-checked signal alongside `AcademicIntent` — not a replacement for
   it — probably by having `intent_style_instruction` accept an optional
   `student_intent` and use its `prohibited_tasks` as a second source of
   negation lines, falling back to its current regex-only behavior when
-  absent (flag off or PR 1 only).
+  absent (flag off, or mode="shadow" where it must never reach the prompt
+  either). Explicitly out of scope for PR 2, which only wires the model
+  call and the (non-authoritative) execution-router signal.
+- **Trigger-heuristic tuning**: the two `knownGap` eval cases (an
+  answer-hiding quiz constraint, and a `_DEICTIC_RE` false positive on
+  "the second law" style phrasing) are documented, not fixed — widening
+  `_needs_semantic_path` trades more model calls for catching more
+  phrasings, a cost/coverage tradeoff for the team to decide, not something
+  to change silently inside a PR whose job was adding the model call.

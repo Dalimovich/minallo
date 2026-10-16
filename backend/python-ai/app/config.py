@@ -113,11 +113,14 @@ class Settings(BaseSettings):
 
     # --- Semantic Student Intent Interpreter (see
     # docs/semantic-intent-layer-map.md). Three states, not a bool: "off"
-    # (default — the router never even computes a StudentIntent), "shadow"
-    # (computed + diagnostics logged, never affects the response), "enabled"
-    # (computed and exposed to the router as an additional, non-authoritative
-    # signal). No state in this PR triggers a live/paid model call — the
-    # semantic path is stubbed until PR 2.
+    # (default — the router never even computes a StudentIntent, and never
+    # calls a model), "shadow" (computed + diagnostics logged, never affects
+    # the response), "enabled" (computed and exposed to the router as an
+    # additional, non-authoritative signal). Both "shadow" and "enabled" MAY
+    # trigger one bounded, low-cost model call per request — see
+    # student_intent._needs_semantic_path for the (minority-case) trigger
+    # conditions and student_intent._semantic_model_call for the call
+    # itself. Production default stays "off".
     semantic_intent_mode: str = Field("off", alias="SEMANTIC_INTENT_MODE")
 
     # --- Transactional email (welcome mail on first login). Same Zoho account
