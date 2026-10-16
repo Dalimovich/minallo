@@ -300,7 +300,10 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
         resolved_turn=resolved_turn, has_course_context=has_course_context,
         has_specific_file=has_specific_file,
     )
-    from .student_intent import execution_signal  # noqa: WPS433 — avoid a module-load cycle
+    # Local import, not a cycle (student_intent.py does not import this
+    # module): keeps student_intent.py off this module's load-time import
+    # surface, matching the `Any` typing on `student_intent` above.
+    from .student_intent import execution_signal  # noqa: WPS433
     signals = tuple(key for key, value in asdict(profile).items()
                     if value is True and key != "estimatedComplexity") + execution_signal(student_intent)
     if profile.needsFullCoverage:

@@ -278,4 +278,22 @@ def execution_signal(intent: Any | None) -> tuple[str, ...]:
     return ("semantic_intent_available",) if intent is not None else ()
 
 
-__all__ = ["InterpretationSource", "StudentIntent", "execution_signal", "interpret_student_intent"]
+def intent_for_router(mode: str, intent: StudentIntent | None) -> StudentIntent | None:
+    """What ``app/routers/stream.py`` should forward to
+    ``resolve_execution_plan`` once ``interpret_student_intent`` has run.
+
+    "shadow" computes the intent purely for the diagnostics logged inside
+    ``interpret_student_intent`` itself — it must never reach the router,
+    because the router's ``signals`` tuple is serialized into the SSE
+    ``executionPlan`` payload (``ExecutionPlan.to_api()``), which would make
+    "shadow" affect the response on the wire despite the explicit contract
+    (``Settings.semantic_intent_mode`` docstring) that shadow never does.
+    Only "enabled" attaches it as an additional, non-authoritative signal.
+    """
+    return intent if mode == "enabled" else None
+
+
+__all__ = [
+    "InterpretationSource", "StudentIntent", "execution_signal",
+    "intent_for_router", "interpret_student_intent",
+]

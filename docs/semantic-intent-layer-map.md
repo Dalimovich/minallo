@@ -147,18 +147,23 @@ wording, computed well after the router's plan, inside the generator.
 - **Router read point**: `resolve_execution_plan()` /
   `classify_task_profile()` (`execution_router.py`) each gain one new,
   optional, keyword-only parameter `student_intent: Any | None = None`
-  (typed `Any` to avoid an import cycle, matching this file's own existing
-  convention for `resolved_turn: Any | None = None`). When provided, its
+  (typed `Any` to keep `student_intent.py` off this module's load-time
+  import surface — not a real import cycle — matching this file's own
+  existing convention for `resolved_turn: Any | None = None`). When provided, its
   **only** effect is appending `"semantic_intent_available"` to the returned
   `ExecutionPlan.signals` tuple — an informational marker. It never changes
   `groundingMode`, `executionLane`, `complexity`, `confidence`, or `reason`.
   The router's authority is unchanged; this is strictly an additional,
   inert, optional signal it is free to read later.
 - **Shadow mode**: when `semantic_intent_mode == "shadow"`, the computed
-  `StudentIntent` is still passed through (so the inert signal above fires)
-  but nothing about the actual response changes — the mode exists purely to
-  produce the diagnostics log line below in production traffic before
-  anything is allowed to affect behavior.
+  `StudentIntent` is deliberately NOT passed through to
+  `resolve_execution_plan` (see `student_intent.intent_for_router`) — the
+  `signals` tuple it would otherwise extend is serialized into the SSE
+  `executionPlan` payload (`ExecutionPlan.to_api()`), so forwarding it would
+  make shadow mode change the response on the wire. Shadow mode exists
+  purely to produce the diagnostics log line below in production traffic
+  before anything is allowed to affect behavior. Only `"enabled"` forwards
+  the computed intent (so the inert `signals` marker fires).
 - **Diagnostics (shadow/enabled only, never "off")**: one `log.info` line —
   `interpretation_source`, `primary_task` (enum value), prohibited-task
   count, `needs_clarification`, `confidence`, latency — no message text, no

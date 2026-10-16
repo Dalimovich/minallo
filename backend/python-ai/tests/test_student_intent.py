@@ -267,6 +267,38 @@ def test_default_semantic_intent_mode_is_off():
     assert get_settings().semantic_intent_mode == "off"
 
 
+def test_enabled_mode_falls_back_to_deterministic_without_a_semantic_model():
+    """"enabled" with no semantic model configured (PR 1's only state: the
+    stub always returns None) must behave exactly like "off" deterministically
+    — same classification, just a different interpretation_source."""
+    intent = _interpret("Summarize chapter 3 briefly.", mode="enabled")
+    assert intent.primary_task is AcademicIntent.COURSE_SUMMARY
+    assert intent.interpretation_source in {"deterministic", "fallback"}
+
+
+# ---------------------------------------------------------------------------
+# intent_for_router — the real PR 1 defect: shadow mode was forwarding its
+# computed StudentIntent into resolve_execution_plan, whose `signals` tuple
+# is serialized into the SSE `executionPlan` payload (ExecutionPlan.to_api,
+# app/routers/stream.py) — making "shadow" affect the response on the wire
+# despite the explicit contract that it never does. Fixed by gating the
+# forward on mode == "enabled" via student_intent.intent_for_router.
+# ---------------------------------------------------------------------------
+
+def test_shadow_mode_never_forwards_intent_to_the_router():
+    intent = _interpret("No, that's wrong.", mode="shadow")
+    assert si.intent_for_router("shadow", intent) is None
+
+
+def test_enabled_mode_forwards_intent_to_the_router():
+    intent = _interpret("No, that's wrong.", mode="enabled")
+    assert si.intent_for_router("enabled", intent) is intent
+
+
+def test_off_mode_never_forwards_intent_to_the_router():
+    assert si.intent_for_router("off", None) is None
+
+
 def test_student_intent_signal_is_additive_only_never_changes_the_decision():
     """When a StudentIntent IS supplied (flag on), the router's actual
     decision (lane/mode/complexity/confidence/reason) must stay identical —

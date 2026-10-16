@@ -1725,16 +1725,16 @@ async def ask_stream_endpoint(
         )
     # Semantic Student Intent Interpreter (PR 1, see
     # docs/semantic-intent-layer-map.md). Flag defaults to "off": in that
-    # case this is never even computed, so the hot path is unchanged. When
-    # "shadow"/"enabled", it is attached to resolve_execution_plan as an
-    # additional, non-authoritative signal (see that function's own
-    # docstring on the `student_intent` parameter for exactly what it does
-    # and does not affect).
+    # case this is never even computed, so the hot path is unchanged. See
+    # student_intent.intent_for_router for why "shadow" computes but never
+    # forwards to resolve_execution_plan, while "enabled" does.
     semantic_intent_mode = get_settings().semantic_intent_mode
     student_intent = None
     if semantic_intent_mode != "off":
-        from ..services.student_intent import interpret_student_intent  # noqa: WPS433
-        student_intent = interpret_student_intent(
+        from ..services.student_intent import (  # noqa: WPS433
+            intent_for_router, interpret_student_intent,
+        )
+        computed_intent = interpret_student_intent(
             question,
             dialogue=turn_resolution,
             resolved_access=resolved_access,
@@ -1743,6 +1743,7 @@ async def ask_stream_endpoint(
             ),
             mode=semantic_intent_mode,
         )
+        student_intent = intent_for_router(semantic_intent_mode, computed_intent)
     _task_profile, execution_plan = resolve_execution_plan(
         question=turn_resolution.resolved_request,
         resolved_access=resolved_access,
