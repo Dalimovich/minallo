@@ -7,13 +7,29 @@ import { SseParser } from '../../frontend/js/services/sse-parser.ts';
 
 const source = fs.readFileSync(new URL('../../frontend/js/features/chatbot-new/shell.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('shell.ts', source, ts.ScriptTarget.Latest, true);
-export function shellRuntime(overrides = {}, extraNames = []) {
+export function shellRuntime(overrides = {}, extraNames = [], extraCode = '') {
   const names = [
     'streamFromAskStream', 'AskStreamError', 'resolveTutorModeForTurn', 'isLearnerAccount',
     'activePdfContextForCurrentRole', ...extraNames,
   ];
-  const selected = ast.statements.filter(n => n.name && names.includes(n.name.text)).map(n => n.getText(ast)).join('\n');
-  const code = ts.transpileModule(selected, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  // Matches function/class declarations (n.name directly) as well as
+  // top-level `const`/`let` statements (the name lives on each declarator,
+  // not the statement) — needed to pull module-level state like `liveState`
+  // and `chatStore` out alongside the functions that mutate them.
+  const declares = (n) => {
+    if (n.name && names.includes(n.name.text)) return true;
+    if (ts.isVariableStatement(n)) {
+      return n.declarationList.declarations.some(d => d.name && names.includes(d.name.text));
+    }
+    return false;
+  };
+  const selected = ast.statements.filter(declares).map(n => n.getText(ast)).join('\n');
+  // extraCode: test-only accessor functions appended after the extracted
+  // statements, in the SAME vm context — the only way to read a top-level
+  // `const`/`let` value back out, since module-level bindings never become
+  // properties of the sandbox object the way `function` declarations do.
+  const code = ts.transpileModule(selected, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
+    + '\n' + extraCode;
   const context = {
     console, TextDecoder, TextEncoder, DOMException, AbortController, SseParser,
     crypto: globalThis.crypto, structuredClone,
