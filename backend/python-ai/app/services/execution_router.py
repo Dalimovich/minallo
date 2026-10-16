@@ -278,15 +278,31 @@ def resolve_execution_plan(*, question: str, resolved_access: ResolvedDocumentAc
                            previous_question: str | None = None,
                            resolved_turn: Any | None = None,
                            has_course_context: bool = False,
-                           has_specific_file: bool = False) -> tuple[TaskProfile, ExecutionPlan]:
+                           has_specific_file: bool = False,
+                           # Semantic Student Intent Interpreter (PR 1, see
+                           # docs/semantic-intent-layer-map.md): an optional,
+                           # ADDITIONAL, non-authoritative signal the caller
+                           # may attach once computed. Typed `Any` (matching
+                           # `resolved_turn` above) to avoid importing
+                           # student_intent.py here, which would otherwise be
+                           # the only reason this module needs that import.
+                           # Its ONLY effect below is one informational entry
+                           # in the returned `signals` tuple — it never
+                           # changes groundingMode/executionLane/complexity/
+                           # confidence/reason. This router's authority over
+                           # the actual decision is unchanged; a caller that
+                           # never passes this parameter (the flag-off path)
+                           # gets byte-for-byte identical output.
+                           student_intent: Any | None = None) -> tuple[TaskProfile, ExecutionPlan]:
     profile = classify_task_profile(
         question=question, resolved_access=resolved_access, source_mode=source_mode,
         has_previous_answer=has_previous_answer, previous_question=previous_question,
         resolved_turn=resolved_turn, has_course_context=has_course_context,
         has_specific_file=has_specific_file,
     )
+    from .student_intent import execution_signal  # noqa: WPS433 — avoid a module-load cycle
     signals = tuple(key for key, value in asdict(profile).items()
-                    if value is True and key != "estimatedComplexity")
+                    if value is True and key != "estimatedComplexity") + execution_signal(student_intent)
     if profile.needsFullCoverage:
         lane, mode, complexity, reason, confidence = (ExecutionLane.FULL_DOCUMENT, GroundingMode.FULL_DOCUMENT, ExecutionComplexity.DEEP, "resolved_full_document_access", 1.0)
     elif profile.needsVisiblePage:

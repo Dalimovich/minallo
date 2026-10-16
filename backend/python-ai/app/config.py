@@ -111,6 +111,15 @@ class Settings(BaseSettings):
         False, alias="WRITING_COACH_PERSISTENCE_ENABLED"
     )
 
+    # --- Semantic Student Intent Interpreter (see
+    # docs/semantic-intent-layer-map.md). Three states, not a bool: "off"
+    # (default — the router never even computes a StudentIntent), "shadow"
+    # (computed + diagnostics logged, never affects the response), "enabled"
+    # (computed and exposed to the router as an additional, non-authoritative
+    # signal). No state in this PR triggers a live/paid model call — the
+    # semantic path is stubbed until PR 2.
+    semantic_intent_mode: str = Field("off", alias="SEMANTIC_INTENT_MODE")
+
     # --- Transactional email (welcome mail on first login). Same Zoho account
     # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
     # rejects account passwords on SMTP). Endpoint 503s while these are unset.

@@ -1723,6 +1723,26 @@ async def ask_stream_endpoint(
             turn_resolution, evidence_requirement=EvidenceRequirement.COURSE_RETRIEVAL,
             requires_new_retrieval=True,
         )
+    # Semantic Student Intent Interpreter (PR 1, see
+    # docs/semantic-intent-layer-map.md). Flag defaults to "off": in that
+    # case this is never even computed, so the hot path is unchanged. When
+    # "shadow"/"enabled", it is attached to resolve_execution_plan as an
+    # additional, non-authoritative signal (see that function's own
+    # docstring on the `student_intent` parameter for exactly what it does
+    # and does not affect).
+    semantic_intent_mode = get_settings().semantic_intent_mode
+    student_intent = None
+    if semantic_intent_mode != "off":
+        from ..services.student_intent import interpret_student_intent  # noqa: WPS433
+        student_intent = interpret_student_intent(
+            question,
+            dialogue=turn_resolution,
+            resolved_access=resolved_access,
+            has_visible_context=bool(
+                grounding_request.viewerContext or payload.openFileContext
+            ),
+            mode=semantic_intent_mode,
+        )
     _task_profile, execution_plan = resolve_execution_plan(
         question=turn_resolution.resolved_request,
         resolved_access=resolved_access,
@@ -1743,6 +1763,7 @@ async def ask_stream_endpoint(
             payload.documentIds
             or (payload.courseFileScope or "").casefold() == "specific_files"
         ),
+        student_intent=student_intent,
     )
     routing_ms = (time.perf_counter() - routing_started) * 1000
     for document_id in payload.documentIds or []:
