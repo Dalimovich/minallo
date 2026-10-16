@@ -6414,6 +6414,18 @@ async def _prepare_ask_stream_response(
                     elif false_visual_denial:
                         from ..services.visual_repair import (  # noqa: WPS433
                             repair_false_visual_denial_sync,
+                            repair_reads_as_ungrounded_description,
+                        )
+                        # Only genuinely quantitative/exercise tasks (checkbox
+                        # extraction, labelled-diagram mapping, numerical
+                        # calculation) get the exercise-number/requested-quantity
+                        # checklist; a plain "explain this illustration" question
+                        # has neither, and that checklist gave the model literal
+                        # headers it echoed back as answer content instead of
+                        # reading the image (FACTORY BWL-01).
+                        needs_exercise_identification = bool(
+                            grounded_request_context.task_traits.requires_numerical_validation
+                            or grounded_request_context.task_traits.requires_complete_mapping
                         )
                         repaired = repair_false_visual_denial_sync(
                             request_id=request_id,
@@ -6422,6 +6434,7 @@ async def _prepare_ask_stream_response(
                             visible_page=payload.visiblePage,
                             open_context=generation_open_context,
                             image_parts=open_file_images,
+                            needs_exercise_identification=needs_exercise_identification,
                         )
                         repaired_verification = None
                         if repaired:
@@ -6466,10 +6479,22 @@ async def _prepare_ask_stream_response(
                                 )
                             ),
                         )
+                        # Structural validation (repair_validation.accepted) is a
+                        # no-op for a descriptive, non-exercise task: no exercise
+                        # number, required quantity, or mapping labels to compare
+                        # against, so a well-structured-but-ungrounded answer
+                        # passes it by default. repair_reads_as_ungrounded_description
+                        # is the floor that actually catches that case.
+                        descriptive_repair_ungrounded = bool(
+                            repaired
+                            and not needs_exercise_identification
+                            and repair_reads_as_ungrounded_description(repaired)
+                        )
                         repair_succeeded = bool(
                             repaired
                             and not _FALSE_VISUAL_DENIAL_RE.search(repaired)
                             and repair_validation.accepted
+                            and not descriptive_repair_ungrounded
                         )
                         safe_text = repaired if repair_succeeded else (
                             "The current page image was attached, but Minallo "

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Any, Callable
 
@@ -189,13 +190,53 @@ def generate_visual_repair(
     return str(response.choices[0].message.content or "").strip()
 
 
+_EXERCISE_IDENTIFICATION_STEPS = """Before answering, identify internally:
+1. the exercise number;
+2. the requested quantity or object;
+3. the relevant formula, diagram, table, or marked area;
+4. at least two visible labels, values, symbols, or answer choices."""
+
+# No numbered checklist for descriptive requests (FACTORY BWL-01): a plain
+# "explain the illustration" question has no exercise number or requested
+# quantity, and the exercise-shaped checklist above gave the model literal
+# headers it could echo back verbatim as answer content instead of reading
+# the image — confirmed from a live repair output whose section headers
+# ("Exercise Number:", "Requested Quantity or Object:", ...) were lifted
+# straight from this prompt rather than describing anything on the page.
+_DESCRIPTIVE_IDENTIFICATION_STEPS = """Before answering, identify internally the
+visible sections or components, any labels or captions actually printed on
+the page, and how those parts connect or relate to each other."""
+
+
+_EXERCISE_ANTI_INVENTION_GUARD = (
+    "Describe only what is actually visible on the page — do not invent an "
+    "exercise number, a requested quantity, or specific values that are not "
+    "actually printed there."
+)
+_DESCRIPTIVE_ANTI_INVENTION_GUARD = (
+    "Describe only what is actually visible on the page — do not invent "
+    "labels, values, or specific content that is not actually printed there."
+)
+
+
 def _repair_prompt(
     *,
     question: str,
     draft: str,
     visible_page: int | None,
     open_context: str,
+    needs_exercise_identification: bool,
 ) -> str:
+    identification_steps = (
+        _EXERCISE_IDENTIFICATION_STEPS
+        if needs_exercise_identification
+        else _DESCRIPTIVE_IDENTIFICATION_STEPS
+    )
+    anti_invention_guard = (
+        _EXERCISE_ANTI_INVENTION_GUARD
+        if needs_exercise_identification
+        else _DESCRIPTIVE_ANTI_INVENTION_GUARD
+    )
     return f"""Your previous draft incorrectly claimed that the visible PDF page,
 formula, diagram, or table was unavailable.
 
@@ -205,17 +246,13 @@ Visible page: {visible_page or "unknown"}
 
 Inspect the attached visual evidence again.
 
-Before answering, identify internally:
-1. the exercise number;
-2. the requested quantity or object;
-3. the relevant formula, diagram, table, or marked area;
-4. at least two visible labels, values, symbols, or answer choices.
+{identification_steps}
 
 Then answer the user's actual question:
 {question}
 
 Do not ask the user to reopen, upload, select, or paste content that is
-already attached.
+already attached. {anti_invention_guard}
 
 Previous incorrect draft:
 {draft}
@@ -223,6 +260,43 @@ Previous incorrect draft:
 Current visible-page text:
 {open_context[:12000]}
 """
+
+
+# Deliberately shorter, header-shaped fragments rather than full sentences:
+# the observed failure had the model turn the checklist into title-case
+# section headers ("Exercise Number:", "Requested Quantity or Object:") in
+# its answer, not a verbatim copy of the full instruction sentences.
+_REPAIR_INSTRUCTION_ECHO_PHRASES = (
+    "exercise number",
+    "requested quantity",
+    "relevant formula, diagram, table",
+    "visible labels, values, symbols",
+    "visible sections or components",
+    "labels or captions actually printed",
+)
+_VAGUE_HEDGE_RE = re.compile(
+    r"\b(?:likely|probably|presumably)\s+(?:represents?|indicates?|shows?)\b|"
+    r"\bappears?\s+to\s+(?:represent|show|indicate)\b|"
+    r"\bseems?\s+to\s+(?:represent|show|indicate)\b",
+    re.IGNORECASE,
+)
+
+
+def repair_reads_as_ungrounded_description(repaired: str) -> bool:
+    """Floor check for descriptive (non-exercise) repairs, where the existing
+    structural identity/obligation validation is a no-op (no exercise number,
+    no required quantity, no mapping labels to compare against). A
+    well-structured answer can still be a model parroting the repair prompt's
+    own instructions back as section headers (a real, observed failure —
+    FACTORY BWL-01), or papering over an unread image with vague hedging
+    ("likely represents...") instead of naming what's actually shown. Neither
+    check references any specific diagram's labels — both are generic
+    signals of template-echoing or guessing, so this generalizes to any
+    lecture illustration, not just the one that surfaced the bug."""
+    text = (repaired or "").casefold()
+    if any(phrase in text for phrase in _REPAIR_INSTRUCTION_ECHO_PHRASES):
+        return True
+    return len(_VAGUE_HEDGE_RE.findall(repaired or "")) >= 2
 
 
 async def repair_false_visual_denial(
@@ -235,12 +309,14 @@ async def repair_false_visual_denial(
     image_parts: list[dict[str, object]],
     model: str,
     generator: Callable[..., str] = generate_visual_repair,
+    needs_exercise_identification: bool = False,
 ) -> str | None:
     prompt = _repair_prompt(
         question=question,
         draft=draft,
         visible_page=visible_page,
         open_context=open_context,
+        needs_exercise_identification=needs_exercise_identification,
     )
     try:
         return await asyncio.wait_for(
@@ -264,6 +340,7 @@ def repair_false_visual_denial_sync(
     image_parts: list[dict[str, object]],
     model: str | None = None,
     generator: Callable[..., str] = generate_visual_repair,
+    needs_exercise_identification: bool = False,
 ) -> str | None:
     """Sync adapter for the existing synchronous SSE generator."""
     prompt = _repair_prompt(
@@ -271,6 +348,7 @@ def repair_false_visual_denial_sync(
         draft=draft,
         visible_page=visible_page,
         open_context=open_context,
+        needs_exercise_identification=needs_exercise_identification,
     )
     chosen_model = model or get_settings().openai_generate_model
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="visual-repair")
@@ -340,6 +418,7 @@ __all__ = [
     "VISUAL_DENIAL_REPAIR_TIMEOUT_SECONDS",
     "VisualAnswerOptionResult",
     "VisualTaskIdentityResult",
+    "repair_reads_as_ungrounded_description",
     "generate_visual_repair",
     "generate_visual_task_identity",
     "visual_identity_model_for_task",
