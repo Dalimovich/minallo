@@ -92,21 +92,37 @@ _NO_SOLVE_RE = re.compile(
 # `(?<!why\s)` keeps a genuine "why don't you summarize...?" request from
 # being read as a prohibition: "why" + negation word together is a polite
 # ASK, not a rejection.
-NEGATED_SUMMARY_RE = re.compile(
-    r"\b(?:(?<!why\s)do\s+not|(?<!why\s)don't|without|nicht|keine?)\b.{0,25}\b(?:summar(?:y|ize|ise)\w*|recap|zusammenfass\w*)\b|"
-    r"\berkl(?:ä|ae)r\w*\b.{0,40}\bnicht\s+zusammenfass\w*\b|"
+_SUMMARY_PROHIBITION_RE = re.compile(
+    r"\b(?:(?<!why\s)do\s+not|(?<!why\s)don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:summar(?:y|ize|ise)\w*|recap|zusammenfass\w*)\b|"
+    # Bare "no" is a common, naturally adjacent prohibition ("no summary
+    # please, just explain") but risks false negatives at a distance ("No, I
+    # mean summarize the whole document") — kept as a TIGHT adjacent bigram
+    # only, not folded into the gapped alternative above.
+    r"\bno\s+(?:summar(?:y|ize|ise)\w*)\b|"
+    r"\berkl(?:ä|ae)r\w*\b[^.!?;,\n]{0,40}\bnicht\s+zusammenfass\w*\b|"
     r"\bkeine\s+zusammenfassung\b|"
-    r"\bfasse\b.{0,40}\bnicht\b.{0,10}\bzusammen\b|"
-    r"\b(?:why|wieso|warum)\b.{0,30}\b(?:did|have|has|hast|habe)\b.{0,30}\b(?:summar(?:y|ize|ise)\w*|zusammengefasst)\b|"
-    r"\b(?:why|wieso|warum)\b.{0,30}\bzusammengefasst\b",
+    r"\bfasse\b[^.!?;,\n]{0,40}\bnicht\b[^.!?;,\n]{0,10}\bzusammen\b",
     re.IGNORECASE,
+)
+_SUMMARY_FEEDBACK_RE = re.compile(
+    r"\b(?:why|wieso|warum)\b[^.!?;,\n]{0,30}\b(?:did|have|has|hast|habe)\b[^.!?;,\n]{0,30}\b(?:summar(?:y|ize|ise)\w*|zusammengefasst)\b|"
+    r"\b(?:why|wieso|warum)\b[^.!?;,\n]{0,30}\bzusammengefasst\b",
+    re.IGNORECASE,
+)
+# Routing suppresses feedback mentions too; only actual prohibitions affect prompts.
+NEGATED_SUMMARY_RE = re.compile(
+    _SUMMARY_PROHIBITION_RE.pattern + "|" + _SUMMARY_FEEDBACK_RE.pattern, re.IGNORECASE
 )
 _NO_SUMMARY_RE = NEGATED_SUMMARY_RE
-_NO_QUIZ_RE = re.compile(
-    r"\b(?:do\s+not|don't|without|nicht|keine?)\s+(?:quiz\w*|test\s+me|abfrag\w*)\b|"
-    r"\berkl(?:ä|ae)r\w*\b.{0,40}\bnicht\s+abfrag\w*\b",
+# Public for the same reason as NEGATED_SUMMARY_RE above — dialogue_state.py
+# shares this exact pattern rather than hand-copying it.
+NEGATED_QUIZ_RE = re.compile(
+    r"\b(?:(?<!why\s)do\s+not|(?<!why\s)don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:quiz\w*|test\s+me|abfrag\w*)\b|"
+    r"\bno\s+quiz\w*\b|"
+    r"\berkl(?:ä|ae)r\w*\b[^.!?;,\n]{0,40}\bnicht\s+abfrag\w*\b",
     re.IGNORECASE,
 )
+_NO_QUIZ_RE = NEGATED_QUIZ_RE
 _CONCEPT_RE = re.compile(
     r"\b(explain|why|how|intuition|concept|meaning|interpret|describe|"
     r"erkl(?:ä|ae)r\w*|warum|wie|bedeutet|konzept|intuition)\b",
@@ -667,7 +683,7 @@ def intent_style_instruction(intent: AcademicIntent | str | None, question: str 
     # produce that structure as an incidental default, including imitating a
     # "Zusammenfassung" heading that may appear in the retrieved source text.
     text = question or ""
-    if _NO_SUMMARY_RE.search(text):
+    if _SUMMARY_PROHIBITION_RE.search(text):
         lines.append(
             "- The student explicitly prohibited summarizing. Do NOT include a "
             "\"Summary\"/\"Zusammenfassung\" heading or a concluding \"In summary\"/"
@@ -812,6 +828,7 @@ def intent_style_instruction(intent: AcademicIntent | str | None, question: str 
 
 __all__ = (
     "AcademicIntent",
+    "NEGATED_QUIZ_RE",
     "NEGATED_SUMMARY_RE",
     "PROFESSOR_STYLE_INSTRUCTION",
     "chitchat_answer",

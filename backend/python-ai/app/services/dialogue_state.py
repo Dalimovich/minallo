@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
-from .answer_intent import NEGATED_SUMMARY_RE
+from .answer_intent import NEGATED_QUIZ_RE, NEGATED_SUMMARY_RE
 
 log = logging.getLogger(__name__)
 
@@ -855,17 +855,24 @@ _TASK_SIGNALS: tuple[tuple[TaskFamily, re.Pattern[str]], ...] = (
 )
 
 
+_NEGATION_GUARDS = {
+    TaskFamily.SUMMARIZE: NEGATED_SUMMARY_RE,
+    TaskFamily.QUIZ: NEGATED_QUIZ_RE,
+}
+
+
 def _infer_task_family(text: str) -> TaskFamily:
     text = text or ""
     for family, pattern in _TASK_SIGNALS:
-        # SUMMARIZE is checked ahead of EXPLAIN below, so a message that
-        # mentions "summarize" only to reject it ("explain this, do not
-        # summarize it") must not win on word order alone — skip straight to
+        # SUMMARIZE/QUIZ are checked ahead of EXPLAIN below, so a message
+        # that mentions "summarize"/"quiz" only to reject it ("explain this,
+        # don't quiz me") must not win on word order alone — skip straight to
         # the next family (typically EXPLAIN) instead. Shares its negation
-        # pattern with answer_intent.NEGATED_SUMMARY_RE (the one that actually
-        # drives the final prompt) rather than hand-copying it, so a future
-        # fix to one can't silently diverge from the other.
-        if family is TaskFamily.SUMMARIZE and NEGATED_SUMMARY_RE.search(text):
+        # pattern with answer_intent.NEGATED_SUMMARY_RE/NEGATED_QUIZ_RE (the
+        # ones that actually drive the final prompt) rather than
+        # hand-copying it, so a future fix to one can't silently diverge.
+        guard = _NEGATION_GUARDS.get(family)
+        if guard is not None and guard.search(text):
             continue
         if pattern.search(text):
             return family

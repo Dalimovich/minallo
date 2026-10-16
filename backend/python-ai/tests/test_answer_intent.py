@@ -15,7 +15,7 @@ _fake_emb = types.ModuleType("app.services.embeddings")
 _fake_emb.embed_texts = lambda texts: [[0.0] * 1536 for _ in texts]
 sys.modules.setdefault("app.services.embeddings", _fake_emb)
 
-from app.services.answer_intent import AcademicIntent, classify_academic_intent  # noqa: E402
+from app.services.answer_intent import AcademicIntent, classify_academic_intent, intent_style_instruction  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -416,6 +416,52 @@ def test_unrelated_fasse_zusammen_cooccurrence_does_not_misfire() -> None:
     'zusammenfassen'. Must not route to COURSE_SUMMARY."""
     text = "Ich fasse die Unterlagen und lege sie zusammen mit dem Hefter weg."
     assert classify_academic_intent(text) != AcademicIntent.COURSE_SUMMARY
+
+
+# --- Second review pass (final verification request), fresh-context review ---
+# caught 4 more real bugs before anything was merged. All fixed; locked in here.
+@pytest.mark.parametrize(
+    "question",
+    [
+        # (1) _NO_QUIZ_RE required tight adjacency; loosened to match
+        # NEGATED_SUMMARY_RE's gapped style.
+        "please don't turn this into a quiz",
+        "I don't want to be quizzed on this, just explain",
+        # (2) bare "no" was never a recognised negation trigger at all.
+        "No summary please, just explain the concept",
+        "no quiz, just teach me this",
+    ],
+)
+def test_loosened_negation_guards_no_longer_misroute_to_prohibited_task(question: str) -> None:
+    intent = classify_academic_intent(question)
+    assert intent not in (AcademicIntent.COURSE_SUMMARY, AcademicIntent.QUIZ_GENERATION)
+
+
+@pytest.mark.parametrize("question, expected", [
+    ("Do not rush. Summarize this page.", AcademicIntent.COURSE_SUMMARY),
+    ("Do not guess; quiz me on this chapter.", AcademicIntent.QUIZ_GENERATION),
+    ("Why don't you quiz me?", AcademicIntent.QUIZ_GENERATION),
+])
+def test_unrelated_negation_preserves_positive_task(question, expected) -> None:
+    assert classify_academic_intent(question) == expected
+    instruction = intent_style_instruction(expected, question)
+    assert "explicitly prohibited" not in instruction
+    assert "explicitly asked not to be quizzed" not in instruction
+
+
+def test_summary_feedback_does_not_invent_a_prohibition() -> None:
+    question = "Why did you summarize that?"
+    intent = classify_academic_intent(question)
+    assert intent != AcademicIntent.COURSE_SUMMARY
+    assert "explicitly prohibited" not in intent_style_instruction(intent, question)
+
+
+def test_bare_no_at_a_distance_does_not_false_positive() -> None:
+    """The tight bigram form for bare "no" ("no summary"/"no quiz") must not
+    fire when "no" negates something else entirely, several words before a
+    genuine positive summarize/quiz request later in the same sentence."""
+    text = "No, I mean summarize the whole document, not just page 3."
+    assert classify_academic_intent(text) == AcademicIntent.COURSE_SUMMARY
 
 
 def test_prohibited_summary_adds_explicit_no_summary_instruction() -> None:

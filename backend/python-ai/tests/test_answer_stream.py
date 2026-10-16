@@ -787,3 +787,78 @@ def test_followup_detail_request_is_not_hijacked_by_page_summary_heading(monkeyp
 
     assert captured, "intent_style_instruction was never called"
     assert captured[0] == AcademicIntent.GENERAL_COURSE_QA
+
+
+def test_prohibition_and_depth_reach_the_actual_model_call_boundary(monkeypatch) -> None:
+    """P1 follow-up verification: not a classify_academic_intent() unit test —
+    this drives the real stream_answer() generator all the way to the actual
+    `client.chat.completions.create(...)` call and inspects the literal
+    `messages` kwarg that would be sent to the model, using the exact
+    confirmed production repro (BWL_gesamt page 6: a page whose own text has
+    a literal "Zusammenfassung" heading, student explicitly says explain in
+    detail / do not summarize)."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []  # empty stream: zero chunks, loop body never runs
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+
+    page_text = (
+        "Wirtschaft und Oekonomie\n\n"
+        "Der Begriff Wirtschaft leitet sich vom althochdeutschen Wort 'wirt' ab, "
+        "waehrend Oekonomie auf die griechischen Wurzeln oikos (Haus) und nemein "
+        "(verwalten) zurueckgeht.\n\n"
+        "## Zusammenfassung\n"
+        "Wirtschaft bezeichnet die Gesamtheit aller Einrichtungen und Handlungen, "
+        "die der Deckung menschlicher Beduerfnisse dienen.\n"
+    )
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass  # drive to completion; the fake stream has nothing to yield
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    system_message = next(m["content"] for m in messages if m["role"] == "system")
+    user_message = next(m["content"] for m in messages if m["role"] == "user")
+    assert isinstance(system_message, str) and isinstance(user_message, str)
+
+    # (1) Primary task is explain, not summarize: no instruction says to
+    # treat this as a summary request.
+    assert "Treat this as a summary request" not in system_message
+    # (2) + (3) The prohibition is explicitly preserved as a high-priority
+    # instruction, independent of which intent the request resolved to.
+    assert "prohibited summarizing" in system_message
+    assert "Do NOT include a" in system_message
+    # (4) No system/task instruction anywhere tells the model to summarize —
+    # already covered directly by the "Treat this as a summary request" check
+    # above (that's the literal instruction text the COURSE_SUMMARY branch
+    # injects); the base template's own unrelated, generic uses of the word
+    # "summary" elsewhere are not a defect and are not asserted against here.
+    # (5) The page's own CONTENT (the actual sentence under its
+    # "Zusammenfassung" heading) remains SOURCE material, never promoted into
+    # an instruction — the word "Zusammenfassung" itself legitimately also
+    # appears in the generic prohibition instruction above (quoting what NOT
+    # to title a heading), so the real test is the page's specific wording,
+    # not the bare word.
+    page_summary_sentence = "Wirtschaft bezeichnet die Gesamtheit aller Einrichtungen und Handlungen"
+    assert page_summary_sentence not in system_message
+    # (6) The correct page context IS available for grounding, and the raw
+    # student instruction reaches the model verbatim (not paraphrased away).
+    assert page_summary_sentence in user_message
+    assert "Zusammenfassung" in user_message
+    assert "Wirtschaft" in user_message
+    assert question in user_message

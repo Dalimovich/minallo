@@ -128,10 +128,17 @@ const CONTEXT_INITIAL_STATUS: Record<ThinkingContext, AssistantStatus> = {
 // below — mirrors answer_intent.NEGATED_SUMMARY_RE on the backend. `(?<!why\s)`
 // keeps a genuine "why don't you summarize...?" request from reading as a
 // prohibition (a polite ask, not a rejection).
-const NEGATED_SUMMARY_RE = /\b(?:(?<!why\s)do not|(?<!why\s)don't|without|nicht|keine?)\b.{0,25}\b(?:summari[sz]e|summary|zusammenfass\w*)\b/i;
+const NEGATED_SUMMARY_RE = /\b(?:(?<!why\s)do not|(?<!why\s)don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:summari[sz]e|summary|zusammenfass\w*)\b|\bno\s+summar(?:y|ize|ise)\w*\b|\b(?:why|wieso|warum)\b[^.!?;,\n]{0,30}\b(?:did|have|has|hast|habe)\b[^.!?;,\n]{0,30}\b(?:summar(?:y|ize|ise)\w*|zusammengefasst)\b/i;
 
 function mentionsSummary(question: string): boolean {
   return /\bsummari[sz]e\b|\bsummary\b/.test(question) && !NEGATED_SUMMARY_RE.test(question);
+}
+
+// Mirrors answer_intent.NEGATED_QUIZ_RE on the backend.
+const NEGATED_QUIZ_RE = /\b(?:(?<!why\s)do not|(?<!why\s)don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:quiz\w*|test me|abfrag\w*)\b|\bno quiz\w*\b/i;
+
+function mentionsQuiz(question: string): boolean {
+  return /\bquiz\b/.test(question) && !NEGATED_QUIZ_RE.test(question);
 }
 
 function isAssistantStatus(value: string): value is AssistantStatus {
@@ -150,7 +157,7 @@ export function getThinkingContext(input: ThinkingContextInput = {}): ThinkingCo
 
   if (input.problemSolver || tutorMode === 'solve') return 'exercise-solver';
   if (tool === 'summary' || mentionsSummary(question)) return 'summary';
-  if (tool === 'quiz' || tutorMode === 'quiz' || /\bquiz\b/.test(question)) return 'quiz';
+  if (tool === 'quiz' || tutorMode === 'quiz' || mentionsQuiz(question)) return 'quiz';
   if (tool === 'flashcards' || /\bflashcards?\b/.test(question)) return 'flashcards';
   if (
     input.hasCourseMaterial ||
@@ -171,7 +178,7 @@ export function getInitialAssistantStatus(input: ThinkingContextInput = {}): Ass
 
   if (input.problemSolver || tutorMode === 'solve') return 'preparing_step_solution';
   if (tool === 'examforge' || /\bexamforge\b|\bexam\b/.test(question)) return 'preparing_examforge';
-  if (tool === 'quiz' || tutorMode === 'quiz' || /\bquiz\b/.test(question)) return 'preparing_quiz';
+  if (tool === 'quiz' || tutorMode === 'quiz' || mentionsQuiz(question)) return 'preparing_quiz';
   if (tool === 'flashcards' || /\bflashcards?\b/.test(question)) return 'preparing_flashcards';
   if (tool === 'summary' || mentionsSummary(question)) return 'preparing_summary';
   if (/\b(deep\s*learn|deep explanation|step by step|explain deeply)\b/.test(question)) {

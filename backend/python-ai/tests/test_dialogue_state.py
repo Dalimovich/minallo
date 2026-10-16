@@ -351,6 +351,22 @@ def test_task_family_is_negation_aware_for_summarize() -> None:
     assert resolution.task_family is TaskFamily.SUMMARIZE
 
 
+def test_task_family_is_negation_aware_for_quiz() -> None:
+    """Second review pass (fresh context) caught that only SUMMARIZE had a
+    negation guard here, not QUIZ (checked even earlier in _TASK_SIGNALS) —
+    "Explain this chapter; don't quiz me." resolved task_family=QUIZ, diverging
+    from the now-correct AcademicIntent.CONCEPTUAL_EXPLANATION classification
+    and risking misrouted workspace/grounding decisions downstream."""
+    from app.services.dialogue_state import TaskFamily, resolve_dialogue
+
+    resolution = resolve_dialogue("Explain this chapter; don't quiz me.")
+    assert resolution.task_family is TaskFamily.EXPLAIN
+
+    # Genuine positive quiz requests must still classify correctly.
+    resolution = resolve_dialogue("Quiz me on this chapter.")
+    assert resolution.task_family is TaskFamily.QUIZ
+
+
 def test_semantic_resolver_failure_preserves_safe_continuity(monkeypatch) -> None:
     from app.services import openai_client
     from app.services.dialogue_state import (
