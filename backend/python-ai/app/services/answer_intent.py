@@ -74,12 +74,46 @@ _NO_SOLVE_RE = re.compile(
     r"\berkl(?:ä|ae)r(?:e|en)?\b.{0,40}\bnicht\s+l(?:ö|oe)sen\b",
     re.IGNORECASE,
 )
+# Negation guard for SUMMARY, mirroring _NO_SOLVE_RE above: a message that
+# merely MENTIONS "summarize" while explicitly rejecting it (e.g. "explain
+# this, do not summarize it") must not be classified as that task. Also
+# covers the "why did you summarize that?" feedback phrasing, which mentions
+# the word without requesting it, and the German split-verb negation ("fasse
+# ... nicht zusammen"). English/German only, by design — see
+# _CONCEPT_RE/_SUMMARY_RE/_QUIZ_RE, which are themselves English/German
+# vocab; other languages never trip the positive match in the first place, so
+# they fall through to a safe GENERAL_COURSE_QA rather than being misrouted
+# (documented limitation, not a silent pass).
+#
+# Public (not prefixed with `_`) because dialogue_state.py and
+# execution_router.py import this exact pattern too, rather than hand-copying
+# it — a prior version of this fix had three independent copies that had
+# already started drifting apart (code review caught it before merge).
+# `(?<!why\s)` keeps a genuine "why don't you summarize...?" request from
+# being read as a prohibition: "why" + negation word together is a polite
+# ASK, not a rejection.
+NEGATED_SUMMARY_RE = re.compile(
+    r"\b(?:(?<!why\s)do\s+not|(?<!why\s)don't|without|nicht|keine?)\b.{0,25}\b(?:summar(?:y|ize|ise)\w*|recap|zusammenfass\w*)\b|"
+    r"\berkl(?:ä|ae)r\w*\b.{0,40}\bnicht\s+zusammenfass\w*\b|"
+    r"\bkeine\s+zusammenfassung\b|"
+    r"\bfasse\b.{0,40}\bnicht\b.{0,10}\bzusammen\b|"
+    r"\b(?:why|wieso|warum)\b.{0,30}\b(?:did|have|has|hast|habe)\b.{0,30}\b(?:summar(?:y|ize|ise)\w*|zusammengefasst)\b|"
+    r"\b(?:why|wieso|warum)\b.{0,30}\bzusammengefasst\b",
+    re.IGNORECASE,
+)
+_NO_SUMMARY_RE = NEGATED_SUMMARY_RE
+_NO_QUIZ_RE = re.compile(
+    r"\b(?:do\s+not|don't|without|nicht|keine?)\s+(?:quiz\w*|test\s+me|abfrag\w*)\b|"
+    r"\berkl(?:ä|ae)r\w*\b.{0,40}\bnicht\s+abfrag\w*\b",
+    re.IGNORECASE,
+)
 _CONCEPT_RE = re.compile(
     r"\b(explain|why|how|intuition|concept|meaning|interpret|describe|"
-    r"erkl(?:ä|ae)r(?:e|en)?|warum|wie|bedeutet|konzept|intuition)\b",
+    r"erkl(?:ä|ae)r\w*|warum|wie|bedeutet|konzept|intuition)\b",
     re.IGNORECASE,
 )
 _SUMMARY_RE = re.compile(
+    r"\bfasse\b.{0,20}\bzusammen\b|"
     r"\b(summar(?:y|ize|ise)|recap|overview|key points|main idea|"
     r"zusammenfass(?:ung|en)|fasse zusammen|kernaussagen?)\b",
     re.IGNORECASE,
@@ -101,7 +135,11 @@ _CODE_RE = re.compile(
     r"compiler|runtime|stack trace)\b",
     re.IGNORECASE,
 )
-_QUIZ_RE = re.compile(r"\b(quiz|mcq|multiple choice|practice questions?|test me|prüfe mich|uebungsfragen|übungsfragen)\b", re.IGNORECASE)
+_QUIZ_RE = re.compile(
+    r"\b(quiz|mcq|multiple choice|practice questions?|test me|prüfe mich|uebungsfragen|übungsfragen|abfrag\w*)\b|"
+    r"\bfrag(?:e|en)?\s+mich\s+ab\b",
+    re.IGNORECASE,
+)
 # A request to BUILD an exam/Probeklausur. Either an unambiguous noun, or a
 # creation verb followed (within a short span) by exam/klausur/prüfung.
 _EXAM_GEN_RE = re.compile(
@@ -415,11 +453,11 @@ def classify_academic_intent(
     # into a one-shot quiz set ("test me orally").
     if _ORAL_EXAM_RE.search(text):
         return AcademicIntent.ORAL_EXAM_PRACTICE
-    if _QUIZ_RE.search(text):
+    if _QUIZ_RE.search(text) and not _NO_QUIZ_RE.search(text):
         return AcademicIntent.QUIZ_GENERATION
     if _CODE_RE.search(text):
         return AcademicIntent.CODE_PROBLEM
-    if _SUMMARY_RE.search(text):
+    if _SUMMARY_RE.search(text) and not _NO_SUMMARY_RE.search(text):
         return AcademicIntent.COURSE_SUMMARY
     # File/chapter comparison BEFORE the generic one so it gets the per-file
     # table; plain "compare A and B" (concepts) stays COMPARISON.
@@ -619,9 +657,25 @@ def intent_allows_missing_input(intent: AcademicIntent | str | None) -> bool:
     return intent_is_math_like(intent)
 
 
-def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
+def intent_style_instruction(intent: AcademicIntent | str | None, question: str | None = None) -> str:
     intent = _normalise_intent(intent) or AcademicIntent.GENERAL_COURSE_QA
     lines = ["", "", "ACADEMIC TASK INTENT ROUTING:"]
+
+    # Explicit prohibitions are stated here, independent of which intent the
+    # request routed to — the routing fix above only stops the WRONG task
+    # (summarize/quiz) from being picked; this is what tells the model not to
+    # produce that structure as an incidental default, including imitating a
+    # "Zusammenfassung" heading that may appear in the retrieved source text.
+    text = question or ""
+    if _NO_SUMMARY_RE.search(text):
+        lines.append(
+            "- The student explicitly prohibited summarizing. Do NOT include a "
+            "\"Summary\"/\"Zusammenfassung\" heading or a concluding \"In summary\"/"
+            "\"Zusammenfassend\" recap, even if the source material itself has a "
+            "summary heading — teach the concept in detail instead."
+        )
+    if _NO_QUIZ_RE.search(text):
+        lines.append("- The student explicitly asked not to be quizzed; do not turn this into quiz questions.")
 
     if intent == AcademicIntent.CASE_OR_APPLICATION_REASONING:
         lines.extend([
@@ -758,6 +812,7 @@ def intent_style_instruction(intent: AcademicIntent | str | None) -> str:
 
 __all__ = (
     "AcademicIntent",
+    "NEGATED_SUMMARY_RE",
     "PROFESSOR_STYLE_INSTRUCTION",
     "chitchat_answer",
     "academic_intent_from_turn",

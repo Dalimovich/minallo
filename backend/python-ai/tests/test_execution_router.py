@@ -798,3 +798,26 @@ def test_explicit_document_selection_is_never_silently_dropped(document_ids, act
         has_specific_file=has_specific_file,
     )
     assert plan.executionLane not in (ExecutionLane.FAST_GENERAL, ExecutionLane.FAST_CONTEXTUAL)
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Summarize this page.", True),
+        ("Explain the concept on this page in detail. Do not summarize it.", False),
+        ("Erkläre diese Seite ausführlich, nicht zusammenfassen.", False),
+    ],
+)
+def test_is_summarization_is_negation_aware(question: str, expected: bool) -> None:
+    """isSummarization currently has no reader downstream, but the P1 audit
+    flagged its negation-blind regex as a confirmed defect in its own right —
+    kept correct for whichever caller eventually reads it."""
+    from app.services.execution_router import classify_task_profile
+
+    profile = classify_task_profile(
+        question=question,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE,
+        source_mode="auto",
+        has_previous_answer=False,
+    )
+    assert profile.isSummarization is expected

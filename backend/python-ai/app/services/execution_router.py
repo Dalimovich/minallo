@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
 
+from .answer_intent import NEGATED_SUMMARY_RE
 from .grounding_contract import ResolvedDocumentAccess
 
 
@@ -259,7 +260,13 @@ def classify_task_profile(*, question: str, resolved_access: ResolvedDocumentAcc
         isShortFactualQuestion=definition, isFollowup=followup, isCalculation=calculation,
         isDerivation=derivation, isComparison=bool(_COMPARE_RE.search(q)),
         isGeneration=generation, isExtraction=extraction,
-        isSummarization=bool(_SUMMARY_RE.search(q)), requestsProfessorSpecificContent=course,
+        # A message that merely MENTIONS summarizing while explicitly rejecting
+        # it ("explain this, do not summarize it") must not set this — shares
+        # answer_intent.NEGATED_SUMMARY_RE rather than a hand-copied regex;
+        # this field currently has no reader, kept correct for whichever
+        # caller eventually reads it.
+        isSummarization=bool(_SUMMARY_RE.search(q)) and not bool(NEGATED_SUMMARY_RE.search(q)),
+        requestsProfessorSpecificContent=course,
         requestsExactCitationOrLocation=location,
         estimatedComplexity="high" if high else "low" if low else "medium",
     )

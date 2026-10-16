@@ -640,9 +640,9 @@ def test_visible_page_heading_does_not_override_explicit_explain_request(monkeyp
     original = answer.intent_style_instruction
     captured: list = []
 
-    def _spy(intent):
+    def _spy(intent, *args, **kwargs):
         captured.append(intent)
-        return original(intent)
+        return original(intent, *args, **kwargs)
 
     monkeypatch.setattr(answer, "intent_style_instruction", _spy)
 
@@ -674,9 +674,9 @@ def test_visible_page_heading_does_not_override_explicit_solve_request(monkeypat
     original = answer.intent_style_instruction
     captured: list = []
 
-    def _spy(intent):
+    def _spy(intent, *args, **kwargs):
         captured.append(intent)
-        return original(intent)
+        return original(intent, *args, **kwargs)
 
     monkeypatch.setattr(answer, "intent_style_instruction", _spy)
 
@@ -706,9 +706,9 @@ def test_quiz_request_is_not_hijacked_by_page_summary_heading(monkeypatch) -> No
     original = answer.intent_style_instruction
     captured: list = []
 
-    def _spy(intent):
+    def _spy(intent, *args, **kwargs):
         captured.append(intent)
-        return original(intent)
+        return original(intent, *args, **kwargs)
 
     monkeypatch.setattr(answer, "intent_style_instruction", _spy)
 
@@ -734,9 +734,9 @@ def test_genuine_summary_request_still_classifies_as_summary(monkeypatch) -> Non
     original = answer.intent_style_instruction
     captured: list = []
 
-    def _spy(intent):
+    def _spy(intent, *args, **kwargs):
         captured.append(intent)
-        return original(intent)
+        return original(intent, *args, **kwargs)
 
     monkeypatch.setattr(answer, "intent_style_instruction", _spy)
 
@@ -763,9 +763,9 @@ def test_followup_detail_request_is_not_hijacked_by_page_summary_heading(monkeyp
     original = answer.intent_style_instruction
     captured: list = []
 
-    def _spy(intent):
+    def _spy(intent, *args, **kwargs):
         captured.append(intent)
-        return original(intent)
+        return original(intent, *args, **kwargs)
 
     monkeypatch.setattr(answer, "intent_style_instruction", _spy)
 

@@ -123,6 +123,17 @@ const CONTEXT_INITIAL_STATUS: Record<ThinkingContext, AssistantStatus> = {
   general: 'reading_question',
 };
 
+// A message that only MENTIONS summarizing to reject it ("explain this,
+// don't summarize it") must not trigger the summary-flavored status/context
+// below — mirrors answer_intent.NEGATED_SUMMARY_RE on the backend. `(?<!why\s)`
+// keeps a genuine "why don't you summarize...?" request from reading as a
+// prohibition (a polite ask, not a rejection).
+const NEGATED_SUMMARY_RE = /\b(?:(?<!why\s)do not|(?<!why\s)don't|without|nicht|keine?)\b.{0,25}\b(?:summari[sz]e|summary|zusammenfass\w*)\b/i;
+
+function mentionsSummary(question: string): boolean {
+  return /\bsummari[sz]e\b|\bsummary\b/.test(question) && !NEGATED_SUMMARY_RE.test(question);
+}
+
 function isAssistantStatus(value: string): value is AssistantStatus {
   return Object.prototype.hasOwnProperty.call(assistantStatusText, value);
 }
@@ -138,7 +149,7 @@ export function getThinkingContext(input: ThinkingContextInput = {}): ThinkingCo
   const tutorMode = String(input.tutorMode || '').toLowerCase();
 
   if (input.problemSolver || tutorMode === 'solve') return 'exercise-solver';
-  if (tool === 'summary' || /\bsummari[sz]e\b|\bsummary\b/.test(question)) return 'summary';
+  if (tool === 'summary' || mentionsSummary(question)) return 'summary';
   if (tool === 'quiz' || tutorMode === 'quiz' || /\bquiz\b/.test(question)) return 'quiz';
   if (tool === 'flashcards' || /\bflashcards?\b/.test(question)) return 'flashcards';
   if (
@@ -162,7 +173,7 @@ export function getInitialAssistantStatus(input: ThinkingContextInput = {}): Ass
   if (tool === 'examforge' || /\bexamforge\b|\bexam\b/.test(question)) return 'preparing_examforge';
   if (tool === 'quiz' || tutorMode === 'quiz' || /\bquiz\b/.test(question)) return 'preparing_quiz';
   if (tool === 'flashcards' || /\bflashcards?\b/.test(question)) return 'preparing_flashcards';
-  if (tool === 'summary' || /\bsummari[sz]e\b|\bsummary\b/.test(question)) return 'preparing_summary';
+  if (tool === 'summary' || mentionsSummary(question)) return 'preparing_summary';
   if (/\b(deep\s*learn|deep explanation|step by step|explain deeply)\b/.test(question)) {
     return 'preparing_deep_explanation';
   }

@@ -332,6 +332,25 @@ def test_task_family_is_inherited_independently_from_relation() -> None:
     assert resolution.task_family is TaskFamily.CALCULATE
 
 
+def test_task_family_is_negation_aware_for_summarize() -> None:
+    """P1 regression: SUMMARIZE is checked before EXPLAIN in _TASK_SIGNALS, so
+    a message that mentions "summarize" only to reject it must not win on
+    word order alone — it previously did, mis-tagging task_family as
+    SUMMARIZE for "explain this, do not summarize it" and carrying that
+    wrong task into any later follow-up turn via _infer_active_task."""
+    from app.services.dialogue_state import TaskFamily, resolve_dialogue
+
+    resolution = resolve_dialogue("Explain the concept on this page in detail. Do not summarize it.")
+    assert resolution.task_family is TaskFamily.EXPLAIN
+
+    resolution = resolve_dialogue("Erkläre diese Seite ausführlich, nicht zusammenfassen.")
+    assert resolution.task_family is TaskFamily.EXPLAIN
+
+    # Genuine positive summary requests must still classify correctly.
+    resolution = resolve_dialogue("Summarize this page.")
+    assert resolution.task_family is TaskFamily.SUMMARIZE
+
+
 def test_semantic_resolver_failure_preserves_safe_continuity(monkeypatch) -> None:
     from app.services import openai_client
     from app.services.dialogue_state import (

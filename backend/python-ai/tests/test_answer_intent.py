@@ -364,3 +364,118 @@ def test_resolved_task_family_beats_raw_followup_text() -> None:
     exam = SimpleNamespace(task_family=TaskFamily.EXAMFORGE, resolved_request="sure")
     assert academic_intent_from_turn(flashcards, "same for screws") is AcademicIntent.FLASHCARD_GENERATION
     assert academic_intent_from_turn(exam, "sure") is AcademicIntent.EXAM_GENERATION
+
+
+# --- P1 regression: negation-aware task detection -------------------------
+#
+# Production bug: "Explain the concept on this page in detail. Do not
+# summarize it." classified as AcademicIntent.COURSE_SUMMARY because
+# _SUMMARY_RE matched the word "summarize" inside the student's own
+# PROHIBITION, with zero negation awareness — before this fix, every case
+# below marked NEGATION FIX was AcademicIntent.COURSE_SUMMARY or
+# QUIZ_GENERATION instead of CONCEPTUAL_EXPLANATION.
+@pytest.mark.parametrize(
+    ("question", "intent"),
+    [
+        # The exact confirmed production repro (BWL_gesamt page 6).
+        ("Explain the concept on this page in detail. Do not summarize it.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Explain in detail; don't give me a summary.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Explain this chapter; don't quiz me.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Why did you summarize that?", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Give me a hint; do not solve it.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Erkläre diese Seite ausführlich, nicht zusammenfassen.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Bitte keine Zusammenfassung, sondern eine genaue Erklärung.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Nicht abfragen, sondern erklären.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Warum hast du das zusammengefasst?", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Explain it, nicht zusammenfassen.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        ("Erklär es bitte, don't summarize.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        # Genuine positive requests must still route correctly (no overcorrection).
+        ("Summarize this page.", AcademicIntent.COURSE_SUMMARY),
+        ("Quiz me on this chapter.", AcademicIntent.QUIZ_GENERATION),
+        ("Fasse diese Seite zusammen.", AcademicIntent.COURSE_SUMMARY),
+        ("Frag mich ab.", AcademicIntent.QUIZ_GENERATION),
+        # Caught by independent review before merge, not by the acceptance
+        # protocol above — kept here so they can't silently regress.
+        # (1) German separable-verb negation ("fasse ... nicht zusammen") was
+        # matched as a positive request by _SUMMARY_RE's new split-verb
+        # branch, but not recognised by the negation guard.
+        ("Fasse das bitte nicht zusammen, erkläre es stattdessen ausführlich.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+        # (2) a genuine, politely-phrased summary request must not be read as
+        # a prohibition merely because it contains "don't".
+        ("Why don't you summarize the key points for me?", AcademicIntent.COURSE_SUMMARY),
+    ],
+)
+def test_negation_aware_task_detection(question: str, intent: AcademicIntent) -> None:
+    assert classify_academic_intent(question) == intent
+
+
+def test_unrelated_fasse_zusammen_cooccurrence_does_not_misfire() -> None:
+    """(3) widening the German separable-verb match from an exact adjacent
+    phrase to a 20-char gap risks false positives where 'fasse' (grab/hold)
+    and 'zusammen' (together) are unrelated words, not the verb
+    'zusammenfassen'. Must not route to COURSE_SUMMARY."""
+    text = "Ich fasse die Unterlagen und lege sie zusammen mit dem Hefter weg."
+    assert classify_academic_intent(text) != AcademicIntent.COURSE_SUMMARY
+
+
+def test_prohibited_summary_adds_explicit_no_summary_instruction() -> None:
+    """The central answer-generation fix (Section 7): a detected prohibition
+    must reach the model as an explicit instruction, independent of which
+    intent the request falls through to — not merely avoid the wrong intent."""
+    from app.services.answer_intent import intent_style_instruction
+
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    intent = classify_academic_intent(question)
+    assert intent == AcademicIntent.CONCEPTUAL_EXPLANATION
+
+    instruction = intent_style_instruction(intent, question)
+    assert "prohibited summarizing" in instruction
+    assert "Do NOT include a" in instruction
+
+
+def test_prohibited_quiz_adds_explicit_no_quiz_instruction() -> None:
+    from app.services.answer_intent import intent_style_instruction
+
+    question = "Explain this chapter; don't quiz me."
+    intent = classify_academic_intent(question)
+    instruction = intent_style_instruction(intent, question)
+    assert "explicitly asked not to be quizzed" in instruction
+
+
+def test_unprohibited_requests_get_no_prohibition_instruction() -> None:
+    """A plain explain/summarize request must not pick up either prohibition
+    line — the instruction is only added when negation was actually detected."""
+    from app.services.answer_intent import intent_style_instruction
+
+    explain_only = "Explain this concept."
+    instruction = intent_style_instruction(classify_academic_intent(explain_only), explain_only)
+    assert "prohibited summarizing" not in instruction
+    assert "explicitly asked not to be quizzed" not in instruction
+
+    summarize_only = "Summarize this page."
+    instruction = intent_style_instruction(classify_academic_intent(summarize_only), summarize_only)
+    assert "prohibited summarizing" not in instruction
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # Page-heading contamination (Section 9): a literal "Summary" /
+        # "Zusammenfassung" heading elsewhere in the retrieved source text
+        # must never itself route an explicit explain request to
+        # COURSE_SUMMARY — classify_academic_intent only ever sees the raw
+        # student question (fixed in PR #26 / commit 6a961b2f), not a copy
+        # blended with page text, so a heading appearing in page_text alone
+        # cannot reach this classifier at all.
+        "Explain the concept on this page in detail. Do not summarize it.",
+    ],
+)
+def test_page_heading_text_is_not_passed_to_classifier(question: str) -> None:
+    # classify_academic_intent takes ONLY the student's question (plus
+    # optional chunks/metadata for math-context signals) — simulating a page
+    # whose own text contains "Zusammenfassung" by definition cannot affect
+    # this call, because that text is never part of `question`. This test
+    # documents and locks in that architectural guarantee.
+    page_text_with_summary_heading = "## Zusammenfassung\nWirtschaft kommt von wirt und oikos..."
+    assert page_text_with_summary_heading not in question
+    assert classify_academic_intent(question) == AcademicIntent.CONCEPTUAL_EXPLANATION

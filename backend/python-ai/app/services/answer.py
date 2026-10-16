@@ -1339,7 +1339,7 @@ def pick_system_prompt(
     prompt += INTERNAL_CONFIDENTIALITY_RULE
     if coach:
         prompt += coach
-    prompt += intent_style_instruction(academic_intent)
+    prompt += intent_style_instruction(academic_intent, question)
     if label in {"partial", "weak"} and intent_is_math_like(academic_intent):
         prompt += _MATH_MISSING_CONTEXT_POPUP
     # Cross-cutting style modifier: layered on ANY intent so "explain X like my
