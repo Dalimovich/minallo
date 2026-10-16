@@ -148,6 +148,53 @@ def test_structured_risk_buffering_covers_short_multilingual_and_formula_request
         )
 
 
+def test_attached_image_forces_buffering_even_when_task_traits_miss_it() -> None:
+    """FACTORY BWL-01 regression: 'Explain the illustration on this page' matched
+    none of classify_task_traits' visual regexes (only diagram/drawing/figure/
+    sketch/abbildung/zeichnung are recognised, not 'illustration'), so it fell
+    through to the generic TEXT_EXPLANATION trait with every verification flag
+    False. Once a task_traits object is supplied, _requires_verified_buffering
+    used to evaluate ONLY those trait flags and silently ignore the fact that a
+    real page image was attached — so the draft streamed unbuffered, and when
+    the model falsely denied seeing the image, the false-visual-denial repair's
+    replacement text landed as an appended delta after the bad draft had already
+    reached the client, instead of replacing it. An attached image must force
+    buffering regardless of which keyword-classified trait matched.
+
+    has_attached_image is deliberately a separate, narrower parameter than
+    has_visual_evidence: the caller's has_visual_evidence also folds in
+    retrieved text chunks, and reusing that bundle here would force buffering
+    on nearly every grounded course-file question, not just the image-attached
+    case this guards (this broke
+    test_visual_aids_and_learning_recommendations_do_not_block_generation
+    during development of this fix, which has chunks but no image)."""
+    from app.routers.stream import _requires_verified_buffering
+    from app.services.reliability import TaskTraits, VisualTaskKind
+
+    text_explanation_traits = TaskTraits(
+        VisualTaskKind.TEXT_EXPLANATION, False, False, False, False, False, True,
+    )
+
+    assert _requires_verified_buffering(
+        question="Explain the illustration on this page.",
+        dialogue_act="new_question",
+        has_visual_evidence=True,
+        has_active_numerical_state=False,
+        task_traits=text_explanation_traits,
+        has_attached_image=True,
+    )
+    # Same traits, has_visual_evidence True via retrieved chunks but no actual
+    # attached image: must NOT be forced into buffering.
+    assert not _requires_verified_buffering(
+        question="Explain the concept of depreciation.",
+        dialogue_act="new_question",
+        has_visual_evidence=True,
+        has_active_numerical_state=False,
+        task_traits=text_explanation_traits,
+        has_attached_image=False,
+    )
+
+
 def test_selection_from_old_page_or_revision_is_stale() -> None:
     from app.routers.stream import SelectedRegionPayload, _selection_is_stale
 
