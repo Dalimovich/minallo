@@ -750,3 +750,40 @@ def test_genuine_summary_request_still_classifies_as_summary(monkeypatch) -> Non
 
     assert captured, "intent_style_instruction was never called"
     assert captured[0] == AcademicIntent.COURSE_SUMMARY
+
+
+def test_followup_detail_request_is_not_hijacked_by_page_summary_heading(monkeypatch) -> None:
+    """The contamination risk applies on every call, not just a fresh
+    question — a short follow-up ("go over that step again") referencing a
+    prior solve exchange must not be reclassified as COURSE_SUMMARY just
+    because the still-visible page carries its own 'Summary' heading."""
+    from app.services import answer, answer_stream
+    from app.services.answer_intent import AcademicIntent
+
+    original = answer.intent_style_instruction
+    captured: list = []
+
+    def _spy(intent):
+        captured.append(intent)
+        return original(intent)
+
+    monkeypatch.setattr(answer, "intent_style_instruction", _spy)
+
+    open_ctx = (
+        "Summary: key reactions at supports A and B.\n\n"
+        "Aufgabe 4.2: Bestimme die Reaktionskraft am Lager A.\n"
+    )
+    gen = answer_stream.stream_answer(
+        question="Can you go over that step again?",
+        chunks=[],
+        doc_names={},
+        open_file_context=open_ctx,
+        previous_turns=[
+            {"role": "user", "text": "Help me solve Aufgabe 4.2 step by step"},
+            {"role": "assistant", "text": "Step 1: sum moments about A..."},
+        ],
+    )
+    next(gen)
+
+    assert captured, "intent_style_instruction was never called"
+    assert captured[0] != AcademicIntent.COURSE_SUMMARY
