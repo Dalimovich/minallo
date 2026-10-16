@@ -31,6 +31,8 @@ from .answer_intent import (
     AcademicIntent,
     PROFESSOR_STYLE_INSTRUCTION,
     classify_academic_intent,
+    final_negation_reminder,
+    final_negation_user_reminder,
     intent_is_math_like,
     intent_is_self_contained,
     intent_style_instruction,
@@ -2206,6 +2208,11 @@ def generate_answer(
             if references:
                 exam_style = "authentic-reference"
     system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
+    # Appended LAST, after every other system-prompt block — see
+    # final_negation_reminder's docstring for why position fixes a real
+    # live-acceptance failure that the earlier, mid-prompt prohibition line
+    # (inside intent_style_instruction above) did not.
+    system_prompt += final_negation_reminder(question)
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Math reasoning is
     # where mini gets variable distinctions wrong (d vs d_3) and silently
@@ -2237,6 +2244,7 @@ def generate_answer(
         if understanding:
             user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+    user_message += final_negation_user_reminder(question)
 
     # Worked math/exercise solutions in KaTeX overrun the small default budget
     # and truncate mid-calculation; give the math path room to finish.
