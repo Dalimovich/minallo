@@ -513,6 +513,21 @@ test('shell.ts exposes the reconciliation hook and it re-runs the real migration
     /renderSidebar\(root\);/,
     'must refresh the visible chat list after a migration, so a UI already rendered from the bare keys does not stay stale'
   );
+  assert.match(
+    fnBody,
+    /loadActiveChatIntoCenter\(root\);/,
+    // QA3-1 (2026-10-15): loadChatStore() replaces chatStore.chats with freshly
+    // deserialized SavedChat objects — new array/object identities, not the
+    // ones the shell's live ConversationState.messages already points to
+    // (bound once at mount). Without re-syncing via loadActiveChatIntoCenter,
+    // every message the user sends afterward is pushed into the now-orphaned
+    // array: invisible to chatStore (never saved, never sent to the backend
+    // with real content) and invisible to streamAiReply/ragEligibility/the
+    // "Try again" parentUserMessageId lookup. Confirmed live: this produced
+    // the exact "No active course bound" / empty "messages":[] / stray
+    // {role:"assistant",content:""} payloads from the QA3-1 report.
+    'reconcileChatStoreAccountScope must re-point the live conversation state to the reloaded chat, or the active composer silently orphans every message sent right after sign-in'
+  );
 
   assert.match(
     SHELL_TS,

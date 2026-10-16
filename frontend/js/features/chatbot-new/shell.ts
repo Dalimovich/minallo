@@ -1934,7 +1934,11 @@ async function streamAiReply(
         : 'No active course is bound to this chat. Open a course in the Study Panel, or switch the source selector to **Auto** or **Internet**.';
       if (isOriginActive() && bubble) renderRichBubble(bubble, raw, false);
       Object.assign(assistantMessage, { text: raw, allowDiagrams: false, completionState: 'complete', exportable: true, retryable: false, updatedAt: new Date().toISOString() });
-      if (isOriginActive()) setBubbleSubtitle(aiRow, 'course_files');
+      // QA3-1 fix: this message never reached the backend and grounded on
+      // nothing — badge-stamping it 'course_files' (renders "Answered using
+      // your course files") falsely claimed a sourced answer. No sourceScope
+      // hides the badge instead, matching the plain-general-answer case.
+      if (isOriginActive()) setBubbleSubtitle(aiRow, undefined);
     } else {
       const followUpDoc = await resolveFollowUpDoc(requestMessages, null);
       raw = await callGenericAi(requestMessages, bubble, controller, thinking, followUpDoc, allowDiagrams);
@@ -8108,7 +8112,32 @@ function loadChatStore(): void {
     chatStore.chats = [];
     chatStore.activeId = '';
     sourceLibrary.items = [];
-    liveState = null;
+    // QA3-1 fix (2026-10-15): this branch also fires on the very first
+    // anonymous('')->real-uid transition (the shell mounts and binds its
+    // composer's event listeners BEFORE sign-in resolves, then this runs
+    // from the reconciliation hook). initConversation()'s sendBtn/textarea
+    // listeners captured `const state = getOrInitLiveState()` ONCE, by
+    // reference, at bind time — nulling `liveState` here doesn't clear
+    // THAT object, it just means the next getOrInitLiveState() call (from
+    // loadActiveChatIntoCenter, right after this) allocates a brand-new,
+    // disconnected ConversationState. The already-bound listeners keep
+    // writing real user messages into the orphaned old object forever
+    // (confirmed live: every send after sign-in reached the backend with
+    // an empty/stale messages array). Reset the EXISTING object's fields
+    // in place instead, so bound closures and loadActiveChatIntoCenter's
+    // later resync keep referring to the same, now-cleared instance.
+    if (liveState) {
+      liveState.messages = [];
+      liveState.pasted = [];
+      liveState.files = [];
+      liveState.controller = null;
+      liveState.isSending = false;
+      liveState.activeAssistantMessage = null;
+      liveState.activeChatId = null;
+      liveState.lastSendFailed = false;
+      liveState.draftRevision++;
+      liveState.draftAutosaveTimer = null;
+    }
   }
   _ncbLoadedUid = uid;
 
@@ -8253,6 +8282,17 @@ export function reconcileChatStoreAccountScope(): void {
                       // call loadChatStore() with the correct uid.
   loadChatStore();
   renderSidebar(root);
+  // QA3-1 fix (2026-10-15): loadChatStore() above REPLACES chatStore.chats
+  // with freshly-deserialized SavedChat objects — new array/object identities,
+  // not the ones the shell's live ConversationState.messages already points
+  // to (set once at mount via loadActiveChatIntoCenter/initNewChatbotShell).
+  // Without re-syncing it here, every later doSend() keeps pushing the
+  // user's real messages into that now-orphaned array: invisible to
+  // chatStore (never saved) and invisible to streamAiReply (which reads the
+  // live chatStore.getActive().messages) — confirmed live as the cause of
+  // "No active course"/empty-messages/parentUserMessageId-not-found payload
+  // bugs on the very first message of a freshly signed-in session.
+  loadActiveChatIntoCenter(root);
 }
 
 function saveSourceLibrary(): void {
