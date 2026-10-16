@@ -662,7 +662,7 @@ def test_visible_page_heading_does_not_override_explicit_explain_request(monkeyp
     next(gen)
 
     assert captured, "intent_style_instruction was never called"
-    assert captured[0] != AcademicIntent.COURSE_SUMMARY
+    assert captured[0] == AcademicIntent.CONCEPTUAL_EXPLANATION
 
 
 def test_visible_page_heading_does_not_override_explicit_solve_request(monkeypatch) -> None:
@@ -693,7 +693,7 @@ def test_visible_page_heading_does_not_override_explicit_solve_request(monkeypat
     next(gen)
 
     assert captured, "intent_style_instruction was never called"
-    assert captured[0] != AcademicIntent.COURSE_SUMMARY
+    assert captured[0] == AcademicIntent.MATH_PROBLEM
 
 
 def test_quiz_request_is_not_hijacked_by_page_summary_heading(monkeypatch) -> None:
@@ -786,4 +786,4 @@ def test_followup_detail_request_is_not_hijacked_by_page_summary_heading(monkeyp
     next(gen)
 
     assert captured, "intent_style_instruction was never called"
-    assert captured[0] != AcademicIntent.COURSE_SUMMARY
+    assert captured[0] == AcademicIntent.GENERAL_COURSE_QA

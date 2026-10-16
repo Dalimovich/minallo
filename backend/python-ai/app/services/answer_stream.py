@@ -1814,6 +1814,13 @@ def stream_answer(
         # fire on whatever happens to be printed on the page (a lecture
         # slide's own "Overview"/"Summary" heading) and silently override an
         # explicit "explain"/"solve" request with a generic summary.
+        #
+        # Accepted tradeoff: a vague deictic reply with NO calc verb of its
+        # own ("what about this?") on a page that states a formula used to
+        # inherit MATH_PROBLEM from the blended page text; it now falls
+        # through to GENERAL_COURSE_QA since _has_math_problem_context(chunks)
+        # alone isn't enough without calc_verb/deictic_solve matching the
+        # question itself. Rarer and less harmful than the bug this fixes.
         academic_intent = classify_academic_intent(
             question,
             routing_chunks,
