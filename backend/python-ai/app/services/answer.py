@@ -32,6 +32,7 @@ from .answer_intent import (
     PROFESSOR_STYLE_INSTRUCTION,
     classify_academic_intent,
     final_negation_reminder,
+    final_negation_user_reminder,
     intent_is_math_like,
     intent_is_self_contained,
     intent_style_instruction,
@@ -2243,6 +2244,7 @@ def generate_answer(
         if understanding:
             user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+    user_message += final_negation_user_reminder(question)
 
     # Worked math/exercise solutions in KaTeX overrun the small default budget
     # and truncate mid-calculation; give the math path room to finish.

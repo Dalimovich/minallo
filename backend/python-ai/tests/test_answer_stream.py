@@ -897,6 +897,41 @@ def _run_stream_answer_and_capture_system_message(monkeypatch, question: str, pa
     return next(m["content"] for m in messages if m["role"] == "system")
 
 
+def _run_stream_answer_and_capture_both_messages(monkeypatch, question: str, page_text: str) -> tuple[str, str]:
+    """Same technique as the helper above, but also returns the USER message
+    — needed for final_negation_user_reminder, which is appended there, not
+    to the system prompt."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    system_message = next(m["content"] for m in messages if m["role"] == "system")
+    user_message = next(m["content"] for m in messages if m["role"] == "user")
+    assert isinstance(user_message, str), "expected a plain text user message (no image parts in this test)"
+    return system_message, user_message
+
+
 _PAGE6_TEXT = (
     "Wirtschaft und Oekonomie\n\n"
     "Der Begriff Wirtschaft leitet sich vom althochdeutschen Wort 'wirt' ab, "
@@ -996,3 +1031,32 @@ def test_quiz_and_hint_requests_without_a_summary_prohibition_are_unaffected(mon
     for question in ("Quiz me on this chapter.", "Give me a hint for this problem."):
         system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
         assert "FINAL REMINDER" not in system_message
+
+
+def test_final_no_summary_check_reaches_the_user_message_after_course_context(monkeypatch) -> None:
+    """final_negation_user_reminder is the second half of the fix: the same
+    detected prohibition, repeated at the true end of the USER message
+    (mirroring the existing FINAL LANGUAGE CHECK pattern) because that is
+    closer to generation than anything in the system prompt. Must land AFTER
+    COURSE CONTEXT, not merely be present somewhere."""
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    _, user_message = _run_stream_answer_and_capture_both_messages(monkeypatch, question, _PAGE6_TEXT)
+
+    assert "FINAL NO-SUMMARY CHECK" in user_message
+    course_context_pos = user_message.index("COURSE CONTEXT:")
+    reminder_pos = user_message.index("FINAL NO-SUMMARY CHECK")
+    assert reminder_pos > course_context_pos
+    assert user_message.rstrip().endswith(
+        "delete that closing section and stop after the last new point instead."
+    )
+
+
+def test_final_no_summary_check_absent_without_a_prohibition(monkeypatch) -> None:
+    """Control: no prohibition detected → no user-message reminder either,
+    for both an unrestricted explain and a permitted summarize request."""
+    for question in (
+        "Explain the concept on this page in detail.",
+        "Summarize the concept on this page briefly.",
+    ):
+        _, user_message = _run_stream_answer_and_capture_both_messages(monkeypatch, question, _PAGE6_TEXT)
+        assert "FINAL NO-SUMMARY CHECK" not in user_message

@@ -2246,6 +2246,7 @@ def stream_answer(
             "and write the entire answer only in that same language. This rule applies "
             "to every language and writing system."
         )
+    user_message += final_negation_user_reminder(question)
 
     # Auto-attach the exercise/figure page bitmap on math/exercise questions so
     # the vision model can read dimensions and geometry off the drawing — most

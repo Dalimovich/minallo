@@ -554,6 +554,25 @@ def test_final_negation_reminder_is_empty_without_a_summary_prohibition(question
     assert final_negation_reminder(question) == ""
 
 
+def test_final_negation_user_reminder_fires_on_the_live_repro_question() -> None:
+    from app.services.answer_intent import final_negation_user_reminder
+
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    reminder = final_negation_user_reminder(question)
+    assert "FINAL NO-SUMMARY CHECK" in reminder
+
+
+@pytest.mark.parametrize("question", [
+    "Explain the concept on this page in detail.",
+    "Summarize the concept on this page briefly.",
+    "Quiz me on this chapter.",
+])
+def test_final_negation_user_reminder_is_empty_without_a_summary_prohibition(question: str) -> None:
+    from app.services.answer_intent import final_negation_user_reminder
+
+    assert final_negation_user_reminder(question) == ""
+
+
 @pytest.mark.parametrize(
     "question",
     [
