@@ -765,6 +765,7 @@ def _requires_verified_buffering(
     has_active_numerical_state: bool,
     source_conflict: bool = False,
     task_traits=None,
+    has_attached_image: bool = False,
 ) -> bool:
     """Classify safety from resolved intent and context, not language keywords."""
     if task_traits is not None:
@@ -772,6 +773,18 @@ def _requires_verified_buffering(
             task_traits.requires_pre_display_verification
             or task_traits.requires_numerical_validation
             or source_conflict
+            # A real attached page image is itself a risk signal independent of
+            # which keyword-classified trait the question matched (FACTORY
+            # BWL-01: "explain the illustration" missed every visual regex in
+            # classify_task_traits and fell through to TEXT_EXPLANATION with no
+            # pre-display-verification trait, so the image went out unbuffered
+            # and a false-visual-denial draft streamed live before the repair
+            # pass could replace it — see false_visual_denial below). Scoped to
+            # the image specifically, not the broader has_visual_evidence bundle
+            # (which also covers retrieved text chunks) — that bundle would force
+            # buffering on nearly every grounded course-file question instead of
+            # only the image-attached case this guards.
+            or has_attached_image
         )
     high_risk_acts = {
         "correct_assistant", "reject_answer", "verify_previous_answer",
@@ -6020,6 +6033,7 @@ async def _prepare_ask_stream_response(
         has_visual_evidence=bool(
             open_file_images or selected_text or payload.problemSolver or chunks
         ),
+        has_attached_image=bool(open_file_images),
         has_active_numerical_state=bool(
             tutor_state and tutor_state.reusable_results()
         ),
@@ -6422,6 +6436,18 @@ async def _prepare_ask_stream_response(
                     elif false_visual_denial:
                         from ..services.visual_repair import (  # noqa: WPS433
                             repair_false_visual_denial_sync,
+                            repair_reads_as_ungrounded_description,
+                        )
+                        # Only genuinely quantitative/exercise tasks (checkbox
+                        # extraction, labelled-diagram mapping, numerical
+                        # calculation) get the exercise-number/requested-quantity
+                        # checklist; a plain "explain this illustration" question
+                        # has neither, and that checklist gave the model literal
+                        # headers it echoed back as answer content instead of
+                        # reading the image (FACTORY BWL-01).
+                        needs_exercise_identification = bool(
+                            grounded_request_context.task_traits.requires_numerical_validation
+                            or grounded_request_context.task_traits.requires_complete_mapping
                         )
                         repaired = repair_false_visual_denial_sync(
                             request_id=request_id,
@@ -6430,6 +6456,7 @@ async def _prepare_ask_stream_response(
                             visible_page=payload.visiblePage,
                             open_context=generation_open_context,
                             image_parts=open_file_images,
+                            needs_exercise_identification=needs_exercise_identification,
                         )
                         repaired_verification = None
                         if repaired:
@@ -6474,10 +6501,22 @@ async def _prepare_ask_stream_response(
                                 )
                             ),
                         )
+                        # Structural validation (repair_validation.accepted) is a
+                        # no-op for a descriptive, non-exercise task: no exercise
+                        # number, required quantity, or mapping labels to compare
+                        # against, so a well-structured-but-ungrounded answer
+                        # passes it by default. repair_reads_as_ungrounded_description
+                        # is the floor that actually catches that case.
+                        descriptive_repair_ungrounded = bool(
+                            repaired
+                            and not needs_exercise_identification
+                            and repair_reads_as_ungrounded_description(repaired)
+                        )
                         repair_succeeded = bool(
                             repaired
                             and not _FALSE_VISUAL_DENIAL_RE.search(repaired)
                             and repair_validation.accepted
+                            and not descriptive_repair_ungrounded
                         )
                         safe_text = repaired if repair_succeeded else (
                             "The current page image was attached, but Minallo "

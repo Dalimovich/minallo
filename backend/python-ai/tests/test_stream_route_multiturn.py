@@ -809,3 +809,161 @@ def test_visual_aids_and_learning_recommendations_do_not_block_generation(monkey
     done_event = decoded[done_index]
     assert done_event["visualAids"] == [{"sourceType": "course_file", "visualId": "visual-1", "title": "Diagram"}]
     assert done_event["learningRecommendations"][0]["topic"] == "Formelzettel"
+
+
+def test_false_visual_denial_rejects_ungrounded_repair_and_uses_honest_fallback(monkeypatch):
+    """FACTORY BWL-01 end-to-end regression. A non-exercise "explain this
+    illustration" question with a real attached page image: the first draft
+    falsely denies seeing the image, and the repair attempt is itself
+    ungrounded (structurally fine, but a template echo of the old repair
+    checklist — the same shape as the real captured failure). Proves two
+    things together: (1) the buffering fix at f808a0e6 keeps the bad first
+    draft from ever reaching the client at all (it never appears in any
+    answer.delta), and (2) the ungrounded repair is rejected rather than
+    accepted for looking structurally fine, so the client gets the honest
+    fallback, not fabricated content."""
+    from app.routers import stream
+    from app.services import cache, mastery, retrieval, tutor_state_store
+    from app.services import visual_repair as visual_repair_service
+    from app.services.tutor_state import TutorState
+
+    user_id = "00000000-0000-4000-8000-000000000007"
+    document_id = "00000000-0000-4000-8000-000000000008"
+    conversation_id = "factory-bwl01-regression"
+
+    latest_generation = 0
+
+    def claim(_uid, _conversation, _course, generation):
+        nonlocal latest_generation
+        if generation < latest_generation:
+            return False
+        latest_generation = generation
+        return True
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id, "user_id": user_id, "course_id": "course-1",
+                "file_name": "BWL_gesamt.pdf", "storage_path": "synthetic/bwl.pdf",
+                "document_hash": "rev-1", "processing_status": "ready",
+                "page_count": 304, "chunk_count": 5,
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    chunk = retrieval.RetrievedChunk(
+        chunk_id="c1", document_id=document_id, page_start=13, page_end=13,
+        text="Aufbau des Planspiels Factory.", score=1.0, similarity=1.0,
+        chunk_type="lecture", section_title="Aufbau des Planspiels",
+    )
+    monkeypatch.setattr(stream, "retrieve_routed_chunks", lambda **_: [chunk])
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(stream, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(stream, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(stream, "retrieve_numbered_section_chunks", lambda **_: [])
+    monkeypatch.setattr(
+        stream, "retrieve_multi_item_course_evidence",
+        lambda **_: type("R", (), {"chunks": [chunk], "evidence": [], "to_dict": lambda self: {}})(),
+    )
+    monkeypatch.setattr(
+        stream, "research_unresolved_items",
+        lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+    )
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+    monkeypatch.setattr(stream, "select_visual_aids", lambda *_a, **_k: [])
+    monkeypatch.setattr(stream, "build_learning_recommendations", lambda *_a, **_k: [])
+    monkeypatch.setattr(stream, "course_revision_hash", lambda *_a, **_k: "rev-hash-1")
+    monkeypatch.setattr(stream, "find_existing_lesson", lambda **_k: None)
+
+    false_denial_draft = (
+        "I cannot see the illustration on the page you are currently "
+        "viewing. Please describe the illustration or provide specific "
+        "details about it, and I can help explain it further."
+    )
+
+    def fake_stream_answer(**_kwargs):
+        yield b'data: {"meta": true}\n\n'
+        yield ("data: " + json.dumps({"t": false_denial_draft}) + "\n\n").encode()
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    # Same shape as the real captured FACTORY BWL-01 failure: structurally
+    # fine, but a template echo of the repair checklist, not real content.
+    ungrounded_repair_output = (
+        "Exercise Number: This is part of a larger educational framework. "
+        "Requested Quantity or Object: the illustration outlines the "
+        "structure of the simulation."
+    )
+    monkeypatch.setattr(
+        visual_repair_service, "repair_false_visual_denial_sync",
+        lambda **_kwargs: ungrounded_repair_output,
+    )
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=document_id,
+            question="Explain the illustration on this page.",
+            visiblePage=13,
+            sourceMode="course_files",
+            openFileContext="[CURRENTLY VISIBLE PDF PAGE]\nFile: BWL_gesamt.pdf\nPage: 13 of 304\n\n",
+            openFileImages=[{
+                "mediaType": "image/png",
+                "data": (
+                    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m"
+                    "Nk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                ),
+                "page": 13,
+                "region": "full_page",
+            }],
+            conversationId=conversation_id,
+            conversationGeneration=1,
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    decoded = [
+        json.loads(line[6:])
+        for e in events for line in e.decode().splitlines()
+        if line.startswith("data: ")
+    ]
+
+    # The false-visual-denial correction/fallback yield is a bare {"t": ...}
+    # payload with no "event" wrapper (unlike ordinary answer.delta chunks),
+    # so collect every "t"-bearing event rather than filtering by event type.
+    delta_texts = [e["t"] for e in decoded if e.get("t")]
+    done_event = next(e for e in decoded if e.get("event") == "answer.completed")
+    delivered_text = "".join(delta_texts)
+
+    # The bad first draft must never reach the client at all...
+    assert false_denial_draft not in delivered_text
+    # ...and neither does the ungrounded repair, structurally fine as it looks...
+    assert ungrounded_repair_output not in delivered_text
+    # ...only the honest fallback is delivered.
+    assert delivered_text == (
+        "The current page image was attached, but Minallo could not read "
+        "the requested visual content reliably."
+    )
+    assert done_event["unsupported"] is True
+    assert done_event["visualDenialGuard"] == "repair_failed"
