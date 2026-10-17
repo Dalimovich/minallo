@@ -267,7 +267,8 @@ def main():
     if model not in {"gpt-4o-mini", "gpt-4o-mini-2024-07-18"} or not key:
         parser.error("missing key or model without reviewed pricing ceiling")
     settings = Settings(_env_file=None, OPENAI_API_KEY=key, OPENAI_GENERATE_MODEL=model,
-                        SUPABASE_URL="https://synthetic.invalid", SUPABASE_SERVICE_ROLE_KEY="unused")
+                        SUPABASE_URL="https://synthetic.invalid", SUPABASE_SERVICE_ROLE_KEY="unused",
+                        INTERNAL_SECRET="synthetic-unused")
     if args.output.exists() or args.output.with_suffix(".md").exists():
         parser.error("output already exists; no reruns/overwrites")
     args.output.parent.mkdir(parents=True, exist_ok=True)
