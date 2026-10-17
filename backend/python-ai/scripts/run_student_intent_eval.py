@@ -211,6 +211,8 @@ def evaluate_case(case, guard):
             causes.append("escalation heuristic did not trigger")
     if not checks["explicit_prohibitions_preserved"]:
         causes.append("deterministic/semantic merge lost information")
+    if injected and not all(effective_score.values()):
+        causes.append("injected timeout or invalid output; fallback preserves baseline depth limitation")
     if case.get("knownGap"):
         causes.append("documented known gap remains; fixture labels encode baseline behavior")
     return {"id": case["id"], "message": case["message"], "known_gap": bool(case.get("knownGap")),
@@ -266,9 +268,13 @@ def main():
     key = os.environ.get("OPENAI_API_KEY") or values.get("OPENAI_API_KEY")
     if model not in {"gpt-4o-mini", "gpt-4o-mini-2024-07-18"} or not key:
         parser.error("missing key or model without reviewed pricing ceiling")
-    settings = Settings(_env_file=None, OPENAI_API_KEY=key, OPENAI_GENERATE_MODEL=model,
-                        SUPABASE_URL="https://synthetic.invalid", SUPABASE_SERVICE_ROLE_KEY="unused",
-                        INTERNAL_SECRET="synthetic-unused")
+    try:
+        settings = Settings(_env_file=None, OPENAI_API_KEY=key, OPENAI_GENERATE_MODEL=model,
+                            SUPABASE_URL="https://synthetic.invalid", SUPABASE_SERVICE_ROLE_KEY="unused",
+                            INTERNAL_SECRET="synthetic-unused")
+    except ValueError:
+        # Pydantic errors may include input values, including credentials.
+        parser.error("invalid local configuration (details withheld to protect credentials)")
     if args.output.exists() or args.output.with_suffix(".md").exists():
         parser.error("output already exists; no reruns/overwrites")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -278,7 +284,10 @@ def main():
     rows = []
     report = {"model": model, "price_source": PRICE_SOURCE, "price_checked": "2026-10-17",
               "started_utc": datetime.now(timezone.utc).isoformat(),
-              "implementation_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "runner_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
+              "implementation_commit": subprocess.check_output(
+                  ["git", "log", "-1", "--format=%H", "--", "app/services/student_intent.py"],
+                  cwd=ROOT, text=True).strip(),
               "corpus_sha256": hashlib.sha256(CORPUS.read_bytes()).hexdigest(),
               "max_requests": 40, "budget_usd": 5, "worst_case_usd": 40 * PER_ATTEMPT_CEILING,
               "method": "one direct production model call; offline replay through unchanged production gate/router",

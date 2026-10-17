@@ -1,0 +1,4923 @@
+{
+  "model": "gpt-4o-mini",
+  "price_source": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
+  "price_checked": "2026-10-17",
+  "started_utc": "2026-10-17T14:17:47.074208+00:00",
+  "implementation_commit": "2f8f24006b20134548371c87a9c08f9a86faa377",
+  "corpus_sha256": "0f64b9e6682337db1d0147813497507aadeb0bd74c850337a161bb376a1ed59b",
+  "max_requests": 40,
+  "budget_usd": 5,
+  "worst_case_usd": 0.7723199999999999,
+  "method": "one direct production model call; offline replay through unchanged production gate/router",
+  "cases": [
+    {
+      "id": "historical-bwl-page6",
+      "message": "Explain the concept on this page in detail. Do not summarize it.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "detailed",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "visible_page"
+      },
+      "baseline": {
+        "original_message": "Explain the concept on this page in detail. Do not summarize it.",
+        "student_goal": "Explain the concept on this page in detail. Do not summarize it.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Explain the concept on this page in detail. Do not summarize it.",
+        "student_goal": "Explain the concept on this page in detail. Do not summarize it.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "detailed",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Explain the concept on this page in detail. Do not summarize it.",
+        "student_goal": "Explain the concept on this page in detail. Do not summarize it.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "detailed",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": false,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": false,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": false,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "shadow": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "enabled": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        }
+      },
+      "latency_ms": 4317.028400000709,
+      "attempts": [
+        {
+          "case": "historical-bwl-page6",
+          "number": 1,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 510,
+            "completion_tokens": 53,
+            "total_tokens": 563,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 3263.4311000001617
+        }
+      ],
+      "prompt_tokens": 510,
+      "completion_tokens": 53,
+      "estimated_usd": 0.0001083,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields",
+        "deterministic/semantic merge lost information"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "incorrect semantic interpretation",
+        "deterministic/semantic merge lost information"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "negative-instruction-quiz",
+      "message": "Explain Newton's third law. Do not quiz me on it.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [
+          "quiz_generation"
+        ],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Explain Newton's third law. Do not quiz me on it.",
+        "student_goal": "Explain Newton's third law. Do not quiz me on it.",
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [
+          "quiz_generation"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": {
+        "original_message": "Explain Newton's third law. Do not quiz me on it.",
+        "student_goal": "Explain Newton's third law. Do not quiz me on it.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "quiz_generation"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "effective": {
+        "original_message": "Explain Newton's third law. Do not quiz me on it.",
+        "student_goal": "Explain Newton's third law. Do not quiz me on it.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "quiz_generation"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 1256.5544999961276,
+      "attempts": [
+        {
+          "case": "negative-instruction-quiz",
+          "number": 2,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 508,
+            "completion_tokens": 55,
+            "total_tokens": 563,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [\"quiz_generation\"],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1250.4179999959888
+        }
+      ],
+      "prompt_tokens": 508,
+      "completion_tokens": 55,
+      "estimated_usd": 0.0001092,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue",
+        "trusted context or reference resolution issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "positive-summary-request",
+      "message": "Summarize chapter 3 briefly.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Summarize chapter 3 briefly.",
+        "student_goal": "Summarize chapter 3 briefly.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Summarize chapter 3 briefly.",
+        "student_goal": "Summarize chapter 3 briefly.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Summarize chapter 3 briefly.",
+        "student_goal": "Summarize chapter 3 briefly.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": false,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "isSummarization"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "isSummarization"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "isSummarization",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 1356.5224999983911,
+      "attempts": [
+        {
+          "case": "positive-summary-request",
+          "number": 3,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 498,
+            "completion_tokens": 48,
+            "total_tokens": 546,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1349.6683000048506
+        }
+      ],
+      "prompt_tokens": 498,
+      "completion_tokens": 48,
+      "estimated_usd": 0.0001035,
+      "error": null,
+      "failure_causes": [
+        "escalation heuristic did not trigger"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "escalation heuristic did not trigger"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "summarize-task",
+      "message": "Fasse Kapitel 3 kurz zusammen.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Fasse Kapitel 3 kurz zusammen.",
+        "student_goal": "Fasse Kapitel 3 kurz zusammen.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Fasse Kapitel 3 kurz zusammen.",
+        "student_goal": "Fasse Kapitel 3 kurz zusammen.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Fasse Kapitel 3 kurz zusammen.",
+        "student_goal": "Fasse Kapitel 3 kurz zusammen.",
+        "primary_task": "course_summary",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": false,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 1244.7323000014876,
+      "attempts": [
+        {
+          "case": "summarize-task",
+          "number": 4,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 498,
+            "completion_tokens": 48,
+            "total_tokens": 546,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1238.471299999219
+        }
+      ],
+      "prompt_tokens": 498,
+      "completion_tokens": 48,
+      "estimated_usd": 0.0001035,
+      "error": null,
+      "failure_causes": [
+        "escalation heuristic did not trigger"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "escalation heuristic did not trigger"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "contradictory-instruction",
+      "message": "Summarize this chapter. Do not summarize it.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Summarize this chapter. Do not summarize it.",
+        "student_goal": "Summarize this chapter. Do not summarize it.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": null,
+      "effective": {
+        "original_message": "Summarize this chapter. Do not summarize it.",
+        "student_goal": "Summarize this chapter. Do not summarize it.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "fallback",
+        "needs_clarification": true
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": false,
+        "depth": false,
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": false
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 820.0552999987849,
+      "attempts": [
+        {
+          "case": "contradictory-instruction",
+          "number": 5,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 504,
+            "completion_tokens": 53,
+            "total_tokens": 557,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [\"course_summary\"],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 813.8230999975349
+        }
+      ],
+      "prompt_tokens": 504,
+      "completion_tokens": 53,
+      "estimated_usd": 0.0001074,
+      "error": "ValueError",
+      "failure_causes": [
+        "invalid structured output"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "contradictory instructions",
+        "invalid structured output"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "german-negative-instruction",
+      "message": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "detailed",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "visible_page"
+      },
+      "baseline": {
+        "original_message": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "student_goal": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "student_goal": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "detailed",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "student_goal": "Erkl\u00e4re das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [
+          "course_summary"
+        ],
+        "depth": "detailed",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "shadow": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "enabled": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        }
+      },
+      "latency_ms": 1280.7064000007813,
+      "attempts": [
+        {
+          "case": "german-negative-instruction",
+          "number": 6,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 524,
+            "completion_tokens": 56,
+            "total_tokens": 580,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [\"course_summary\"],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1271.178900002269
+        }
+      ],
+      "prompt_tokens": 524,
+      "completion_tokens": 56,
+      "estimated_usd": 0.00011219999999999999,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "english-plain-question",
+      "message": "What is the formula for torsion?",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "definition_or_theorem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "What is the formula for torsion?",
+        "student_goal": "What is the formula for torsion?",
+        "primary_task": "definition_or_theorem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "What is the formula for torsion?",
+        "student_goal": "What is the formula for torsion?",
+        "primary_task": "formula_extraction",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "What is the formula for torsion?",
+        "student_goal": "What is the formula for torsion?",
+        "primary_task": "definition_or_theorem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 876.4531999986502,
+      "attempts": [
+        {
+          "case": "english-plain-question",
+          "number": 7,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 498,
+            "completion_tokens": 51,
+            "total_tokens": 549,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"formula_extraction\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 872.0522000003257
+        }
+      ],
+      "prompt_tokens": 498,
+      "completion_tokens": 51,
+      "estimated_usd": 0.0001053,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "mixed-language-code-switch",
+      "message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "student_goal": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "student_goal": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "student_goal": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 1321.0493000005954,
+      "attempts": [
+        {
+          "case": "mixed-language-code-switch",
+          "number": 8,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 538,
+            "completion_tokens": 52,
+            "total_tokens": 590,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1316.7542000010144
+        }
+      ],
+      "prompt_tokens": 538,
+      "completion_tokens": 52,
+      "estimated_usd": 0.00011190000000000001,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "follow-up-why",
+      "message": "Why did you divide by J?",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Why did you divide by J?",
+        "student_goal": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: Why did you divide by J?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": "follow_up_why",
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Why did you divide by J?",
+        "student_goal": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: Why did you divide by J?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": "follow_up_why",
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Why did you divide by J?",
+        "student_goal": "Resolve the demonstrative reference from the immediately preceding assistant answer and user question, then answer it: Why did you divide by J?. Do not claim the exercise is unspecified and do not ask the student to repeat context already present in the conversation.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": "follow_up_why",
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": false,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "isCalculation",
+            "requestsProfessorSpecificContent"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "isCalculation",
+            "requestsProfessorSpecificContent"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "isCalculation",
+            "requestsProfessorSpecificContent",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        }
+      },
+      "latency_ms": 978.7208000052487,
+      "attempts": [
+        {
+          "case": "follow-up-why",
+          "number": 9,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 580,
+            "completion_tokens": 52,
+            "total_tokens": 632,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 973.5582000066643
+        }
+      ],
+      "prompt_tokens": 580,
+      "completion_tokens": 52,
+      "estimated_usd": 0.0001182,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "correction",
+      "message": "No, that's wrong.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "No, that's wrong.",
+        "student_goal": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: No, that's wrong.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": {
+        "original_message": "No, that's wrong.",
+        "student_goal": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: No, that's wrong.",
+        "primary_task": "answer_correction_or_grading",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "effective": {
+        "original_message": "No, that's wrong.",
+        "student_goal": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: No, that's wrong.",
+        "primary_task": "answer_correction_or_grading",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        }
+      },
+      "latency_ms": 1019.711400003871,
+      "attempts": [
+        {
+          "case": "correction",
+          "number": 10,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 527,
+            "completion_tokens": 54,
+            "total_tokens": 581,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"answer_correction_or_grading\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1014.9741999994149
+        }
+      ],
+      "prompt_tokens": 527,
+      "completion_tokens": 54,
+      "estimated_usd": 0.00011144999999999998,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "malformed-model-output",
+      "message": "No, that's wrong.",
+      "known_gap": false,
+      "injected_failure": "malformed",
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "No, that's wrong.",
+        "student_goal": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: No, that's wrong.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": null,
+      "effective": {
+        "original_message": "No, that's wrong.",
+        "student_goal": "Correct the immediately previous answer about the immediately previous answer using fresh exact evidence. Student correction: No, that's wrong.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "fallback",
+        "needs_clarification": true
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": false,
+        "depth": false,
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": false
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_contextual",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "sufficient_recent_conversation",
+          "signals": [
+            "isFollowup",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_contextual"
+        }
+      },
+      "latency_ms": 0.000100000761449337,
+      "attempts": [],
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_usd": 0,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "timeout",
+      "message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+      "known_gap": false,
+      "injected_failure": "timeout",
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "brief",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "student_goal": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": null,
+      "effective": {
+        "original_message": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "student_goal": "Please erkl\u00e4re mir die \u00dcbung in English, kurz und pr\u00e4zise.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "fallback",
+        "needs_clarification": false
+      },
+      "expected_escalates": true,
+      "escalates": true,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": false,
+        "depth": false,
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": false
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": false,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isSimpleExplanation",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 0.000300002284348011,
+      "attempts": [],
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "estimated_usd": 0,
+      "error": null,
+      "failure_causes": [],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "timeout or API error (injected)",
+        "baseline depth limitation"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "diagram-reference",
+      "message": "Draw a free-body diagram for this beam.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": true,
+        "needs_clarification": false,
+        "scope": "visible_page"
+      },
+      "baseline": {
+        "original_message": "Draw a free-body diagram for this beam.",
+        "student_goal": "Draw a free-body diagram for this beam.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": true,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Draw a free-body diagram for this beam.",
+        "student_goal": "Draw a free-body diagram for this beam.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": true,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Draw a free-body diagram for this beam.",
+        "student_goal": "Draw a free-body diagram for this beam.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": true,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "shadow": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "enabled": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        }
+      },
+      "latency_ms": 894.4987999930163,
+      "attempts": [
+        {
+          "case": "diagram-reference",
+          "number": 11,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 500,
+            "completion_tokens": 52,
+            "total_tokens": 552,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": true,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 889.5479999991949
+        }
+      ],
+      "prompt_tokens": 500,
+      "completion_tokens": 52,
+      "estimated_usd": 0.0001062,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "page-reference",
+      "message": "What does it say on page 6?",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "visible_page"
+      },
+      "baseline": {
+        "original_message": "What does it say on page 6?",
+        "student_goal": "What does it say on page 6?",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "What does it say on page 6?",
+        "student_goal": "What does it say on page 6?",
+        "primary_task": "source_finding",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "What does it say on page 6?",
+        "student_goal": "What does it say on page 6?",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "visible_page",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "shadow": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        },
+        "enabled": {
+          "groundingMode": "visible_page",
+          "executionLane": "visible_page",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 1.0,
+          "reason": "resolved_visible_page_access",
+          "signals": [
+            "needsVisiblePage",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "visible_page"
+        }
+      },
+      "latency_ms": 1340.0867999953334,
+      "attempts": [
+        {
+          "case": "page-reference",
+          "number": 12,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 500,
+            "completion_tokens": 51,
+            "total_tokens": 551,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"source_finding\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 1335.940600001777
+        }
+      ],
+      "prompt_tokens": 500,
+      "completion_tokens": 51,
+      "estimated_usd": 0.00010559999999999999,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "quiz-request",
+      "message": "Quiz me on the chapter about thermodynamics.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Quiz me on the chapter about thermodynamics.",
+        "student_goal": "Quiz me on the chapter about thermodynamics.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Quiz me on the chapter about thermodynamics.",
+        "student_goal": "Quiz me on the chapter about thermodynamics.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Quiz me on the chapter about thermodynamics.",
+        "student_goal": "Quiz me on the chapter about thermodynamics.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 882.2930999958771,
+      "attempts": [
+        {
+          "case": "quiz-request",
+          "number": 13,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 500,
+            "completion_tokens": 48,
+            "total_tokens": 548,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"quiz_generation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 877.5378999998793
+        }
+      ],
+      "prompt_tokens": 500,
+      "completion_tokens": 48,
+      "estimated_usd": 0.0001038,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "quiz-answer-hiding-known-gap",
+      "message": "Quiz me on thermodynamics but do not show me the answers yet.",
+      "known_gap": true,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "student_goal": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "student_goal": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "student_goal": "Quiz me on thermodynamics but do not show me the answers yet.",
+        "primary_task": "quiz_generation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isGeneration",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 949.5061999987229,
+      "attempts": [
+        {
+          "case": "quiz-answer-hiding-known-gap",
+          "number": 14,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 510,
+            "completion_tokens": 50,
+            "total_tokens": 560,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"quiz_generation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 944.7996000017156
+        }
+      ],
+      "prompt_tokens": 510,
+      "completion_tokens": 50,
+      "estimated_usd": 0.0001065,
+      "error": null,
+      "failure_causes": [
+        "documented known gap remains; fixture labels encode baseline behavior"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "escalation heuristic did not trigger",
+        "schema cannot represent answer-hiding constraint"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "hint-request",
+      "message": "Can I get a hint for exercise 4.2?",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "one_step",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Can I get a hint for exercise 4.2?",
+        "student_goal": "Give one bounded hint for exercise 4.2. Do not reveal the complete solution or final result.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "one_step",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "4.2"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Can I get a hint for exercise 4.2?",
+        "student_goal": "Give one bounded hint for exercise 4.2. Do not reveal the complete solution or final result.",
+        "primary_task": "math_problem",
+        "prohibited_tasks": [],
+        "depth": "one_step",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "4.2"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Can I get a hint for exercise 4.2?",
+        "student_goal": "Give one bounded hint for exercise 4.2. Do not reveal the complete solution or final result.",
+        "primary_task": "general_course_qa",
+        "prohibited_tasks": [],
+        "depth": "one_step",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "4.2"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "fast_grounded",
+          "processingPipeline": "relevance",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "conversation_continues_grounded_task",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "requestsProfessorSpecificContent"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_grounded"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "fast_grounded",
+          "processingPipeline": "relevance",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "conversation_continues_grounded_task",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "requestsProfessorSpecificContent"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_grounded"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "fast_grounded",
+          "processingPipeline": "relevance",
+          "complexity": "fast",
+          "confidence": 0.92,
+          "reason": "conversation_continues_grounded_task",
+          "signals": [
+            "needsCourseEvidence",
+            "isFollowup",
+            "requestsProfessorSpecificContent",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": true,
+          "initialLane": "fast_grounded"
+        }
+      },
+      "latency_ms": 888.2414000036079,
+      "attempts": [
+        {
+          "case": "hint-request",
+          "number": 15,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 540,
+            "completion_tokens": 51,
+            "total_tokens": 591,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"math_problem\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"one_step\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 883.0276000007871
+        }
+      ],
+      "prompt_tokens": 540,
+      "completion_tokens": 51,
+      "estimated_usd": 0.00011159999999999999,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "incorrect semantic interpretation or evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "solve-request",
+      "message": "Solve exercise 5.1 completely, show all steps.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "math_problem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Solve exercise 5.1 completely, show all steps.",
+        "student_goal": "Solve exercise 5.1 completely, show all steps.",
+        "primary_task": "math_problem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "5.1"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Solve exercise 5.1 completely, show all steps.",
+        "student_goal": "Solve exercise 5.1 completely, show all steps.",
+        "primary_task": "math_problem",
+        "prohibited_tasks": [],
+        "depth": "detailed",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "5.1"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Solve exercise 5.1 completely, show all steps.",
+        "student_goal": "Solve exercise 5.1 completely, show all steps.",
+        "primary_task": "math_problem",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [
+          "5.1"
+        ],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": false,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "isCalculation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "isCalculation"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "deep_reasoning",
+          "processingPipeline": "calculation",
+          "complexity": "deep",
+          "confidence": 0.97,
+          "reason": "calculation_or_derivation",
+          "signals": [
+            "isCalculation",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "deep_reasoning"
+        }
+      },
+      "latency_ms": 850.7541000071797,
+      "attempts": [
+        {
+          "case": "solve-request",
+          "number": 16,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 506,
+            "completion_tokens": 51,
+            "total_tokens": 557,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"math_problem\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 846.5504999985569
+        }
+      ],
+      "prompt_tokens": 506,
+      "completion_tokens": 51,
+      "estimated_usd": 0.00010649999999999999,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "explain-request",
+      "message": "Explain Newton's third law of motion.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Explain Newton's third law of motion.",
+        "student_goal": "Explain Newton's third law of motion.",
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Explain Newton's third law of motion.",
+        "student_goal": "Explain Newton's third law of motion.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Explain Newton's third law of motion.",
+        "student_goal": "Explain Newton's third law of motion.",
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 780.1622999977553,
+      "attempts": [
+        {
+          "case": "explain-request",
+          "number": 17,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 498,
+            "completion_tokens": 50,
+            "total_tokens": 548,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 775.8003000053577
+        }
+      ],
+      "prompt_tokens": 498,
+      "completion_tokens": 50,
+      "estimated_usd": 0.0001047,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields"
+      ],
+      "pass": true,
+      "reviewed_failure_categories": [
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "compare-request",
+      "message": "Compare torsion and bending stress.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "comparison",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Compare torsion and bending stress.",
+        "student_goal": "Compare torsion and bending stress.",
+        "primary_task": "comparison",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Compare torsion and bending stress.",
+        "student_goal": "Compare torsion and bending stress.",
+        "primary_task": "comparison",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Compare torsion and bending stress.",
+        "student_goal": "Compare torsion and bending stress.",
+        "primary_task": "comparison",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isComparison"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isComparison"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "isComparison",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 947.0163999940269,
+      "attempts": [
+        {
+          "case": "compare-request",
+          "number": 18,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 496,
+            "completion_tokens": 49,
+            "total_tokens": 545,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"comparison\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 942.6332000002731
+        }
+      ],
+      "prompt_tokens": 496,
+      "completion_tokens": 49,
+      "estimated_usd": 0.00010379999999999999,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "missing-context-deictic",
+      "message": "Explain this to me.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "effective": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 844.8458999991999,
+      "attempts": [
+        {
+          "case": "missing-context-deictic",
+          "number": 19,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 492,
+            "completion_tokens": 52,
+            "total_tokens": 544,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 840.1783000008436
+        }
+      ],
+      "prompt_tokens": 492,
+      "completion_tokens": 52,
+      "estimated_usd": 0.000105,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "missing-context-resolved-via-visible-context",
+      "message": "Explain this to me.",
+      "known_gap": false,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": false,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "model": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.9,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": false
+      },
+      "effective": {
+        "original_message": "Explain this to me.",
+        "student_goal": "Explain this to me.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": false,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": false
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "shadow": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        },
+        "enabled": {
+          "groundingMode": "relevance",
+          "executionLane": "standard_rag",
+          "processingPipeline": "relevance",
+          "complexity": "standard",
+          "confidence": 0.7,
+          "reason": "conservative_standard_fallback",
+          "signals": [
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "standard_rag"
+        }
+      },
+      "latency_ms": 789.7905999998329,
+      "attempts": [
+        {
+          "case": "missing-context-resolved-via-visible-context",
+          "number": 20,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 492,
+            "completion_tokens": 52,
+            "total_tokens": 544,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 784.3881000007968
+        }
+      ],
+      "prompt_tokens": 492,
+      "completion_tokens": 52,
+      "estimated_usd": 0.000105,
+      "error": null,
+      "failure_causes": [],
+      "pass": true,
+      "reviewed_failure_categories": [],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    },
+    {
+      "id": "ordinal-deictic-false-positive-known-gap",
+      "message": "Explain how entropy relates to the second law of thermodynamics.",
+      "known_gap": true,
+      "injected_failure": null,
+      "expected": {
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "visual_requirement": false,
+        "needs_clarification": true,
+        "scope": "relevance"
+      },
+      "baseline": {
+        "original_message": "Explain how entropy relates to the second law of thermodynamics.",
+        "student_goal": "Explain how entropy relates to the second law of thermodynamics.",
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "model": {
+        "original_message": "Explain how entropy relates to the second law of thermodynamics.",
+        "student_goal": "Explain how entropy relates to the second law of thermodynamics.",
+        "primary_task": "conceptual_explanation",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 0.95,
+        "interpretation_source": "semantic_model",
+        "needs_clarification": true
+      },
+      "effective": {
+        "original_message": "Explain how entropy relates to the second law of thermodynamics.",
+        "student_goal": "Explain how entropy relates to the second law of thermodynamics.",
+        "primary_task": "case_or_application_reasoning",
+        "prohibited_tasks": [],
+        "depth": "normal",
+        "teaching_style": "default",
+        "scope": "relevance",
+        "references_resolved": [],
+        "references_unresolved": true,
+        "visual_requirement": false,
+        "follow_up_type": null,
+        "confidence": 1.0,
+        "interpretation_source": "deterministic",
+        "needs_clarification": true
+      },
+      "expected_escalates": false,
+      "escalates": false,
+      "model_score": {
+        "primary_task": false,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "effective_score": {
+        "primary_task": true,
+        "prohibited_tasks": true,
+        "depth": true,
+        "visual_requirement": true,
+        "needs_clarification": true,
+        "scope": true
+      },
+      "integration": {
+        "shadow_payload_unchanged": true,
+        "enabled_plan_only_adds_signal": true,
+        "enabled_signal_present": true,
+        "explicit_prohibitions_preserved": true,
+        "trusted_fields_preserved": true
+      },
+      "plans": {
+        "off": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "shadow": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        },
+        "enabled": {
+          "groundingMode": "general",
+          "executionLane": "fast_general",
+          "processingPipeline": "general",
+          "complexity": "fast",
+          "confidence": 0.95,
+          "reason": "simple_general_academic_question",
+          "signals": [
+            "isDefinition",
+            "isShortFactualQuestion",
+            "semantic_intent_available"
+          ],
+          "mayEscalate": false,
+          "initialLane": "fast_general"
+        }
+      },
+      "latency_ms": 855.3324999957113,
+      "attempts": [
+        {
+          "case": "ordinal-deictic-false-positive-known-gap",
+          "number": 21,
+          "reserved_usd": 0.019308,
+          "sdk_retry": 0,
+          "status": 200,
+          "usage": {
+            "prompt_tokens": 506,
+            "completion_tokens": 52,
+            "total_tokens": 558,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "audio_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "audio_tokens": 0,
+              "accepted_prediction_tokens": 0,
+              "rejected_prediction_tokens": 0
+            }
+          },
+          "returned_model": "gpt-4o-mini-2024-07-18",
+          "choices": [
+            {
+              "index": 0,
+              "message": {
+                "role": "assistant",
+                "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+                "refusal": null,
+                "annotations": []
+              },
+              "logprobs": null,
+              "finish_reason": "stop"
+            }
+          ],
+          "latency_ms": 850.7701999988058
+        }
+      ],
+      "prompt_tokens": 506,
+      "completion_tokens": 52,
+      "estimated_usd": 0.00010709999999999999,
+      "error": null,
+      "failure_causes": [
+        "incorrect semantic interpretation or evaluation fixture issue; review fields",
+        "documented known gap remains; fixture labels encode baseline behavior"
+      ],
+      "pass": false,
+      "reviewed_failure_categories": [
+        "trusted context or reference resolution issue",
+        "escalation heuristic did not trigger",
+        "evaluation fixture issue"
+      ],
+      "review_notes_reference": "student-intent-2026-10-17-analysis.md"
+    }
+  ],
+  "totals": {
+    "model": {
+      "primary_task_accuracy": 0.5714285714285714,
+      "prohibited_tasks_accuracy": 0.9047619047619048,
+      "depth_accuracy": 0.8571428571428571,
+      "visual_requirement_accuracy": 0.9523809523809523,
+      "needs_clarification_accuracy": 0.9523809523809523,
+      "scope_accuracy": 0.9523809523809523,
+      "n": 21,
+      "prohibition_recall": 0.5,
+      "prohibition_precision": 1.0,
+      "all_fields_pass": 9
+    },
+    "effective": {
+      "primary_task_accuracy": 0.9047619047619048,
+      "prohibited_tasks_accuracy": 0.9523809523809523,
+      "depth_accuracy": 0.9047619047619048,
+      "visual_requirement_accuracy": 1.0,
+      "needs_clarification_accuracy": 1.0,
+      "scope_accuracy": 1.0,
+      "n": 21,
+      "prohibition_recall": 0.75,
+      "prohibition_precision": 1.0,
+      "all_fields_pass": 16
+    },
+    "http_attempts": 21,
+    "sdk_retries": 0,
+    "model_invocations": 21,
+    "prompt_tokens": 10725,
+    "completion_tokens": 1080,
+    "unknown_usage_attempts": 0,
+    "estimated_usd": 0.00225675,
+    "conservative_usd_including_unknown": 0.00225675,
+    "reserved_usd": 0.405468,
+    "latency_mean_ms": 1166.3839142849956,
+    "latency_median_ms": 947.0163999940269,
+    "latency_p95_ms": 1356.5224999983911,
+    "structured_output_rate": 0.9523809523809523,
+    "escalation_frequency": 0.2857142857142857,
+    "fallback_rate": 0.047619047619047616
+  },
+  "attempts": [
+    {
+      "case": "historical-bwl-page6",
+      "number": 1,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 510,
+        "completion_tokens": 53,
+        "total_tokens": 563,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 3263.4311000001617
+    },
+    {
+      "case": "negative-instruction-quiz",
+      "number": 2,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 508,
+        "completion_tokens": 55,
+        "total_tokens": 563,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [\"quiz_generation\"],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1250.4179999959888
+    },
+    {
+      "case": "positive-summary-request",
+      "number": 3,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 498,
+        "completion_tokens": 48,
+        "total_tokens": 546,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1349.6683000048506
+    },
+    {
+      "case": "summarize-task",
+      "number": 4,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 498,
+        "completion_tokens": 48,
+        "total_tokens": 546,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1238.471299999219
+    },
+    {
+      "case": "contradictory-instruction",
+      "number": 5,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 504,
+        "completion_tokens": 53,
+        "total_tokens": 557,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"course_summary\",\n  \"prohibitedTasks\": [\"course_summary\"],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 813.8230999975349
+    },
+    {
+      "case": "german-negative-instruction",
+      "number": 6,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 524,
+        "completion_tokens": 56,
+        "total_tokens": 580,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [\"course_summary\"],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1271.178900002269
+    },
+    {
+      "case": "english-plain-question",
+      "number": 7,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 498,
+        "completion_tokens": 51,
+        "total_tokens": 549,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"formula_extraction\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 872.0522000003257
+    },
+    {
+      "case": "mixed-language-code-switch",
+      "number": 8,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 538,
+        "completion_tokens": 52,
+        "total_tokens": 590,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"brief\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1316.7542000010144
+    },
+    {
+      "case": "follow-up-why",
+      "number": 9,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 580,
+        "completion_tokens": 52,
+        "total_tokens": 632,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 973.5582000066643
+    },
+    {
+      "case": "correction",
+      "number": 10,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 527,
+        "completion_tokens": 54,
+        "total_tokens": 581,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"answer_correction_or_grading\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1014.9741999994149
+    },
+    {
+      "case": "diagram-reference",
+      "number": 11,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 500,
+        "completion_tokens": 52,
+        "total_tokens": 552,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": true,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 889.5479999991949
+    },
+    {
+      "case": "page-reference",
+      "number": 12,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 500,
+        "completion_tokens": 51,
+        "total_tokens": 551,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"source_finding\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 1335.940600001777
+    },
+    {
+      "case": "quiz-request",
+      "number": 13,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 500,
+        "completion_tokens": 48,
+        "total_tokens": 548,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"quiz_generation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 877.5378999998793
+    },
+    {
+      "case": "quiz-answer-hiding-known-gap",
+      "number": 14,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 510,
+        "completion_tokens": 50,
+        "total_tokens": 560,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"quiz_generation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 944.7996000017156
+    },
+    {
+      "case": "hint-request",
+      "number": 15,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 540,
+        "completion_tokens": 51,
+        "total_tokens": 591,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"math_problem\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"one_step\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 883.0276000007871
+    },
+    {
+      "case": "solve-request",
+      "number": 16,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 506,
+        "completion_tokens": 51,
+        "total_tokens": 557,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"math_problem\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"detailed\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 846.5504999985569
+    },
+    {
+      "case": "explain-request",
+      "number": 17,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 498,
+        "completion_tokens": 50,
+        "total_tokens": 548,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 1\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 775.8003000053577
+    },
+    {
+      "case": "compare-request",
+      "number": 18,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 496,
+        "completion_tokens": 49,
+        "total_tokens": 545,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"comparison\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 942.6332000002731
+    },
+    {
+      "case": "missing-context-deictic",
+      "number": 19,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 492,
+        "completion_tokens": 52,
+        "total_tokens": 544,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 840.1783000008436
+    },
+    {
+      "case": "missing-context-resolved-via-visible-context",
+      "number": 20,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 492,
+        "completion_tokens": 52,
+        "total_tokens": 544,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.9\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 784.3881000007968
+    },
+    {
+      "case": "ordinal-deictic-false-positive-known-gap",
+      "number": 21,
+      "reserved_usd": 0.019308,
+      "sdk_retry": 0,
+      "status": 200,
+      "usage": {
+        "prompt_tokens": 506,
+        "completion_tokens": 52,
+        "total_tokens": 558,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "returned_model": "gpt-4o-mini-2024-07-18",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\n  \"primaryTask\": \"conceptual_explanation\",\n  \"prohibitedTasks\": [],\n  \"depth\": \"normal\",\n  \"teachingStyle\": \"default\",\n  \"visualRequirement\": false,\n  \"confidence\": 0.95\n}",
+            "refusal": null,
+            "annotations": []
+          },
+          "logprobs": null,
+          "finish_reason": "stop"
+        }
+      ],
+      "latency_ms": 850.7701999988058
+    }
+  ],
+  "runner_commit": "62b4d5123099db7618d4c92f767b4b49aaec345b",
+  "post_run_annotation": "Provenance and failure-cause annotations only; no responses, expected labels or metrics changed, no repeated calls.",
+  "known_gap_results": [
+    {
+      "id": "quiz-answer-hiding-known-gap",
+      "escalates": false,
+      "resolved": false,
+      "causes": [
+        "escalation heuristic did not trigger",
+        "schema cannot represent answer-hiding constraint"
+      ]
+    },
+    {
+      "id": "ordinal-deictic-false-positive-known-gap",
+      "escalates": false,
+      "resolved": false,
+      "causes": [
+        "trusted context or reference resolution issue",
+        "escalation heuristic did not trigger",
+        "evaluation fixture issue"
+      ]
+    }
+  ]
+}

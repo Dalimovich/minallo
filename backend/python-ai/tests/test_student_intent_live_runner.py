@@ -98,8 +98,18 @@ def test_entire_corpus_offline_replay_and_detect_prohibition_loss(tmp_path, monk
         rows = [_runner.evaluate_case(case, guard) for case in cases]
     assert len(rows) == 23
     assert len(guard.attempts) == 21
-    assert not rows[0]["integration"]["explicit_prohibitions_preserved"] , (
-        rows[0]["baseline"]["prohibited_tasks"], rows[0]["effective"], rows[0]["escalates"])
+    # Verify the measurement, not continued existence of the production bug:
+    # a later union-merge fix must not require weakening this test.
+    preserved = set(rows[0]["baseline"]["prohibited_tasks"]) <= set(
+        rows[0]["effective"]["prohibited_tasks"])
+    assert rows[0]["integration"]["explicit_prohibitions_preserved"] == preserved
+    assert "course_summary" in rows[0]["baseline"]["prohibited_tasks"]
+    assert json.loads(guard.attempts[0]["choices"][0]["message"]["content"])["prohibitedTasks"] == []
     assert all(r["integration"]["shadow_payload_unchanged"] for r in rows)
     assert all(r["integration"]["trusted_fields_preserved"] for r in rows)
     assert sum(r["effective"]["interpretation_source"] == "fallback" for r in rows) == 2
+
+
+def test_omitted_prohibition_is_a_scoring_failure():
+    assert _runner.score({"prohibited_tasks": []}, {"prohibited_tasks": ["course_summary"]}) == {
+        "prohibited_tasks": False}
