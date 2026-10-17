@@ -1,0 +1,5 @@
+{"case": "historical-bwl-page6", "number": 1, "reserved_usd": 0.019308, "sdk_retry": 0}
+{"case": "german-negative-instruction", "number": 2, "reserved_usd": 0.019308, "sdk_retry": 0}
+{"case": "contradictory-instruction", "number": 3, "reserved_usd": 0.019308, "sdk_retry": 0}
+{"case": "negative-instruction-quiz", "number": 4, "reserved_usd": 0.019308, "sdk_retry": 0}
+{"case": "positive-summary-request", "number": 5, "reserved_usd": 0.019308, "sdk_retry": 0}

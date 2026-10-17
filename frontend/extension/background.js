@@ -1,12 +1,15 @@
 const SUPA_URL = 'https://wprfkjeiawxlcnitsfdr.supabase.co';
 const SUPA_ANON =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwcmZramVpYXd4bGNuaXRzZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MTk4NjYsImV4cCI6MjA1ODQ5NTg2Nn0.dCRPnRbcrL1PFQgZJNE0UPQRGQBpNEMuNEIzdyMYQa8';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndwcmZramVpYXd4bGNuaXRzZmRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMjAyMzUsImV4cCI6MjA4OTc5NjIzNX0.LbJKG8J_jd2oKYAmQg0ycb-LBnQM1ItlseOLMT_24jc';
 
 let authTabId = null;
 let originWinId = null;
 
 function startGoogleAuth() {
-  const redirectTo = 'https://minallo.de/';
+  // /app/ is the authenticated app shell — it reads #access_token= from the
+  // OAuth redirect the same way / used to. Must also be on Supabase's
+  // Redirect URLs allow-list (Dashboard → Authentication → URL Configuration).
+  const redirectTo = 'https://minallo.de/app/';
   const authUrl = `${SUPA_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
   chrome.windows.getCurrent({}, (win) => {
     originWinId = win.id;

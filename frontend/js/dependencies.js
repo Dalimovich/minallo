@@ -2,10 +2,32 @@
 (function () {
   var scriptPromises = {};
   var stylePromises = {};
+  var SRI = {
+    jsPdf: 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk',
+    html2Canvas: 'sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H',
+    pdfJs: 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e',
+    katexCss: 'sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww',
+    katexJs: 'sha384-hIoBPJpTUs74ddyc4bFZSM1TVlQDA60VBbJS0oA934VSz82sBx1X7kSx2ATBDIyd',
+    katexAutoRender: 'sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk'
+  };
+
+  function sriAttrs(integrity) {
+    return integrity ? { integrity: integrity, crossorigin: 'anonymous' } : {};
+  }
 
   function loadScriptOnce(src, attrs) {
     if (!src) return Promise.reject(new Error('Missing script URL'));
     if (scriptPromises[src]) return scriptPromises[src];
+    // On failure: evict the cached promise AND remove the dead element.
+    // Both are required for a retry to work — a cached rejection means a CDN/
+    // DNS blip permanently disables the dependency (KaTeX, jsPDF, PayPal…)
+    // for the whole session, and a dead tag left in the DOM would make the
+    // next call attach listeners to an element that never fires again.
+    function failScript(el, reject) {
+      delete scriptPromises[src];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      reject(new Error('Failed to load ' + src));
+    }
     scriptPromises[src] = new Promise(function (resolve, reject) {
       var existing = document.querySelector('script[src="' + src.replace(/"/g, '\\"') + '"]');
       if (existing) {
@@ -23,7 +45,7 @@
         existing.addEventListener(
           'error',
           function () {
-            reject(new Error('Failed to load ' + src));
+            failScript(existing, reject);
           },
           { once: true }
         );
@@ -39,16 +61,22 @@
         resolve();
       };
       s.onerror = function () {
-        reject(new Error('Failed to load ' + src));
+        failScript(s, reject);
       };
       document.head.appendChild(s);
     });
     return scriptPromises[src];
   }
 
-  function loadStyleOnce(href) {
+  function loadStyleOnce(href, attrs) {
     if (!href) return Promise.reject(new Error('Missing stylesheet URL'));
     if (stylePromises[href]) return stylePromises[href];
+    // Mirror of failScript above: a failed stylesheet must be retryable.
+    function failStyle(el, reject) {
+      delete stylePromises[href];
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+      reject(new Error('Failed to load ' + href));
+    }
     stylePromises[href] = new Promise(function (resolve, reject) {
       var existing = document.querySelector('link[href="' + href.replace(/"/g, '\\"') + '"]');
       if (existing) {
@@ -66,7 +94,7 @@
         existing.addEventListener(
           'error',
           function () {
-            reject(new Error('Failed to load ' + href));
+            failStyle(existing, reject);
           },
           { once: true }
         );
@@ -75,12 +103,15 @@
       var l = document.createElement('link');
       l.rel = 'stylesheet';
       l.href = href;
+      Object.keys(attrs || {}).forEach(function (k) {
+        l.setAttribute(k, attrs[k]);
+      });
       l.onload = function () {
         l.dataset.loaded = '1';
         resolve();
       };
       l.onerror = function () {
-        reject(new Error('Failed to load ' + href));
+        failStyle(l, reject);
       };
       document.head.appendChild(l);
     });
@@ -89,13 +120,17 @@
 
   function ensureJsPdf() {
     if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve();
-    return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    return loadScriptOnce(
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      sriAttrs(SRI.jsPdf)
+    );
   }
 
   function ensureHtml2Canvas() {
     if (window.html2canvas) return Promise.resolve();
     return loadScriptOnce(
-      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'
+      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+      sriAttrs(SRI.html2Canvas)
     );
   }
 
@@ -105,12 +140,13 @@
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       return Promise.resolve();
     }
-    return loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js').then(
-      function () {
+    return loadScriptOnce(
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+      sriAttrs(SRI.pdfJs)
+    ).then(function () {
         pdfjsLib.GlobalWorkerOptions.workerSrc =
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      }
-    );
+      });
   }
 
   function ensurePdfExportDeps() {
@@ -125,17 +161,38 @@
 
   function ensureKatex() {
     if (window.katex && window.renderMathInElement) return Promise.resolve();
-    return loadStyleOnce('https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css')
+    return loadStyleOnce(
+      'https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css',
+      sriAttrs(SRI.katexCss)
+    )
       .then(function () {
         if (window.katex) return;
-        return loadScriptOnce('https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js');
+        return loadScriptOnce(
+          'https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js',
+          sriAttrs(SRI.katexJs)
+        );
       })
       .then(function () {
         if (window.renderMathInElement) return;
         return loadScriptOnce(
-          'https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js'
+          'https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js',
+          sriAttrs(SRI.katexAutoRender)
         );
       });
+  }
+
+  function ensureHljs() {
+    if (window.hljs) return Promise.resolve();
+    // SRI deferred: cdnjs is already trusted (we load other libs without
+    // SRI from it). Add SRI hashes here when we lock the version.
+    return loadStyleOnce(
+      'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css'
+    ).then(function () {
+      if (window.hljs) return;
+      return loadScriptOnce(
+        'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'
+      );
+    });
   }
 
   window._ssLoadScriptOnce = loadScriptOnce;
@@ -146,7 +203,11 @@
   window._ssEnsurePdfExportDeps = ensurePdfExportDeps;
   window._ssEnsurePayPalSdk = ensurePayPalSdk;
   window._ssEnsureKatex = ensureKatex;
+  window._ssEnsureHljs = ensureHljs;
 
   // Pre-load KaTeX immediately so math renders without delay on first answer
   ensureKatex().catch(function () {});
+  // Pre-load hljs too — CS students see code from the very first answer,
+  // and a 50KB JS + 5KB CSS is cheap insurance against perceived latency.
+  ensureHljs().catch(function () {});
 })();

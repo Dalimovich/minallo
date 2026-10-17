@@ -1,25 +1,41 @@
-"""Token-bounded chunker that's aware of pages, headings, and study-value sections.
+"""Token-bounded chunker that walks Phase-2 Markdown.
 
 Design notes
 ------------
-- Targets `target_tokens` per chunk with `overlap_tokens` worth of prefix from the
-  previous chunk, so retrieval rarely loses sentence context at boundaries.
-- Tokeniser: tiktoken `cl100k_base` (same family used by text-embedding-3-small).
-- Heading detection is conservative: short ALL-CAPS or numbered "1.2 Foo" lines.
-  When we see one, the current chunk is forced to flush so a heading never
-  ends up in the middle of a chunk.
+- Input is per-page Markdown produced by ``markdown_indexing.page_to_markdown``
+  (or raw text — auto-converted for backward compatibility with older callers
+  and tests). Walking the Markdown rather than the raw pdfminer text means the
+  chunker shares Phase-2's heading detection, math-line classification, and
+  page-quality grading instead of carrying parallel implementations.
+- Targets ``target_tokens`` per chunk with ``overlap_tokens`` worth of prefix
+  from the previous chunk, so retrieval rarely loses sentence context at
+  boundaries. Tokeniser: tiktoken ``cl100k_base`` (same family used by
+  text-embedding-3-small).
+- Markdown blocks are paragraph-bounded (split on blank lines). Three block
+  shapes get special handling:
+    * Heading — starts with ``#`` (ATX). Flushes the current chunk so headings
+      never end up mid-chunk, then becomes the ``section_title`` for the next.
+    * Display math — starts with ``$$``. Treated atomically; never split
+      mid-formula. If a math block alone exceeds ``target_tokens`` (rare —
+      a long matrix), it ships as one over-budget chunk rather than being
+      ripped apart.
+    * Prose — anything else. Sentence-bounded sub-splits keep walls of text
+      from blowing the budget.
 - Chunk type guess is best-effort: matches German/English keywords for
   Aufgabe / Beispiel / Definition / Satz / Theorem / Formel / Lösung / etc.
-- Returns a list of dicts ready to upsert into `document_chunks`.
+- Returns a list of ``Chunk`` dataclasses ready to upsert into
+  ``document_chunks``.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Union
 
 import tiktoken
+
+from .markdown_indexing import PageMarkdown, page_to_markdown
 
 # Same encoding family OpenAI uses for text-embedding-3-small and GPT-4 family.
 _ENC = tiktoken.get_encoding("cl100k_base")
@@ -29,11 +45,91 @@ def _count_tokens(text: str) -> int:
     return len(_ENC.encode(text))
 
 
-# ── Heading / chunk-type detection ───────────────────────────────────────────
+# ── Block classification ─────────────────────────────────────────────────────
 
-_NUMBERED_HEADING = re.compile(r"^\s*\d+(?:\.\d+){0,3}\s+\S+")          # "1.2 Force", "3 Methods"
-_SHORT_CAPS_HEADING = re.compile(r"^[A-Z][A-Z0-9 \-–&,/]{2,60}$")        # "INTRODUCTION"
-_TITLE_CASE_HEADING = re.compile(r"^[A-Z][\w][\w \-–&,/]{2,60}$")        # "Newton's Second Law"
+# Phase-2 markdown emits headings as ``## Heading`` / ``### Sub`` (ATX form).
+_ATX_HEADING = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$")
+
+# Phase-2 markdown emits display math as a paragraph that starts AND ends with
+# ``$$`` (with the body on the lines between, or — for single-line equations
+# — inline as ``$$ ... $$``).
+_MATH_OPEN_OR_INLINE = re.compile(r"^\s*\$\$")
+
+
+def _is_heading_block(block: str) -> bool:
+    first_line = block.splitlines()[0] if block else ""
+    return bool(_ATX_HEADING.match(first_line))
+
+
+def _heading_text(block: str) -> str:
+    m = _ATX_HEADING.match(block.splitlines()[0])
+    return m.group(2).strip() if m else block.strip()
+
+
+def _is_math_block(block: str) -> bool:
+    return bool(_MATH_OPEN_OR_INLINE.match(block))
+
+
+# Phase 5 — code fence support. A block starts with triple-backticks (with
+# an optional language tag) when emitted by `_split_blocks` for a fenced
+# code region. Code blocks are atomic just like math blocks: they never
+# split across chunks, even if that means one over-budget chunk. CS lecture
+# slides often have a single function or algorithm body that's hundreds of
+# tokens; ripping it mid-function destroys retrieval value.
+_CODE_FENCE_LINE = re.compile(r"^\s*```")
+
+
+def _is_code_block(block: str) -> bool:
+    first_line = block.splitlines()[0] if block else ""
+    return bool(_CODE_FENCE_LINE.match(first_line))
+
+
+# Phase 3 Step C — exercise headings open a no-split region.
+# Reuses block_detection's pattern so the chunker, the exercise-table
+# extractor, and any future exact-match retrieval all agree on what counts
+# as an "exercise X" header. The regex is tolerant of leading ``##`` markers
+# since Phase-2 markdown promotes ``Aufgabe X`` to ``## Aufgabe X``.
+_EXERCISE_HEADER_LINE = re.compile(
+    r"^(?:#{1,6}\s*)?"
+    # Order matters — list the compound forms BEFORE their prefixes so the
+    # alternation matches "Übungsaufgabe" as a whole instead of stopping
+    # after "Übung" (which would then fail the digit lookahead).
+    r"(Übungsaufgabe|Uebungsaufgabe|Aufgabe|Übung|Uebung|Exercise|Problem|Task|Beispiel)"
+    r"\s+(\d+(?:\.\d+){0,3})"
+    r"(?:\s*[\(\[]?([a-zA-Z])[\)\]]?\.?)?"
+    r"[:\.\s]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_exercise_heading(heading_text: str) -> bool:
+    """True when a heading line names an exercise (``Aufgabe 1.2``,
+    ``Exercise 3``, ``Übung 2``, …). Step C uses this to switch the chunker
+    into a no-split accumulation mode so the exercise statement stays in one
+    chunk regardless of token budget."""
+    return bool(_EXERCISE_HEADER_LINE.match((heading_text or "").strip()))
+
+
+def _parse_exercise_heading(heading_text: str) -> tuple[str | None, str | None]:
+    """Pull ``(exercise_number, subpart)`` from an exercise heading.
+
+    Examples::
+
+        "Aufgabe 9.1 a)" → ("9.1", "a")
+        "Übung 3"        → ("3",   None)
+        "Theoriekapitel" → (None,  None)
+
+    Step D uses this so chunks emitted from the no-split exercise region
+    carry the same identifiers as the matching ``document_exercises`` row,
+    which is what the FK is joined on at insert time.
+    """
+    m = _EXERCISE_HEADER_LINE.match((heading_text or "").strip())
+    if not m:
+        return None, None
+    number = m.group(2)
+    subpart = (m.group(3) or "").lower() or None
+    return number, subpart
+
 
 # Keywords we use to tag chunk_type. Order matters — first match wins.
 _TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -44,25 +140,6 @@ _TYPE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("exercise",    re.compile(r"\b(aufgabe|übung|exercise|problem)\b", re.I)),
     ("solution",    re.compile(r"\b(lösung|lösungsweg|solution)\b", re.I)),
 ]
-
-
-def _looks_like_heading(line: str) -> bool:
-    line = line.strip()
-    if len(line) < 3 or len(line) > 80:
-        return False
-    if line.endswith((".", ":", ",", ";")):  # sentences, not headings
-        return False
-    if _NUMBERED_HEADING.match(line):
-        return True
-    if _SHORT_CAPS_HEADING.match(line):
-        return True
-    # Title-case heuristic: short, no end-punctuation, mostly capitalised words.
-    if _TITLE_CASE_HEADING.match(line):
-        # Avoid grabbing every short sentence — require at least half the words capitalised.
-        words = [w for w in line.split() if w]
-        caps = sum(1 for w in words if w[:1].isupper())
-        return len(words) <= 8 and caps / max(len(words), 1) >= 0.6
-    return False
 
 
 def _classify_chunk(text: str, heading: str | None) -> str:
@@ -84,23 +161,41 @@ class Chunk:
     chunk_type: str
     section_title: str | None
     token_count: int
+    # Phase 3 Step D — populated when the chunk was emitted from inside an
+    # exercise no-split region. Indexing resolves these against the
+    # ``document_exercises`` rows to set ``document_chunks.exercise_id``.
+    # Left NULL for non-exercise chunks (lecture, summary, formula
+    # companion under a non-exercise heading, …).
+    exercise_number: str | None = None
+    exercise_subpart: str | None = None
+
+
+# Public input alias — accept either raw page strings or pre-built PageMarkdown.
+PageInput = Union[str, PageMarkdown]
 
 
 def chunk_pages(
-    pages: list[str],
+    pages: list[PageInput],
     target_tokens: int = 700,
     overlap_tokens: int = 80,
     min_chunk_tokens: int = 80,
 ) -> list[Chunk]:
-    """Greedy paragraph-bounded chunker with overlap and heading awareness.
+    """Greedy Markdown-bounded chunker with overlap and heading awareness.
 
-    The chunker walks every page's paragraphs and accumulates them into a
-    running buffer. A chunk is emitted when (a) adding the next paragraph
-    would exceed target_tokens, (b) the page boundary is reached and the
-    buffer is large enough, or (c) a heading is seen. Each emitted chunk
-    carries page_start / page_end and a best-effort chunk_type.
+    ``pages`` may be a list of raw page strings (legacy / test path — each is
+    converted to Markdown internally) or pre-built ``PageMarkdown`` objects
+    from the indexing pipeline (preferred — avoids double conversion).
+
+    A chunk is emitted when (a) adding the next block would exceed
+    ``target_tokens``, (b) a heading block is reached, or (c) end of document.
+    Display-math blocks (``$$ ... $$``) are kept atomic — they never split
+    across chunks, even if that pushes a single chunk over budget.
     """
-    if not any(pages):
+    if not pages:
+        return []
+
+    pages_md = _normalise_pages(pages)
+    if not pages_md:
         return []
 
     chunks: list[Chunk] = []
@@ -109,6 +204,18 @@ def chunk_pages(
     current_page_start: int | None = None
     current_page_end: int | None = None
     current_heading: str | None = None
+    # Phase 3 Step C — once an exercise heading is seen, accumulate the body
+    # without size-driven flushes so the statement, formulas, and solution
+    # lines all land in one chunk together. The token-budget gates we'd
+    # normally apply (prose sentence-splitting, math overflow guard) are
+    # bypassed for as long as this flag is on. The flag flips off only when
+    # the next heading arrives (exercise or otherwise) or the document ends.
+    in_exercise = False
+    # Phase 3 Step D — exercise identifiers extracted from the current
+    # exercise heading. Stamped on every chunk emitted while ``in_exercise``
+    # is true so indexing can resolve them to ``document_exercises.id``.
+    current_exercise_number: str | None = None
+    current_exercise_subpart: str | None = None
 
     def flush(reason: str) -> None:  # noqa: ARG001 — reason kept for debugging
         nonlocal current_text_parts, current_tokens, current_page_start, current_page_end
@@ -121,36 +228,127 @@ def chunk_pages(
                 chunk_type=_classify_chunk(text, current_heading),
                 section_title=current_heading,
                 token_count=current_tokens,
+                exercise_number=current_exercise_number if in_exercise else None,
+                exercise_subpart=current_exercise_subpart if in_exercise else None,
             ))
         current_text_parts = []
         current_tokens = 0
         current_page_start = None
         current_page_end = None
 
-    for page_idx, page_text in enumerate(pages):
-        page_number = page_idx + 1
-        if not page_text.strip():
+    for page in pages_md:
+        page_number = page.page_number
+        md = (page.markdown or "").strip()
+        if not md or md == "[unclear]":
             continue
 
-        for raw_para in _split_paragraphs(page_text):
-            # Heading detection — never let a heading mid-chunk.
-            if _looks_like_heading(raw_para):
+        for block in _split_blocks(md):
+            # ── Heading: flush, set section title, do not accumulate body ──
+            if _is_heading_block(block):
                 flush("heading")
-                current_heading = raw_para.strip()
-                # Headings don't accumulate as content; they only re-tag subsequent chunks.
+                current_heading = _heading_text(block)
+                # Step C/D — entering an exercise opens the no-split region
+                # AND captures the identifiers for the chunk's FK; any other
+                # heading closes the region and clears the identifiers.
+                if _is_exercise_heading(current_heading):
+                    in_exercise = True
+                    current_exercise_number, current_exercise_subpart = (
+                        _parse_exercise_heading(current_heading)
+                    )
+                else:
+                    in_exercise = False
+                    current_exercise_number = None
+                    current_exercise_subpart = None
                 continue
 
-            # A single paragraph might already blow the budget on its own
-            # (one wall of text, no double-newlines). Split it on sentence
-            # boundaries so we can still respect target_tokens.
-            for segment in _bounded_segments(raw_para, target_tokens):
+            # ── Code fence: atomic, never split. May exceed budget. ──
+            # CS course material treats a function body / algorithm listing
+            # as one inseparable unit. Same flush-before-overflow logic as
+            # math; no formula companion (a code block isn't a formula).
+            if _is_code_block(block):
+                c_tokens = _count_tokens(block)
+                if (
+                    not in_exercise
+                    and current_tokens > 0
+                    and current_tokens + c_tokens > target_tokens
+                ):
+                    tail = _overlap_tail(current_text_parts, overlap_tokens)
+                    flush("size-before-code")
+                    if tail:
+                        current_text_parts = [tail]
+                        current_tokens = _count_tokens(tail)
+                        current_page_start = page_number
+                        current_page_end = page_number
+                current_text_parts.append(block)
+                current_tokens += c_tokens
+                if current_page_start is None:
+                    current_page_start = page_number
+                current_page_end = page_number
+                continue
+
+            # ── Math display block: atomic, never split. May exceed budget. ──
+            if _is_math_block(block):
+                m_tokens = _count_tokens(block)
+                # Inside a Step-C exercise region: never split — the whole
+                # exercise (statement + formulas + solution lines) stays
+                # together. Outside: respect the size budget as before.
+                if (
+                    not in_exercise
+                    and current_tokens > 0
+                    and current_tokens + m_tokens > target_tokens
+                ):
+                    tail = _overlap_tail(current_text_parts, overlap_tokens)
+                    flush("size-before-math")
+                    if tail:
+                        current_text_parts = [tail]
+                        current_tokens = _count_tokens(tail)
+                        current_page_start = page_number
+                        current_page_end = page_number
+                current_text_parts.append(block)
+                current_tokens += m_tokens
+                if current_page_start is None:
+                    current_page_start = page_number
+                current_page_end = page_number
+
+                # ── Phase 3 Step B — atomic formula companion chunk ──
+                # In addition to keeping the formula inside the parent
+                # context chunk above, emit a small standalone chunk holding
+                # just the heading + the formula. The dense single-formula
+                # surface ranks much better for "what's the formula for X?"
+                # queries than the 700-token lecture chunk it sits inside,
+                # and the parent chunk still grounds the formula in
+                # surrounding context for explanatory questions.
+                companion = _build_formula_companion(
+                    formula_block=block,
+                    heading=current_heading,
+                    page=page_number,
+                    exercise_number=current_exercise_number if in_exercise else None,
+                    exercise_subpart=current_exercise_subpart if in_exercise else None,
+                )
+                if companion is not None:
+                    chunks.append(companion)
+                continue
+
+            # ── Prose: may need sentence-bounded sub-splitting ──
+            # Inside a Step-C exercise region: skip the budget-driven splits
+            # AND the sentence-bounded segmentation. We keep the whole prose
+            # paragraph as one segment so the chunker only joins on the
+            # natural ``\n\n`` paragraph boundary. The point is that an
+            # exercise statement reads as one thing — ripping it on the 700th
+            # token loses the question.
+            if in_exercise:
+                segments: Iterable[str] = (block,)
+            else:
+                segments = _bounded_segments(block, target_tokens)
+            for segment in segments:
                 seg_tokens = _count_tokens(segment)
                 if seg_tokens == 0:
                     continue
-
-                # If adding this segment blows the target, flush first.
-                if current_tokens > 0 and current_tokens + seg_tokens > target_tokens:
-                    # Carry an overlap tail forward for retrieval continuity.
+                if (
+                    not in_exercise
+                    and current_tokens > 0
+                    and current_tokens + seg_tokens > target_tokens
+                ):
                     tail = _overlap_tail(current_text_parts, overlap_tokens)
                     flush("size")
                     if tail:
@@ -158,7 +356,6 @@ def chunk_pages(
                         current_tokens = _count_tokens(tail)
                         current_page_start = page_number
                         current_page_end = page_number
-
                 current_text_parts.append(segment)
                 current_tokens += seg_tokens
                 if current_page_start is None:
@@ -172,12 +369,91 @@ def chunk_pages(
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _split_paragraphs(page_text: str) -> Iterable[str]:
-    """Split a page into paragraphs, dropping empties."""
-    for block in page_text.split("\n\n"):
-        block = block.strip()
-        if block:
-            yield block
+def _normalise_pages(pages: list[PageInput]) -> list[PageMarkdown]:
+    """Convert raw page strings to PageMarkdown for the walker. Passes
+    PageMarkdown through unchanged."""
+    out: list[PageMarkdown] = []
+    for idx, item in enumerate(pages):
+        if isinstance(item, PageMarkdown):
+            out.append(item)
+        elif isinstance(item, str):
+            if item.strip():
+                out.append(page_to_markdown(item, idx + 1))
+        # Silently skip anything else — keeps the contract permissive for
+        # tests/legacy callers that may pass None for missing pages.
+    return out
+
+
+def _split_blocks(md: str) -> Iterable[str]:
+    """Split Markdown into paragraph-shaped blocks on blank lines, preserving
+    multi-line math fences AND code fences as single blocks.
+
+    A code fence (triple-backtick line) opens an inviolable region that
+    accumulates every subsequent line — including blank lines — until the
+    matching closing fence. This matters for CS course material: ``def foo():
+    \\n\\n    pass`` would otherwise be ripped apart on the inner blank line."""
+    blocks: list[str] = []
+    buf: list[str] = []
+    in_math = False
+    in_code = False
+    for line in md.splitlines():
+        stripped = line.strip()
+        # Code fence open/close. Triple-backticks with optional language tag.
+        # Inside a code fence we never split on blank lines and never treat
+        # `$$` or other fence-shaped lines as openers.
+        if stripped.startswith("```"):
+            if not in_code:
+                if buf:
+                    blocks.append("\n".join(buf).strip())
+                    buf = []
+                buf.append(line)
+                in_code = True
+            else:
+                buf.append(line)
+                blocks.append("\n".join(buf).strip())
+                buf = []
+                in_code = False
+            continue
+        if in_code:
+            buf.append(line)
+            continue
+        # Single-line "$$ x = y $$" form — emits as its own block.
+        if not in_math and re.match(r"^\s*\$\$.+\$\$\s*$", stripped):
+            if buf:
+                blocks.append("\n".join(buf).strip())
+                buf = []
+            blocks.append(stripped)
+            continue
+        # Opening fence of a multi-line $$ ... $$ block.
+        if not in_math and stripped.startswith("$$") and stripped == "$$":
+            if buf:
+                blocks.append("\n".join(buf).strip())
+                buf = []
+            buf.append(line)
+            in_math = True
+            continue
+        # Closing fence — emit the whole math block as one.
+        if in_math and stripped == "$$":
+            buf.append(line)
+            blocks.append("\n".join(buf).strip())
+            buf = []
+            in_math = False
+            continue
+        # Inside a math block: keep accumulating without splitting on blanks.
+        if in_math:
+            buf.append(line)
+            continue
+        # Blank line outside math/code — paragraph break.
+        if not stripped:
+            if buf:
+                blocks.append("\n".join(buf).strip())
+                buf = []
+            continue
+        buf.append(line)
+
+    if buf:
+        blocks.append("\n".join(buf).strip())
+    return [b for b in blocks if b]
 
 
 # Sentence-boundary regex — keeps the punctuation with the sentence it ended.
@@ -212,6 +488,61 @@ def _bounded_segments(paragraph: str, target_tokens: int) -> Iterable[str]:
         buf_tokens += s_tokens
     if buf:
         yield " ".join(buf)
+
+
+# ── Phase 3 Step B helpers ──────────────────────────────────────────────────
+
+
+# Min/max bounds for the companion formula chunk. Below the floor we'd be
+# embedding a near-trivial token sequence (e.g. ``$$ x = y $$``) — embeddings
+# of such short text rarely surface in retrieval, so we'd be paying for a row
+# that never gets read. Above the ceiling the companion stops being "the
+# formula and only the formula" and starts duplicating a chunk of prose
+# already covered by the parent context chunk, which inflates the retrieval
+# index without adding signal.
+_FORMULA_COMPANION_MIN_TOKENS = 6
+_FORMULA_COMPANION_MAX_TOKENS = 200
+
+
+def _build_formula_companion(
+    *,
+    formula_block: str,
+    heading: str | None,
+    page: int,
+    exercise_number: str | None = None,
+    exercise_subpart: str | None = None,
+) -> Chunk | None:
+    """Build a small standalone ``chunk_type='formula'`` chunk wrapping just
+    the formula and (if available) its section heading.
+
+    Returns ``None`` when the formula is too small to be a useful retrieval
+    surface on its own — the parent context chunk still carries it.
+    """
+    parts: list[str] = []
+    if heading:
+        parts.append(f"## {heading}")
+    parts.append(formula_block)
+    text = "\n\n".join(parts).strip()
+    if not text:
+        return None
+    token_count = _count_tokens(text)
+    if token_count < _FORMULA_COMPANION_MIN_TOKENS:
+        return None
+    if token_count > _FORMULA_COMPANION_MAX_TOKENS:
+        # A single formula block this big almost certainly contains a long
+        # derivation. Don't double-index it as a "formula" — the parent
+        # chunk handles it.
+        return None
+    return Chunk(
+        chunk_text=text,
+        page_start=page,
+        page_end=page,
+        chunk_type="formula",
+        section_title=heading,
+        token_count=token_count,
+        exercise_number=exercise_number,
+        exercise_subpart=exercise_subpart,
+    )
 
 
 def _overlap_tail(parts: list[str], overlap_tokens: int) -> str:

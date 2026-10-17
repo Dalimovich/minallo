@@ -254,6 +254,9 @@
             await new Promise(function (res, rej) {
               var s = document.createElement('script');
               s.src = 'https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js';
+              s.integrity =
+                'sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI';
+              s.crossOrigin = 'anonymous';
               s.onload = res;
               s.onerror = rej;
               document.head.appendChild(s);

@@ -1,0 +1,17 @@
+{
+  "$schema_comment": "Each case is one PDF page graded against a hand-typed ground-truth markdown file. See README.md for how to add a case.",
+  "cases": [
+    {
+      "id": "ag91_formelzettel_p8",
+      "pdf": "GdK_F2026_Formelzettel_IK-IFL.pdf",
+      "page_index": 7,
+      "description": "AG 9.1 Formelzettel page 8 — δ_S decomposition. Regression case from 2026-05-21 (DPI 150 produced G·d/E_S substitution; DPI 200 fixed it 2026-05-22)."
+    },
+    {
+      "id": "ag91_exercise_p1",
+      "pdf": "AG_9.1_BIS_9.3.pdf",
+      "page_index": 0,
+      "description": "AG 9.1 exercise page 1 — Übungsaufgabe 9.1. Tests prose intro + diagram captions + a 13-row 'Gegeben' parametric list. Common exercise-page shape."
+    }
+  ]
+}

@@ -1,0 +1,550 @@
+[
+  {
+    "part": {
+      "id": "lesen_1",
+      "taskType": "lexical_cloze",
+      "constraints": {
+        "itemCount": 5,
+        "optionCount": 4,
+        "sourcePages": [
+          5
+        ],
+        "presentation": {
+          "instructions": "W?hlen Sie f?r jede L?cke ein passendes Wort."
+        }
+      }
+    },
+    "content": {
+      "schemaVersion": "source-selection-v1",
+      "source": {
+        "paragraphs": [
+          {
+            "id": "p1",
+            "text": "Die Bibliothek verl?ngert ihre ?ffnungszeiten, damit Studierende abends arbeiten k?nnen. {{q0}} {{q1}} {{q2}} {{q3}} {{q4}}"
+          }
+        ]
+      },
+      "options": [
+        {
+          "id": "o0",
+          "text": "Aussage 0"
+        },
+        {
+          "id": "o1",
+          "text": "Aussage 1"
+        },
+        {
+          "id": "o2",
+          "text": "Aussage 2"
+        },
+        {
+          "id": "o3",
+          "text": "Aussage 3"
+        }
+      ],
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Textstelle 0",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "options": [
+            {
+              "id": "o0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "o1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "o2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "o3",
+              "text": "Aussage 3"
+            }
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Textstelle 1",
+          "answerId": "o1",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "options": [
+            {
+              "id": "o0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "o1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "o2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "o3",
+              "text": "Aussage 3"
+            }
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Textstelle 2",
+          "answerId": "o2",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "options": [
+            {
+              "id": "o0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "o1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "o2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "o3",
+              "text": "Aussage 3"
+            }
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Textstelle 3",
+          "answerId": "o3",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "options": [
+            {
+              "id": "o0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "o1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "o2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "o3",
+              "text": "Aussage 3"
+            }
+          ]
+        },
+        {
+          "id": "q4",
+          "prompt": "Textstelle 4",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "options": [
+            {
+              "id": "o0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "o1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "o2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "o3",
+              "text": "Aussage 3"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "lesen_4",
+      "taskType": "speech_act_matching",
+      "constraints": {
+        "itemCount": 4,
+        "optionCount": 8,
+        "uniqueMappings": true,
+        "sourcePages": [
+          10
+        ],
+        "presentation": {
+          "instructions": "Ordnen Sie jeder markierten Textstelle eine Sprachhandlung zu."
+        }
+      }
+    },
+    "content": {
+      "schemaVersion": "source-selection-v1",
+      "source": {
+        "paragraphs": [
+          {
+            "id": "p1",
+            "text": "Die Bibliothek verl?ngert ihre ?ffnungszeiten, damit Studierende abends arbeiten k?nnen."
+          }
+        ]
+      },
+      "options": [
+        {
+          "id": "o0",
+          "text": "Aussage 0"
+        },
+        {
+          "id": "o1",
+          "text": "Aussage 1"
+        },
+        {
+          "id": "o2",
+          "text": "Aussage 2"
+        },
+        {
+          "id": "o3",
+          "text": "Aussage 3"
+        },
+        {
+          "id": "o4",
+          "text": "Aussage 4"
+        },
+        {
+          "id": "o5",
+          "text": "Aussage 5"
+        },
+        {
+          "id": "o6",
+          "text": "Aussage 6"
+        },
+        {
+          "id": "o7",
+          "text": "Aussage 7"
+        }
+      ],
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Textstelle 0",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Textstelle 1",
+          "answerId": "o1",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Textstelle 2",
+          "answerId": "o2",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Textstelle 3",
+          "answerId": "o3",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "lesen_5",
+      "taskType": "statement_category_matching",
+      "constraints": {
+        "itemCount": 7,
+        "optionCount": 4,
+        "categoryRoles": [
+          "first",
+          "second",
+          "both",
+          "neither"
+        ],
+        "sourcePages": [
+          11
+        ],
+        "presentation": {
+          "instructions": "Ordnen Sie jede Aussage einer Kategorie zu. Kategorien k?nnen mehrfach vorkommen."
+        }
+      }
+    },
+    "content": {
+      "schemaVersion": "source-selection-v1",
+      "source": {
+        "paragraphs": [
+          {
+            "id": "p1",
+            "text": "Die Bibliothek verl?ngert ihre ?ffnungszeiten, damit Studierende abends arbeiten k?nnen."
+          }
+        ]
+      },
+      "options": [
+        {
+          "id": "o0",
+          "text": "Aussage 0",
+          "role": "first"
+        },
+        {
+          "id": "o1",
+          "text": "Aussage 1",
+          "role": "second"
+        },
+        {
+          "id": "o2",
+          "text": "Aussage 2",
+          "role": "both"
+        },
+        {
+          "id": "o3",
+          "text": "Aussage 3",
+          "role": "neither"
+        }
+      ],
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Textstelle 0",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Textstelle 1",
+          "answerId": "o1",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Textstelle 2",
+          "answerId": "o2",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Textstelle 3",
+          "answerId": "o3",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q4",
+          "prompt": "Textstelle 4",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q5",
+          "prompt": "Textstelle 5",
+          "answerId": "o1",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        },
+        {
+          "id": "q6",
+          "prompt": "Textstelle 6",
+          "answerId": "o2",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "lesen_6",
+      "taskType": "statement_concept_pair_matching",
+      "constraints": {
+        "itemCount": 4,
+        "optionCount": 8,
+        "uniqueMappings": true,
+        "groupCount": 2,
+        "sourcePages": [
+          12,
+          13
+        ],
+        "presentation": {
+          "instructions": "W?hlen Sie passende Aussagen f?r die Felder der beiden Begriffe. Nicht alle Aussagen passen."
+        }
+      }
+    },
+    "content": {
+      "schemaVersion": "source-selection-v1",
+      "source": {
+        "paragraphs": [
+          {
+            "id": "p1",
+            "text": "Die Bibliothek verl?ngert ihre ?ffnungszeiten, damit Studierende abends arbeiten k?nnen."
+          }
+        ]
+      },
+      "options": [
+        {
+          "id": "o0",
+          "text": "Aussage 0"
+        },
+        {
+          "id": "o1",
+          "text": "Aussage 1"
+        },
+        {
+          "id": "o2",
+          "text": "Aussage 2"
+        },
+        {
+          "id": "o3",
+          "text": "Aussage 3"
+        },
+        {
+          "id": "o4",
+          "text": "Aussage 4"
+        },
+        {
+          "id": "o5",
+          "text": "Aussage 5"
+        },
+        {
+          "id": "o6",
+          "text": "Aussage 6"
+        },
+        {
+          "id": "o7",
+          "text": "Aussage 7"
+        }
+      ],
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Textstelle 0",
+          "answerId": "o0",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "group": "Begriff 0"
+        },
+        {
+          "id": "q1",
+          "prompt": "Textstelle 1",
+          "answerId": "o1",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "group": "Begriff 1"
+        },
+        {
+          "id": "q2",
+          "prompt": "Textstelle 2",
+          "answerId": "o2",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "group": "Begriff 0"
+        },
+        {
+          "id": "q3",
+          "prompt": "Textstelle 3",
+          "answerId": "o3",
+          "evidenceIds": [
+            "p1"
+          ],
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "group": "Begriff 1"
+        }
+      ]
+    }
+  }
+]

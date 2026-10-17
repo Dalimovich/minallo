@@ -25,7 +25,7 @@ html {
   max-width: 100%;
 }
 body {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   color: var(--text);
   min-height: 100vh;
   overflow-x: hidden;
@@ -116,7 +116,7 @@ nav {
   border: 0;
 }
 .nav-logo {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.3rem;
   color: var(--text);
   display: flex;
@@ -135,7 +135,7 @@ nav {
 .btn-outline,
 .btn-filled {
   border-radius: 999px;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
   font-weight: 800;
   font-size: 0.95rem;
   padding: 12px 26px;
@@ -215,7 +215,7 @@ nav {
   box-shadow: 0 0 16px rgba(37, 99, 235, 0.9);
 }
 .hero-text h1 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(4rem, 6.25vw, 5.6rem);
   line-height: 0.98;
   letter-spacing: -0.03em;
@@ -254,7 +254,7 @@ nav {
   font-size: 1rem;
   transition: 0.22s ease;
   cursor: pointer;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 .hero-cta {
   color: white;
@@ -376,7 +376,7 @@ nav {
   margin: 0 auto;
 }
 .section-label {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.75rem;
   color: rgba(37, 99, 235, 0.9);
   letter-spacing: 0.1em;
@@ -385,7 +385,7 @@ nav {
   margin-bottom: 14px;
 }
 .section-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.8rem, 3vw, 2.6rem);
   text-align: center;
   margin-bottom: 10px;
@@ -441,7 +441,7 @@ nav {
   filter: drop-shadow(0 4px 12px rgba(37, 99, 235, 0.25));
 }
 .glass-card h3 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.05rem;
   color: #fff;
   margin-bottom: 8px;
@@ -473,7 +473,7 @@ nav {
   border-right: none;
 }
 .stat-num {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.4rem;
   display: block;
   background: linear-gradient(135deg, #60a5fa, #0ea5e9);
@@ -510,7 +510,7 @@ nav {
   pointer-events: none;
 }
 .cta-box h2 {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.2rem;
   background: linear-gradient(135deg, #f1f5f9, #93c5fd);
   -webkit-background-clip: text;
@@ -761,7 +761,7 @@ footer a:hover {
   padding: 16px 36px;
   border: none;
   cursor: pointer;
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--font-main);
 }
 
 #ratings {
@@ -795,7 +795,7 @@ footer a:hover {
 }
 
 .ratings-num {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 2.2rem;
   display: block;
   background: linear-gradient(135deg, #60a5fa, #0ea5e9);
@@ -817,7 +817,7 @@ footer a:hover {
 }
 
 .reviews-kicker {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 0.75rem;
   color: rgba(96, 165, 250, 0.9);
   letter-spacing: 0.1em;
@@ -826,7 +826,7 @@ footer a:hover {
 }
 
 .reviews-title {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: clamp(1.6rem, 3vw, 2.4rem);
   background: linear-gradient(135deg, #f1f5f9, #93c5fd, #bae6fd);
   -webkit-background-clip: text;
@@ -850,7 +850,7 @@ footer a:hover {
 }
 
 .reviews-score-main {
-  font-family: 'Fredoka One', cursive;
+  font-family: var(--font-main);
   font-size: 1.3rem;
   color: #fff;
   margin-left: 6px;

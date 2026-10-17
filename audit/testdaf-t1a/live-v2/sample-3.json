@@ -1,0 +1,557 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Offene Forschungsdaten und die Grenzen ihrer Wiederverwendung",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "Wer offene Forschungsdaten fordert, verbindet damit oft zwei Versprechen: Wissenschaft soll überprüfbarer werden, und bereits erhobene Daten sollen für neue Fragen nutzbar sein. Beides klingt selbstverständlich, denn Messwerte, Transkripte oder Bildsammlungen scheinen zunächst wie neutrale Rohstoffe. Gerade darin liegt jedoch ein Missverständnis. Daten sprechen nicht für sich selbst, sondern entstehen in einem bestimmten Projekt, mit festgelegten Geräten, Kategorien und Interessen. Wer nur den Datensatz veröffentlicht, aber nicht erklärt, wie er entstanden ist, öffnet zwar Dateien, noch nicht unbedingt Erkenntnismöglichkeiten."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "Das zeigt sich besonders bei Vergleichen über Zeit und Ort hinweg. In einer Studie zu Mobilität kann etwa derselbe Begriff „Haushalt“ je nach Erhebungsjahr unterschiedlich definiert sein; auch Fragebögen werden gekürzt, Sensoren neu kalibriert oder fehlende Werte nach anderen Regeln behandelt. Für die Erstautorinnen ist das meist bekannt, weil sie die Erhebung begleitet haben. Spätere Nutzerinnen sehen dagegen oft nur Tabellen. Fehlen Metadaten, Codebücher und Hinweise zur Bereinigung, wirkt ein Datensatz präziser, als er ist. Dann werden Unterschiede leicht als reale Veränderungen gelesen, obwohl sie teilweise aus veränderten Verfahren stammen."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Noch deutlicher werden Grenzen bei sensiblen Informationen. In der Medizin, Bildungsforschung oder Stadtplanung enthalten Datensätze oft Merkmale, die einzelne Personen indirekt erkennbar machen. Selbst wenn Namen entfernt wurden, kann die Kombination aus Alter, Wohnort und seltenen Ereignissen ausreichen, um Menschen wiederzuerkennen, besonders wenn weitere öffentlich zugängliche Quellen hinzukommen. Darum ist offene Wiederverwendung hier nicht einfach eine technische Frage des Hochladens. Häufig sind abgestufte Zugänge sinnvoller: etwa stark aggregierte Versionen für alle und detailliertere Daten nur unter klaren Auflagen. Offenheit bedeutet in solchen Fällen also nicht grenzenlosen Zugang für jede Person."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Aber auch dort, wo Datenschutz keine zentrale Rolle spielt, scheitert Nachnutzung oft an unscheinbarer Arbeit. Daten müssen beschrieben, versioniert, in lesbaren Formaten gespeichert und mit nachvollziehbaren Dateinamen versehen werden. Viele Forschungsprojekte planen dafür kaum Zeit ein, weil Förderlogik und Karrieresystem eher auf Publikationen als auf sorgfältige Datenaufbereitung reagieren. Hinzu kommt, dass Software veraltet, proprietäre Formate verschwinden und kleine Entscheidungen im Bereinigungsprozess nirgends dokumentiert sind. Wer Jahre später mit demselben Material arbeitet, rekonstruiert deshalb nicht selten zuerst den Arbeitsweg, bevor überhaupt eine inhaltliche Analyse beginnen kann. Offene Daten sind ohne solche Pflege eher eine Ablage als eine funktionierende Ressource."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Selbst bei guter Dokumentation bleibt die Frage, wofür ein Datensatz ursprünglich erhoben wurde. Daten aus Lernplattformen können zum Beispiel zeigen, wann Studierende sich einloggen; sie sagen aber nicht ohne Weiteres etwas über Motivation oder Lernerfolg aus. Werden sie dennoch dafür verwendet, entstehen schnell überdehnte Schlüsse. Ähnliches gilt für historische Bestände: Kategorien, die damals üblich waren, können heutige soziale Wirklichkeiten verzerren. Wiederverwendung ist daher besonders überzeugend, wenn Forschende ihre neuen Fragen an die Grenzen des Materials anpassen, statt dem Material Aussagen abzuringen, für die es nie gedacht war. Oft hilft dabei der Austausch mit denjenigen, die die Daten erzeugt haben."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Die Debatte über offene Forschungsdaten sollte deshalb weder in Technikbegeisterung noch in Skepsis stecken bleiben. Nötig ist ein realistisches Verständnis von Offenheit als sozialer und institutioneller Praxis. Dazu gehören Geld für Kuratierung, Standards für Dokumentation, Zitierweisen, die Datenarbeit sichtbar machen, und Ausbildung in Datenkompetenz. Erst unter solchen Bedingungen lässt sich der Nutzen geteilter Daten verlässlich erweitern. Die beschriebenen Grenzen sind somit kein Gegenargument zum Teilen, sondern ein Hinweis darauf, dass Wiederverwendung Vorbereitung, Kontextwissen und manchmal auch Beschränkungen braucht. Gute Offenheit senkt Hürden, ohne ihre eigenen Voraussetzungen unsichtbar zu machen."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "argument_structure",
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum reicht nach Absatz 1 die bloße Veröffentlichung eines Datensatzes nicht aus?",
+              "options": [
+                "Weil erst Informationen zur Entstehung des Materials seine erneute Auswertung sinnvoll machen.",
+                "Weil Rohdaten ihren wissenschaftlichen Wert erst nach der ersten Publikation erhalten.",
+                "Weil Messwerte aus neuen Projekten grundsätzlich nicht mit älteren Beständen verbunden werden dürfen.",
+                "Weil verlässliche Befunde nur mit identischen Geräten und denselben Interessen möglich sind."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wodurch können nach Absatz 2 vermeintliche Veränderungen in den Daten entstehen?",
+              "options": [
+                "Durch wechselnde Definitionen und Bearbeitungsregeln, die späteren Nutzenden oft verborgen bleiben.",
+                "Durch unterschiedliche Ziele späterer Forschender, die dieselben Tabellen neu sortieren.",
+                "Durch fehlende Übersichten, obwohl Begriffe und Verfahren über die Jahre stabil bleiben.",
+                "Durch nachträgliche Reparaturen an Sensoren, die erst nach der Veröffentlichung erfolgen."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "author_intention",
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Vorgehensweise entspricht Absatz 3 am ehesten?",
+              "options": [
+                "Indem man nach dem Entfernen der Namen sämtliche Dateien allgemein freischaltet.",
+                "Indem man je nach Gefährdung verschiedene Zugangswege zu denselben Informationen anbietet.",
+                "Indem man öffentliche Zusatzquellen begrenzt, damit Datensätze anonym bleiben.",
+                "Indem man sensible Materialien nur von den ursprünglichen Teams erneut auswerten lässt."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "argument_structure",
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Warum bleibt Datenaufbereitung nach Absatz 4 häufig lückenhaft?",
+              "options": [
+                "Weil Archive überwiegend Dateiformate verlangen, die in kleinen Projekten selten genutzt werden.",
+                "Weil Forschende Dokumentation häufig zurückhalten, um ihre Verfahren später exklusiv zu nutzen.",
+                "Weil Anerkennung und Förderung stärker an Artikel als an sorgfältige Datenpflege gebunden sind.",
+                "Weil neue Software offene Dateien regelmäßig wieder in schwer lesbare Sonderformate überführt."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "text_structure",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient das Beispiel mit den Lernplattformen in Absatz 5?",
+              "options": [
+                "Es soll zeigen, dass Nutzungsdaten nicht ohne Weiteres für Aussagen über innere Zustände taugen.",
+                "Es soll zeigen, dass digitale Systeme für Vergleiche zwischen historischen Kategorien besonders hilfreich sind.",
+                "Es soll zeigen, dass Studierende für Sekundäranalysen meist zusätzlich befragt werden müssen.",
+                "Es soll zeigen, dass saubere Dokumentation Untersuchungen zu Motivation im Grunde ersetzen kann."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "author_intention",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Schlussfolgerung zieht der Autor in Absatz 6?",
+              "options": [
+                "Dass gemeinsame Standards genügen und weitere Voraussetzungen für Nachnutzung kaum nötig sind.",
+                "Dass Teilen nützlich bleibt, aber nur mit Vorbereitung, Kontext und teils begrenztem Zugang.",
+                "Dass offene Daten in den meisten Disziplinen ihren versprochenen Mehrwert verfehlen.",
+                "Dass jede Form von Beschränkung dem Gedanken wissenschaftlicher Offenheit widerspricht."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "author_intention",
+              "text_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welches Hauptanliegen verfolgt der Text insgesamt?",
+              "options": [
+                "Er erklärt den Nutzen offener Forschungsdaten und präzisiert die Bedingungen ihrer erneuten Verwendung.",
+                "Er fordert strengere Datenschutzregeln als zentrale Antwort auf mangelnde Transparenz in der Forschung.",
+                "Er beschreibt vorrangig technische Archivierungsverfahren für Datensammlungen verschiedener Fächer.",
+                "Er zeigt vor allem, warum Zweitanalysen den ursprünglichen Studien methodisch überlegen sind."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": false,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "implausible_wrong",
+                "implausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 1 und 2 führen extreme bzw. textferne Behauptungen ein, die nicht aus Absatz 1 herleitbar sind.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1"
+                  ],
+                  "questionIds": [
+                    "q1"
+                  ],
+                  "optionIndexes": [
+                    1,
+                    2
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "implausible_wrong"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 3 ist als Schluss aus Absatz 5 sachfremd und überzogen, weil dort gerade vor überdehnten Aussagen gewarnt wird.",
+                "evidence": {
+                  "segmentIds": [
+                    "p5"
+                  ],
+                  "questionIds": [
+                    "q5"
+                  ],
+                  "optionIndexes": [
+                    3
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "implausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": false,
+            "issues": [
+              {
+                "code": "IMPLAUSIBLE_DISTRACTOR",
+                "severity": "error",
+                "message": "Option 0 behauptet eine generelle methodische Überlegenheit von Zweitanalysen, die der Text nirgends als Hauptanliegen verfolgt.",
+                "evidence": {
+                  "segmentIds": [
+                    "p1",
+                    "p2",
+                    "p3",
+                    "p4",
+                    "p5",
+                    "p6"
+                  ],
+                  "questionIds": [
+                    "q7"
+                  ],
+                  "optionIndexes": [
+                    0
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q5",
+        "skillTags": [
+          "text_structure",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Wozu dient das Beispiel mit den Lernplattformen in Absatz 5?",
+          "options": [
+            "Es soll zeigen, dass Studierende für Sekundäranalysen meist zusätzlich befragt werden müssen.",
+            "Es soll zeigen, dass digitale Systeme für Vergleiche zwischen historischen Kategorien besonders hilfreich sind.",
+            "Es soll zeigen, dass Nutzungsdaten nicht ohne Weiteres für Aussagen über innere Zustände taugen.",
+            "Es soll zeigen, dass aus Login-Daten leicht zu weitgehende Deutungen entstehen können."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p5"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q7",
+        "skillTags": [
+          "author_intention",
+          "text_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welches Hauptanliegen verfolgt der Text insgesamt?",
+          "options": [
+            "Er zeigt vor allem, welche Voraussetzungen erfüllt sein müssen, damit geteilte Forschungsdaten sinnvoll nachgenutzt werden können.",
+            "Er fordert strengere Datenschutzregeln als zentrale Antwort auf mangelnde Transparenz in der Forschung.",
+            "Er beschreibt vorrangig technische Archivierungsverfahren für Datensammlungen verschiedener Fächer.",
+            "Er erklärt den Nutzen offener Forschungsdaten und präzisiert die Bedingungen ihrer erneuten Verwendung."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q1",
+        "skillTags": [
+          "argument_structure",
+          "inference"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Warum reicht nach Absatz 1 die bloße Veröffentlichung eines Datensatzes nicht aus?",
+          "options": [
+            "Weil erst Informationen zur Entstehung des Materials seine erneute Auswertung sinnvoll machen.",
+            "Weil Daten ohne Angaben zu Geräten, Kategorien und Interessen kaum verständlich einzuordnen sind.",
+            "Weil offen zugängliche Datensätze grundsätzlich noch einmal vollständig neu erhoben werden müssen.",
+            "Weil Erkenntnisse nur dann möglich sind, wenn alle späteren Nutzenden am ursprünglichen Projekt beteiligt waren."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      }
+    }
+  ],
+  "status": "fail",
+  "error": "GenerationBudgetExceeded: generation time budget exhausted",
+  "diagnostics": {
+    "requestId": "be3c429a7d6f",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "fail",
+    "totalMs": 95016,
+    "budgetS": 95.0,
+    "llmCalls": 6,
+    "providerMsSum": 98446,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 56110,
+    "promptTokens": 11981,
+    "cachedTokens": 0,
+    "completionTokens": 11017,
+    "reasoningTokens": 7733,
+    "estimatedCostUsd": 0.0,
+    "unpricedModels": [
+      "gpt-5.4"
+    ],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 6,
+        "models": [
+          "gpt-5.4:default",
+          "gpt-5.4:medium"
+        ],
+        "providerMs": 98446,
+        "slotWaitMs": 0,
+        "promptTokens": 11981,
+        "cachedTokens": 0,
+        "completionTokens": 11017,
+        "reasoningTokens": 7733,
+        "estimatedCostUsd": 0.0
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 56110,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 948,
+        "cachedTokens": 0,
+        "completionTokens": 6089,
+        "reasoningTokens": 3820,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 34277,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3986,
+        "cachedTokens": 0,
+        "completionTokens": 4471,
+        "reasoningTokens": 3913,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1694,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2342,
+        "cachedTokens": 0,
+        "completionTokens": 149,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 1744,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2362,
+        "cachedTokens": 0,
+        "completionTokens": 161,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": null,
+        "providerMs": 2032,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2343,
+        "cachedTokens": 0,
+        "completionTokens": 147,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": null
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4",
+        "effort": "medium",
+        "providerMs": 2589,
+        "slotWaitMs": 0,
+        "ok": false,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "completionTokens": 0,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0
+      }
+    ],
+    "models": [
+      "gpt-5.4:default",
+      "gpt-5.4:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 95.016
+}

@@ -1,0 +1,956 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Offene Forschungsdaten: Zwischen Zugänglichkeit und Wiederverwendung",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "In vielen Wissenschaftsbereichen gilt heute: Wer mit öffentlichen Mitteln forscht, soll Ergebnisse nicht nur in Artikeln, sondern möglichst auch als Daten zugänglich machen. Hinter dieser Forderung steht die Idee, dass offene Forschungsdaten die Nachvollziehbarkeit erhöhen, doppelte Arbeit vermeiden und neue Fragen ermöglichen. Ein Datensatz kann für andere Forschende zu einer Art Ausgangsmaterial werden, aus dem sich Vergleiche, Reanalysen oder ganz neue Auswertungen entwickeln lassen. Gerade in populären Debatten klingt das oft so, als müsse man die Daten nur freigeben und schon entstünde automatisch zusätzlicher Erkenntnisgewinn. Doch genau an diesem Punkt beginnt die eigentliche Diskussion, denn Offenheit bedeutet noch nicht, dass Daten ohne weiteres für beliebige Zwecke geeignet sind."
+            },
+            {
+              "paragraphId": "p2",
+              "text": "Zunächst hängt die Wiederverwendbarkeit stark davon ab, wie ein Datensatz entstanden ist. Daten, die für eine sehr konkrete Fragestellung erhoben wurden, spiegeln meist die Auswahlentscheidungen des ursprünglichen Projekts wider. Wer etwa Umfragedaten nachträglich anders auswerten will, stößt schnell darauf, dass bestimmte Gruppen unterrepräsentiert sind oder dass wichtige Begriffe in den Fragebögen anders gemeint waren, als es spätere Nutzerinnen und Nutzer annehmen. Auch Messdaten aus Labor oder Feld sind häufig an bestimmte Geräte, Zeitpunkte und Protokolle gebunden. Die Daten sind also nicht einfach ein neutrales Abbild der Wirklichkeit, sondern das Ergebnis vieler Vorentscheidungen, die ihren späteren Gebrauch mitbegrenzen."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Hinzu kommt die Qualität der Begleitinformationen. Ohne saubere Dokumentation lässt sich oft nicht mehr nachvollziehen, wie Variablen definiert wurden, welche Werte fehlen und warum manche Einträge verändert wurden. Aus Sicht der Wiederverwendung ist ein Datensatz daher nur dann wirklich offen, wenn nicht bloß die Datei verfügbar ist, sondern auch Kontext, Metadaten und rechtliche Hinweise verständlich vorliegen. Genau hier zeigt sich ein häufiges Missverständnis: Offen veröffentlichte Daten werden mitunter als unmittelbar nutzbar behandelt, obwohl sie erst durch aufwendige Aufbereitung lesbar und vergleichbar gemacht werden müssen. Für Forschende bedeutet das zusätzlichen Aufwand, der bei der Planung eines Projekts oft unterschätzt wird."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Selbst wenn Daten technisch und inhaltlich gut erschlossen sind, endet die Freiheit ihrer Nutzung dort, wo Datenschutz, Vertraulichkeit oder Urheberrechte greifen. Besonders in den Sozial- und Lebenswissenschaften können Datensätze Informationen enthalten, aus denen einzelne Personen indirekt erkennbar werden. Deshalb müssen sie anonymisiert, eingeschränkt freigegeben oder unter besonderen Zugangsbedingungen angeboten werden. Auch in anderen Bereichen ist nicht jede Weiterverwendung unproblematisch: Wer einen Datensatz aus einem Konsortium nutzt, muss oft Lizenzregeln beachten oder die Interessen der ursprünglichen Sammlung respektieren. Offenheit ist also kein absoluter Zustand, sondern wird durch legitime Schutzinteressen begrenzt."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Trotz dieser Grenzen wäre es falsch, offene Forschungsdaten nur als unvollständiges Ideal zu betrachten. Gerade dort, wo Wiederverwendung bewusst mitgedacht wird, können Daten sehr produktiv sein. In einem Beispiel aus der Klimaforschung lassen sich über längere Zeiträume gesammelte Messreihen mit neueren Beobachtungen verbinden, um Veränderungen besser einzuordnen. Der Wert solcher Daten liegt dann nicht darin, dass sie jede mögliche Frage beantworten, sondern darin, dass sie eine belastbare Basis für Anschlussarbeiten bilden. Das Beispiel zeigt zugleich, dass Wiederverwendung am besten gelingt, wenn schon bei der Datenerhebung an spätere Nutzer gedacht wird und Standards früh festgelegt werden."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Am Ende ergibt sich ein nüchternes Bild: Offene Forschungsdaten sind kein Selbstzweck, sondern ein Mittel, um wissenschaftliche Arbeit transparenter und anschlussfähiger zu machen. Ihre Wiederverwendung scheitert jedoch nicht nur an mangelndem Willen, sondern oft an der Art der Daten, an fehlender Dokumentation und an berechtigten Schutzansprüchen. Wer Offenheit fordert, sollte deshalb nicht nur den Zugang diskutieren, sondern auch die Bedingungen der Nutzbarkeit. Erst wenn Daten technisch zugänglich, fachlich verständlich und rechtlich verantwortbar sind, können sie ihr Potenzial wirklich entfalten."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Worauf weist der Text zu Beginn hin?",
+              "options": [
+                "Zugängliche Daten führen automatisch zu neuen Erkenntnissen.",
+                "Offene Daten sind nur dann sinnvoll, wenn sie unmittelbar nutzbar sind.",
+                "Freigegebene Daten erhöhen den Nutzen vor allem durch Transparenz.",
+                "Artikel ersetzen bei Forschungsprojekten die eigentlichen Datensätze."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was lässt sich aus dem zweiten Abschnitt folgern?",
+              "options": [
+                "Spätere Nutzer können Daten meist ohne Kenntnis des Entstehungskontexts sicher deuten.",
+                "Die ursprüngliche Auswahl eines Projekts kann spätere Auswertungen deutlich einschränken.",
+                "Labor- und Feldmessungen liefern grundsätzlich vollständig neutrale Ergebnisse.",
+                "Umfragedaten sind nur dann brauchbar, wenn alle Gruppen gleich stark vertreten sind."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Aussage trifft den dritten Abschnitt am besten?",
+              "options": [
+                "Ein Datensatz gilt erst als offen, wenn nur die Datei selbst online steht.",
+                "Für die Nachnutzung reichen oft Metadaten ohne zusätzliche Erläuterungen aus.",
+                "Offene Daten brauchen mehr als bloße Verfügbarkeit, damit sie nutzbar werden.",
+                "Die technische Zugänglichkeit ist wichtiger als jede Form von Dokumentation."
+              ],
+              "correctIndex": 2,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "detail_comprehension",
+              "argument_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Beziehung beschreibt der vierte Abschnitt?",
+              "options": [
+                "Schutzregeln heben die Offenheit von Forschungsdaten vollständig auf.",
+                "Datenschutz und ähnliche Regeln setzen der Nutzung nachvollziehbare Grenzen.",
+                "Offene Daten sind in den Sozialwissenschaften grundsätzlich ausgeschlossen.",
+                "Lizenzen spielen nur bei unstrukturierten Daten eine Rolle."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "text_structure",
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient das Beispiel aus der Klimaforschung?",
+              "options": [
+                "Es zeigt, dass historische Messreihen nur noch musealen Wert haben.",
+                "Es veranschaulicht, wie gut vorbereitete Daten Anschlussforschung erleichtern.",
+                "Es beweist, dass alle Datensätze ohne Zusatzarbeit verwendbar sind.",
+                "Es ersetzt die vorherigen Abschnitte durch ein Gegenargument."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "author_intention",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Haltung des Autors wird im letzten Abschnitt deutlich?",
+              "options": [
+                "Offene Forschungsdaten sollten vor allem wegen ihrer symbolischen Wirkung gefördert werden.",
+                "Die Diskussion muss sich stärker auf praktische Nutzungsbedingungen richten als auf bloßen Zugang.",
+                "Schutzinteressen sind meist Vorwände, um Datenweitergabe zu verhindern.",
+                "Die Wiederverwendung ist hauptsächlich ein technisches Problem ohne weitere Aspekte."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "argument_structure",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was ist die Hauptabsicht des gesamten Textes?",
+              "options": [
+                "Er will zeigen, dass offene Forschungsdaten automatisch zu mehr Wissen führen.",
+                "Er will die Grenzen und Voraussetzungen der Wiederverwendung sachlich einordnen.",
+                "Er will für die vollständige Abschaffung von Schutzregeln in der Forschung werben.",
+                "Er will vor allem einzelne Fachdisziplinen miteinander vergleichen."
+              ],
+              "correctIndex": 1,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": true,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "implausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Worauf weist der Text zu Beginn hin?",
+          "options": [
+            "Offene Forschungsdaten sollen Ergebnisse transparenter und nachvollziehbarer machen.",
+            "Offene Daten sind nur dann sinnvoll, wenn sie unmittelbar nutzbar sind.",
+            "Zugängliche Daten führen automatisch zu neuen Erkenntnissen.",
+            "Artikel ersetzen bei Forschungsprojekten die eigentlichen Datensätze."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": true,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          }
+        ]
+      }
+    }
+  ],
+  "status": "pass",
+  "content": {
+    "text": {
+      "title": "Offene Forschungsdaten: Zwischen Zugänglichkeit und Wiederverwendung",
+      "paragraphs": [
+        {
+          "paragraphId": "p1",
+          "text": "In vielen Wissenschaftsbereichen gilt heute: Wer mit öffentlichen Mitteln forscht, soll Ergebnisse nicht nur in Artikeln, sondern möglichst auch als Daten zugänglich machen. Hinter dieser Forderung steht die Idee, dass offene Forschungsdaten die Nachvollziehbarkeit erhöhen, doppelte Arbeit vermeiden und neue Fragen ermöglichen. Ein Datensatz kann für andere Forschende zu einer Art Ausgangsmaterial werden, aus dem sich Vergleiche, Reanalysen oder ganz neue Auswertungen entwickeln lassen. Gerade in populären Debatten klingt das oft so, als müsse man die Daten nur freigeben und schon entstünde automatisch zusätzlicher Erkenntnisgewinn. Doch genau an diesem Punkt beginnt die eigentliche Diskussion, denn Offenheit bedeutet noch nicht, dass Daten ohne weiteres für beliebige Zwecke geeignet sind."
+        },
+        {
+          "paragraphId": "p2",
+          "text": "Zunächst hängt die Wiederverwendbarkeit stark davon ab, wie ein Datensatz entstanden ist. Daten, die für eine sehr konkrete Fragestellung erhoben wurden, spiegeln meist die Auswahlentscheidungen des ursprünglichen Projekts wider. Wer etwa Umfragedaten nachträglich anders auswerten will, stößt schnell darauf, dass bestimmte Gruppen unterrepräsentiert sind oder dass wichtige Begriffe in den Fragebögen anders gemeint waren, als es spätere Nutzerinnen und Nutzer annehmen. Auch Messdaten aus Labor oder Feld sind häufig an bestimmte Geräte, Zeitpunkte und Protokolle gebunden. Die Daten sind also nicht einfach ein neutrales Abbild der Wirklichkeit, sondern das Ergebnis vieler Vorentscheidungen, die ihren späteren Gebrauch mitbegrenzen."
+        },
+        {
+          "paragraphId": "p3",
+          "text": "Hinzu kommt die Qualität der Begleitinformationen. Ohne saubere Dokumentation lässt sich oft nicht mehr nachvollziehen, wie Variablen definiert wurden, welche Werte fehlen und warum manche Einträge verändert wurden. Aus Sicht der Wiederverwendung ist ein Datensatz daher nur dann wirklich offen, wenn nicht bloß die Datei verfügbar ist, sondern auch Kontext, Metadaten und rechtliche Hinweise verständlich vorliegen. Genau hier zeigt sich ein häufiges Missverständnis: Offen veröffentlichte Daten werden mitunter als unmittelbar nutzbar behandelt, obwohl sie erst durch aufwendige Aufbereitung lesbar und vergleichbar gemacht werden müssen. Für Forschende bedeutet das zusätzlichen Aufwand, der bei der Planung eines Projekts oft unterschätzt wird."
+        },
+        {
+          "paragraphId": "p4",
+          "text": "Selbst wenn Daten technisch und inhaltlich gut erschlossen sind, endet die Freiheit ihrer Nutzung dort, wo Datenschutz, Vertraulichkeit oder Urheberrechte greifen. Besonders in den Sozial- und Lebenswissenschaften können Datensätze Informationen enthalten, aus denen einzelne Personen indirekt erkennbar werden. Deshalb müssen sie anonymisiert, eingeschränkt freigegeben oder unter besonderen Zugangsbedingungen angeboten werden. Auch in anderen Bereichen ist nicht jede Weiterverwendung unproblematisch: Wer einen Datensatz aus einem Konsortium nutzt, muss oft Lizenzregeln beachten oder die Interessen der ursprünglichen Sammlung respektieren. Offenheit ist also kein absoluter Zustand, sondern wird durch legitime Schutzinteressen begrenzt."
+        },
+        {
+          "paragraphId": "p5",
+          "text": "Trotz dieser Grenzen wäre es falsch, offene Forschungsdaten nur als unvollständiges Ideal zu betrachten. Gerade dort, wo Wiederverwendung bewusst mitgedacht wird, können Daten sehr produktiv sein. In einem Beispiel aus der Klimaforschung lassen sich über längere Zeiträume gesammelte Messreihen mit neueren Beobachtungen verbinden, um Veränderungen besser einzuordnen. Der Wert solcher Daten liegt dann nicht darin, dass sie jede mögliche Frage beantworten, sondern darin, dass sie eine belastbare Basis für Anschlussarbeiten bilden. Das Beispiel zeigt zugleich, dass Wiederverwendung am besten gelingt, wenn schon bei der Datenerhebung an spätere Nutzer gedacht wird und Standards früh festgelegt werden."
+        },
+        {
+          "paragraphId": "p6",
+          "text": "Am Ende ergibt sich ein nüchternes Bild: Offene Forschungsdaten sind kein Selbstzweck, sondern ein Mittel, um wissenschaftliche Arbeit transparenter und anschlussfähiger zu machen. Ihre Wiederverwendung scheitert jedoch nicht nur an mangelndem Willen, sondern oft an der Art der Daten, an fehlender Dokumentation und an berechtigten Schutzansprüchen. Wer Offenheit fordert, sollte deshalb nicht nur den Zugang diskutieren, sondern auch die Bedingungen der Nutzbarkeit. Erst wenn Daten technisch zugänglich, fachlich verständlich und rechtlich verantwortbar sind, können sie ihr Potenzial wirklich entfalten."
+        }
+      ]
+    },
+    "questions": [
+      {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Worauf weist der Text zu Beginn hin?",
+          "options": [
+            "Artikel ersetzen bei Forschungsprojekten die eigentlichen Datensätze.",
+            "Offene Daten sind nur dann sinnvoll, wenn sie unmittelbar nutzbar sind.",
+            "Zugängliche Daten führen automatisch zu neuen Erkenntnissen.",
+            "Freigegebene Daten erhöhen den Nutzen vor allem durch Transparenz."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      },
+      {
+        "questionId": "q2",
+        "skillTags": [
+          "inference"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was lässt sich aus dem zweiten Abschnitt folgern?",
+          "options": [
+            "Spätere Nutzer können Daten meist ohne Kenntnis des Entstehungskontexts sicher deuten.",
+            "Labor- und Feldmessungen liefern grundsätzlich vollständig neutrale Ergebnisse.",
+            "Die ursprüngliche Auswahl eines Projekts kann spätere Auswertungen deutlich einschränken.",
+            "Umfragedaten sind nur dann brauchbar, wenn alle Gruppen gleich stark vertreten sind."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p2"
+          ]
+        }
+      },
+      {
+        "questionId": "q3",
+        "skillTags": [
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Aussage trifft den dritten Abschnitt am besten?",
+          "options": [
+            "Ein Datensatz gilt erst als offen, wenn nur die Datei selbst online steht.",
+            "Offene Daten brauchen mehr als bloße Verfügbarkeit, damit sie nutzbar werden.",
+            "Die technische Zugänglichkeit ist wichtiger als jede Form von Dokumentation.",
+            "Für die Nachnutzung reichen oft Metadaten ohne zusätzliche Erläuterungen aus."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p3"
+          ]
+        }
+      },
+      {
+        "questionId": "q4",
+        "skillTags": [
+          "detail_comprehension",
+          "argument_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Beziehung beschreibt der vierte Abschnitt?",
+          "options": [
+            "Schutzregeln heben die Offenheit von Forschungsdaten vollständig auf.",
+            "Offene Daten sind in den Sozialwissenschaften grundsätzlich ausgeschlossen.",
+            "Datenschutz und ähnliche Regeln setzen der Nutzung nachvollziehbare Grenzen.",
+            "Lizenzen spielen nur bei unstrukturierten Daten eine Rolle."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p4"
+          ]
+        }
+      },
+      {
+        "questionId": "q5",
+        "skillTags": [
+          "text_structure",
+          "inference"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Wozu dient das Beispiel aus der Klimaforschung?",
+          "options": [
+            "Es zeigt, dass historische Messreihen nur noch musealen Wert haben.",
+            "Es veranschaulicht, wie gut vorbereitete Daten Anschlussforschung erleichtern.",
+            "Es beweist, dass alle Datensätze ohne Zusatzarbeit verwendbar sind.",
+            "Es ersetzt die vorherigen Abschnitte durch ein Gegenargument."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p5"
+          ]
+        }
+      },
+      {
+        "questionId": "q6",
+        "skillTags": [
+          "author_intention",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Haltung des Autors wird im letzten Abschnitt deutlich?",
+          "options": [
+            "Die Diskussion muss sich stärker auf praktische Nutzungsbedingungen richten als auf bloßen Zugang.",
+            "Offene Forschungsdaten sollten vor allem wegen ihrer symbolischen Wirkung gefördert werden.",
+            "Schutzinteressen sind meist Vorwände, um Datenweitergabe zu verhindern.",
+            "Die Wiederverwendung ist hauptsächlich ein technisches Problem ohne weitere Aspekte."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p6"
+          ]
+        }
+      },
+      {
+        "questionId": "q7",
+        "skillTags": [
+          "argument_structure",
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was ist die Hauptabsicht des gesamten Textes?",
+          "options": [
+            "Er will die Grenzen und Voraussetzungen der Wiederverwendung sachlich einordnen.",
+            "Er will für die vollständige Abschaffung von Schutzregeln in der Forschung werben.",
+            "Er will zeigen, dass offene Forschungsdaten automatisch zu mehr Wissen führen.",
+            "Er will vor allem einzelne Fachdisziplinen miteinander vergleichen."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    ],
+    "presentation": {
+      "numberParagraphs": true,
+      "optionLabels": false,
+      "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+    }
+  },
+  "validation": {
+    "deterministicPassed": true,
+    "deterministicRepairCount": 0,
+    "semantic": {
+      "passed": true,
+      "verificationCount": 2,
+      "repairCount": 1,
+      "issuesResolved": [
+        {
+          "itemId": "q1",
+          "code": "IMPLAUSIBLE_DISTRACTOR"
+        }
+      ],
+      "issueCounts": {
+        "IMPLAUSIBLE_DISTRACTOR": 1
+      },
+      "durationMs": 15865,
+      "regenerationCount": 0
+    }
+  },
+  "envelope": {
+    "schemaVersion": "german-exam-v1",
+    "generationId": "08e1946029194dba940f471793c77b10",
+    "exam": {
+      "family": "TestDaF",
+      "variant": "Digital",
+      "cefrLevel": null,
+      "profileId": "testdaf_digital",
+      "profileVersion": 2
+    },
+    "module": "reading",
+    "part": {
+      "id": "lesen_3",
+      "title": "Multiple-Choice",
+      "taskType": "reading_multiple_choice",
+      "approxDurationSeconds": null
+    },
+    "mode": "adaptive_practice",
+    "topic": {
+      "topicId": "qa_3",
+      "label": "Offene Forschungsdaten und die Grenzen ihrer Wiederverwendung"
+    },
+    "adaptation": {
+      "weaknessConfidence": "cold_start",
+      "instructionsApplied": []
+    },
+    "content": {
+      "text": {
+        "title": "Offene Forschungsdaten: Zwischen Zugänglichkeit und Wiederverwendung",
+        "paragraphs": [
+          {
+            "paragraphId": "p1",
+            "text": "In vielen Wissenschaftsbereichen gilt heute: Wer mit öffentlichen Mitteln forscht, soll Ergebnisse nicht nur in Artikeln, sondern möglichst auch als Daten zugänglich machen. Hinter dieser Forderung steht die Idee, dass offene Forschungsdaten die Nachvollziehbarkeit erhöhen, doppelte Arbeit vermeiden und neue Fragen ermöglichen. Ein Datensatz kann für andere Forschende zu einer Art Ausgangsmaterial werden, aus dem sich Vergleiche, Reanalysen oder ganz neue Auswertungen entwickeln lassen. Gerade in populären Debatten klingt das oft so, als müsse man die Daten nur freigeben und schon entstünde automatisch zusätzlicher Erkenntnisgewinn. Doch genau an diesem Punkt beginnt die eigentliche Diskussion, denn Offenheit bedeutet noch nicht, dass Daten ohne weiteres für beliebige Zwecke geeignet sind."
+          },
+          {
+            "paragraphId": "p2",
+            "text": "Zunächst hängt die Wiederverwendbarkeit stark davon ab, wie ein Datensatz entstanden ist. Daten, die für eine sehr konkrete Fragestellung erhoben wurden, spiegeln meist die Auswahlentscheidungen des ursprünglichen Projekts wider. Wer etwa Umfragedaten nachträglich anders auswerten will, stößt schnell darauf, dass bestimmte Gruppen unterrepräsentiert sind oder dass wichtige Begriffe in den Fragebögen anders gemeint waren, als es spätere Nutzerinnen und Nutzer annehmen. Auch Messdaten aus Labor oder Feld sind häufig an bestimmte Geräte, Zeitpunkte und Protokolle gebunden. Die Daten sind also nicht einfach ein neutrales Abbild der Wirklichkeit, sondern das Ergebnis vieler Vorentscheidungen, die ihren späteren Gebrauch mitbegrenzen."
+          },
+          {
+            "paragraphId": "p3",
+            "text": "Hinzu kommt die Qualität der Begleitinformationen. Ohne saubere Dokumentation lässt sich oft nicht mehr nachvollziehen, wie Variablen definiert wurden, welche Werte fehlen und warum manche Einträge verändert wurden. Aus Sicht der Wiederverwendung ist ein Datensatz daher nur dann wirklich offen, wenn nicht bloß die Datei verfügbar ist, sondern auch Kontext, Metadaten und rechtliche Hinweise verständlich vorliegen. Genau hier zeigt sich ein häufiges Missverständnis: Offen veröffentlichte Daten werden mitunter als unmittelbar nutzbar behandelt, obwohl sie erst durch aufwendige Aufbereitung lesbar und vergleichbar gemacht werden müssen. Für Forschende bedeutet das zusätzlichen Aufwand, der bei der Planung eines Projekts oft unterschätzt wird."
+          },
+          {
+            "paragraphId": "p4",
+            "text": "Selbst wenn Daten technisch und inhaltlich gut erschlossen sind, endet die Freiheit ihrer Nutzung dort, wo Datenschutz, Vertraulichkeit oder Urheberrechte greifen. Besonders in den Sozial- und Lebenswissenschaften können Datensätze Informationen enthalten, aus denen einzelne Personen indirekt erkennbar werden. Deshalb müssen sie anonymisiert, eingeschränkt freigegeben oder unter besonderen Zugangsbedingungen angeboten werden. Auch in anderen Bereichen ist nicht jede Weiterverwendung unproblematisch: Wer einen Datensatz aus einem Konsortium nutzt, muss oft Lizenzregeln beachten oder die Interessen der ursprünglichen Sammlung respektieren. Offenheit ist also kein absoluter Zustand, sondern wird durch legitime Schutzinteressen begrenzt."
+          },
+          {
+            "paragraphId": "p5",
+            "text": "Trotz dieser Grenzen wäre es falsch, offene Forschungsdaten nur als unvollständiges Ideal zu betrachten. Gerade dort, wo Wiederverwendung bewusst mitgedacht wird, können Daten sehr produktiv sein. In einem Beispiel aus der Klimaforschung lassen sich über längere Zeiträume gesammelte Messreihen mit neueren Beobachtungen verbinden, um Veränderungen besser einzuordnen. Der Wert solcher Daten liegt dann nicht darin, dass sie jede mögliche Frage beantworten, sondern darin, dass sie eine belastbare Basis für Anschlussarbeiten bilden. Das Beispiel zeigt zugleich, dass Wiederverwendung am besten gelingt, wenn schon bei der Datenerhebung an spätere Nutzer gedacht wird und Standards früh festgelegt werden."
+          },
+          {
+            "paragraphId": "p6",
+            "text": "Am Ende ergibt sich ein nüchternes Bild: Offene Forschungsdaten sind kein Selbstzweck, sondern ein Mittel, um wissenschaftliche Arbeit transparenter und anschlussfähiger zu machen. Ihre Wiederverwendung scheitert jedoch nicht nur an mangelndem Willen, sondern oft an der Art der Daten, an fehlender Dokumentation und an berechtigten Schutzansprüchen. Wer Offenheit fordert, sollte deshalb nicht nur den Zugang diskutieren, sondern auch die Bedingungen der Nutzbarkeit. Erst wenn Daten technisch zugänglich, fachlich verständlich und rechtlich verantwortbar sind, können sie ihr Potenzial wirklich entfalten."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "questionId": "q1",
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Worauf weist der Text zu Beginn hin?",
+            "options": [
+              "Artikel ersetzen bei Forschungsprojekten die eigentlichen Datensätze.",
+              "Offene Daten sind nur dann sinnvoll, wenn sie unmittelbar nutzbar sind.",
+              "Zugängliche Daten führen automatisch zu neuen Erkenntnissen.",
+              "Freigegebene Daten erhöhen den Nutzen vor allem durch Transparenz."
+            ],
+            "correctIndex": 3,
+            "evidenceParagraphIds": [
+              "p1"
+            ]
+          }
+        },
+        {
+          "questionId": "q2",
+          "skillTags": [
+            "inference"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was lässt sich aus dem zweiten Abschnitt folgern?",
+            "options": [
+              "Spätere Nutzer können Daten meist ohne Kenntnis des Entstehungskontexts sicher deuten.",
+              "Labor- und Feldmessungen liefern grundsätzlich vollständig neutrale Ergebnisse.",
+              "Die ursprüngliche Auswahl eines Projekts kann spätere Auswertungen deutlich einschränken.",
+              "Umfragedaten sind nur dann brauchbar, wenn alle Gruppen gleich stark vertreten sind."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p2"
+            ]
+          }
+        },
+        {
+          "questionId": "q3",
+          "skillTags": [
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Aussage trifft den dritten Abschnitt am besten?",
+            "options": [
+              "Ein Datensatz gilt erst als offen, wenn nur die Datei selbst online steht.",
+              "Offene Daten brauchen mehr als bloße Verfügbarkeit, damit sie nutzbar werden.",
+              "Die technische Zugänglichkeit ist wichtiger als jede Form von Dokumentation.",
+              "Für die Nachnutzung reichen oft Metadaten ohne zusätzliche Erläuterungen aus."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p3"
+            ]
+          }
+        },
+        {
+          "questionId": "q4",
+          "skillTags": [
+            "detail_comprehension",
+            "argument_structure"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Beziehung beschreibt der vierte Abschnitt?",
+            "options": [
+              "Schutzregeln heben die Offenheit von Forschungsdaten vollständig auf.",
+              "Offene Daten sind in den Sozialwissenschaften grundsätzlich ausgeschlossen.",
+              "Datenschutz und ähnliche Regeln setzen der Nutzung nachvollziehbare Grenzen.",
+              "Lizenzen spielen nur bei unstrukturierten Daten eine Rolle."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p4"
+            ]
+          }
+        },
+        {
+          "questionId": "q5",
+          "skillTags": [
+            "text_structure",
+            "inference"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Wozu dient das Beispiel aus der Klimaforschung?",
+            "options": [
+              "Es zeigt, dass historische Messreihen nur noch musealen Wert haben.",
+              "Es veranschaulicht, wie gut vorbereitete Daten Anschlussforschung erleichtern.",
+              "Es beweist, dass alle Datensätze ohne Zusatzarbeit verwendbar sind.",
+              "Es ersetzt die vorherigen Abschnitte durch ein Gegenargument."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p5"
+            ]
+          }
+        },
+        {
+          "questionId": "q6",
+          "skillTags": [
+            "author_intention",
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Haltung des Autors wird im letzten Abschnitt deutlich?",
+            "options": [
+              "Die Diskussion muss sich stärker auf praktische Nutzungsbedingungen richten als auf bloßen Zugang.",
+              "Offene Forschungsdaten sollten vor allem wegen ihrer symbolischen Wirkung gefördert werden.",
+              "Schutzinteressen sind meist Vorwände, um Datenweitergabe zu verhindern.",
+              "Die Wiederverwendung ist hauptsächlich ein technisches Problem ohne weitere Aspekte."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p6"
+            ]
+          }
+        },
+        {
+          "questionId": "q7",
+          "skillTags": [
+            "argument_structure",
+            "author_intention"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was ist die Hauptabsicht des gesamten Textes?",
+            "options": [
+              "Er will die Grenzen und Voraussetzungen der Wiederverwendung sachlich einordnen.",
+              "Er will für die vollständige Abschaffung von Schutzregeln in der Forschung werben.",
+              "Er will zeigen, dass offene Forschungsdaten automatisch zu mehr Wissen führen.",
+              "Er will vor allem einzelne Fachdisziplinen miteinander vergleichen."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ]
+          }
+        }
+      ],
+      "presentation": {
+        "numberParagraphs": true,
+        "optionLabels": false,
+        "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+      }
+    },
+    "validation": {
+      "deterministicPassed": true,
+      "deterministicRepairCount": 0,
+      "semantic": {
+        "passed": true,
+        "verificationCount": 2,
+        "repairCount": 1,
+        "issuesResolved": [
+          {
+            "itemId": "q1",
+            "code": "IMPLAUSIBLE_DISTRACTOR"
+          }
+        ],
+        "issueCounts": {
+          "IMPLAUSIBLE_DISTRACTOR": 1
+        },
+        "durationMs": 15865,
+        "regenerationCount": 0
+      }
+    }
+  },
+  "diagnostics": {
+    "requestId": "cd9834e43c1e",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "pass",
+    "totalMs": 25368,
+    "budgetS": 95.0,
+    "llmCalls": 4,
+    "providerMsSum": 25362,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 9502,
+    "promptTokens": 10451,
+    "cachedTokens": 2304,
+    "completionTokens": 5249,
+    "reasoningTokens": 2742,
+    "estimatedCostUsd": 0.029904,
+    "unpricedModels": [],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 4,
+        "models": [
+          "gpt-5.4-mini:default",
+          "gpt-5.4-mini:medium"
+        ],
+        "providerMs": 25362,
+        "slotWaitMs": 0,
+        "promptTokens": 10451,
+        "cachedTokens": 2304,
+        "completionTokens": 5249,
+        "reasoningTokens": 2742,
+        "estimatedCostUsd": 0.029904
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 9502,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 833,
+        "cachedTokens": 0,
+        "completionTokens": 1796,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.00870675
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": "medium",
+        "providerMs": 8234,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3710,
+        "cachedTokens": 0,
+        "completionTokens": 1834,
+        "reasoningTokens": 1536,
+        "estimatedCostUsd": 0.0110355
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 944,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2198,
+        "cachedTokens": 0,
+        "completionTokens": 115,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.002166
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": "medium",
+        "providerMs": 6682,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3710,
+        "cachedTokens": 2304,
+        "completionTokens": 1504,
+        "reasoningTokens": 1206,
+        "estimatedCostUsd": 0.0079953
+      }
+    ],
+    "models": [
+      "gpt-5.4-mini:default",
+      "gpt-5.4-mini:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 25.368
+}

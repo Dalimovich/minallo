@@ -19,8 +19,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from .document_context import understanding_block_for_ids
+from .full_document_processing import process_full_documents
+from .grounding_contract import ResolvedDocumentAccess, resolve_document_access
 from .llm_json import chat_json
-from .retrieval import RetrievedChunk, retrieve_chunks
+from .retrieval import RetrievedChunk, backfill_doc_names, retrieve_chunks
+from ..config import get_settings
 from ..supabase_client import get_supabase
 
 log = logging.getLogger(__name__)
@@ -43,44 +47,208 @@ def _system_prompt(length_cue: str) -> str:
 
 Write a {length_cue} markdown study document strictly using the COURSE CONTEXT below.
 
-Structure — use ALL of these sections in this order, with `##` markdown headings:
+## STEP 1: DETECT KNOWLEDGE TYPE (internal — do NOT output the classification)
 
-## Overview
-A short orientation: what the document is about, why a student would care, what they should be able to do after studying it.
+Before choosing a structure, silently classify the material as one of:
 
-## Main concepts
-The key ideas, in order of importance. Bullet points.
+- **math-heavy**: dominated by formulas, derivations, solved examples, calculation methods, proofs.
+  Examples: Mathematics, Mechanics, Statistics, Physics calculations, Circuits, Thermodynamics.
+- **concept-light-math**: mostly definitions, classifications, process descriptions, but small
+  calculations or technical parameters may appear.
+  Examples: Fertigungstechnik, Materials Science, Manufacturing, Chemistry theory, Economics concepts.
+- **no-math**: purely conceptual — no formulas. Student needs to understand, remember, compare,
+  argue, or explain.
+  Examples: History, Law, Political Science, Literature, Philosophy, Management, Languages.
+- **balanced**: both conceptual theory AND formulas/calculations are central.
+  Examples: Physics, Economics, Chemistry, Engineering Science, Finance, Data Science.
+
+## STEP 2: USE THE MATCHING STRUCTURE
+
+### IF math-heavy:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Concept Explanation
+Clear theory explanation connecting to the formulas that follow.
 
 ## Definitions
 Term — precise definition. Cite source as (filename, p.N).
 
-## Theorems & key results
-Statement, conditions, and significance. Cite source.
+## Formula / Theorem Cards
+Each formula in KaTeX ($...$ inline, $$...$$ display). For each: the formula, meaning of every
+variable with units, conditions for use, when to use it. Cite source.
 
-## Formulas
-KaTeX rendered ($...$ inline, $$...$$ display). Explain every symbol. Cite source.
+## Methods
+Method 1 / Method 2 / Method 3 — when to use each. Include a decision guide:
+"If the problem gives you X → use Method Y."
+
+## Step-by-Step Solving Recipe
+Topic-specific numbered steps. Not generic — tailored to the exact problem types in the material.
+
+## Worked Example: Basic
+A straightforward worked example from the material. Show every step.
+
+## Worked Example: Exam-Style
+A harder example that combines multiple concepts. Show the full solution.
+
+## Common Mistakes
+Calculation traps: sign errors, unit confusion, wrong formula choice, forgetting conditions.
+
+## Practice Tasks
+3-5 tasks at easy/medium/exam levels the student should be able to solve.
+
+## Quick Revision Box
+The 8-12 things to know cold: key formulas, method steps, special cases.
+
+## Sources
+Which files and pages were used.
+
+### IF concept-light-math:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Definition
+Core definitions quoted near-verbatim. Cite source as (filename, p.N).
+
+## Course Classification
+Where this topic fits in the broader course structure.
+
+## Main Categories / Subtypes
+All categories, subcategories, groups. List completely — do not omit groups.
+
+## Important Source Details
+Key facts, properties, parameters, DIN norms from the material.
+
+## Comparison Table
+Markdown table comparing types, methods, or concepts. Columns like:
+Type | Principle | Application | Advantage | Disadvantage | Exam clue.
+
+## Process Steps
+Step-by-step process descriptions where applicable.
+
+## Selection Criteria
+How to choose the right method/material/process for a given scenario.
+
+## Applications
+Real-world applications and typical use cases from the material.
+
+## Advantages / Disadvantages
+Structured pros and cons for each method or concept.
+
+## Common Mistakes
+Confusing similar terms, wrong classifications, incomplete lists.
+
+## Exam Questions with Model Answers
+3-5 questions that can be inferred from the material, with model answer structure:
+Define it. Classify it. Compare it. Choose the right process. Explain why.
+
+## Sources
+Which files and pages were used.
+
+### IF no-math:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Simple Explanation
+Plain-language overview in 3-5 sentences.
+
+## Key Terms
+Term + definition pairs. Cite source as (filename, p.N).
+
+## Background / Context
+Historical, legal, social, or theoretical background.
+
+## Main Ideas
+The 3-6 most important ideas, arguments, or theories.
+
+## Argument Map / Timeline / Rule Structure
+Choose the most fitting structure for the topic: timeline, argument map, cause-effect,
+rule-exception, concept hierarchy, theory comparison. Use markdown formatting.
+
+## Comparison of Viewpoints or Concepts
+Markdown table or structured comparison of different perspectives.
 
 ## Examples
-Worked examples from the material. Show the steps.
+Concrete examples from the material that illustrate the concepts.
 
-## Exercise patterns
-Typical exercise types the student should be able to solve, with the recipe.
+## Common Misunderstandings
+What students typically get wrong about this topic.
 
-## Common mistakes
-Pitfalls the source explicitly mentions, or that a careful reader would extract.
+## Exam Answer Structure
+How to write an exam answer for this topic:
+1. Define key term, 2. Give context, 3. Explain main idea, 4. Add example/evidence,
+5. Compare or evaluate, 6. Conclude clearly.
 
-## Exam-relevant points
-What's most likely to be tested. Make this section actionable.
+## Model Answer
+A sample exam answer demonstrating the structure above.
 
-## Summary
-4-7 bullet "Key Takeaways" lines.
+## Self-Check
+3-5 questions the student should be able to answer. Include expected keywords.
 
-Rules:
+## Sources
+Which files and pages were used.
+
+### IF balanced:
+Use these sections with `##` markdown headings — OMIT any that would be empty:
+
+## Learning Goal
+What the student should be able to do after studying this topic.
+
+## Big Picture
+How the concepts and formulas in this topic connect.
+
+## Theory Explanation
+Core principles, assumptions, conditions. Cite source as (filename, p.N).
+
+## Definitions
+Term — precise definition. Cite source.
+
+## Formula Cards
+Each formula in KaTeX. For each: the formula, meaning of every variable, conditions, when to apply.
+
+## When to Use Each Formula
+Decision guide linking problem type to formula choice.
+
+## Conceptual Example
+An example that tests understanding of the theory (explain, compare, interpret).
+
+## Calculation Example
+A worked example with full numeric/symbolic solution. Show every step.
+
+## Mixed Exam Example
+A task that requires: explain the concept → calculate → interpret the result.
+
+## Common Mistakes
+Both conceptual mistakes and calculation mistakes.
+
+## Exam Checklist
+What to know: key definitions, formulas, method selection, interpretation patterns.
+
+## Practice Tasks
+One conceptual, one calculation, one mixed task.
+
+## Sources
+Which files and pages were used.
+
+## RULES FOR ALL TYPES:
 1. Use ONLY material from the context. Do NOT invent.
 2. Inline citations like (filename, p.N) on every non-trivial claim.
-3. If a section has no material in the context, write a single italic line saying so — don't fabricate.
-4. Math in KaTeX.
+3. If a section has no material in the context, OMIT it entirely — don't fabricate.
+4. Math formatting is STRICT: wrap EVERY formula, variable, fraction, exponent, and symbol
+   in delimiters — $...$ inline or $$...$$ display — in EVERY section, not just Formula/Theorem
+   Cards. NEVER write a bare LaTeX command (\\frac, \\sum, \\sqrt, \\lim, \\in) or a bare
+   exponent/subscript (x^2, a_0) outside $...$. Use real LaTeX commands (\\varphi, \\varepsilon,
+   \\Delta, \\times, \\delta) — NOT raw Unicode glyphs (φ, ∑, ×, δ) and NOT \\text{{...}} wrapping
+   a symbol. Example: write "$\\delta_S = 2.4 \\times 10^{{-6}}$", never "δS = 2.4 x 10^-6".
 5. Match the language of the source.
+6. Do NOT write "No formula found" or "keine vorhanden". If a section type does not
+   apply to this knowledge type, simply omit it and use the correct sections instead.
 
 Return JSON: {{"text": "<markdown document>"}}"""
 
@@ -116,6 +284,104 @@ def _page_count_estimate(sb, document_ids: list[str] | None, chunks: list[Retrie
     return 0
 
 
+def _generate_full_document_notes(
+    *,
+    user_id: str,
+    course_id: str,
+    document_ids: list[str] | None,
+    question: str,
+    doc_names: dict[str, str],
+) -> dict[str, Any]:
+    """"Summarize the WHOLE document/every page/complete script" is a
+    different claim than a topic summary: it promises full coverage, which
+    top-k relevance retrieval cannot guarantee for a long document. This
+    routes that intent through the same coverage-verified, page-by-page
+    pipeline /ask-stream uses for full-document requests (grounding_contract
+    + full_document_processing) instead of silently answering from "the 40
+    most relevant chunks" and calling it complete. Always returns a
+    definitive result — never falls through to broad RAG — so a request that
+    explicitly demanded full coverage is either honored or clearly refused,
+    never quietly downgraded.
+    """
+    # Imported lazily (not at module load) to avoid coupling notes.py's
+    # import graph to the ask-stream router at startup; these two helpers
+    # are the same authorization/manifest primitives that route already uses,
+    # reused rather than re-implemented per the architecture's own contract.
+    from ..routers.stream import _load_authorized_documents, _load_canonical_manifest  # noqa: WPS433
+
+    if not document_ids:
+        return {
+            "text": "",
+            "warning": "To summarize a complete document, open or select the specific file(s) first, then ask again.",
+        }
+
+    settings = get_settings()
+    unique_ids = list(dict.fromkeys(document_ids))
+    if len(unique_ids) > settings.full_document_max_documents:
+        return {
+            "text": "",
+            "warning": f"Select at most {settings.full_document_max_documents} document(s) for a complete summary at once.",
+        }
+
+    try:
+        documents = _load_authorized_documents(user_id, course_id, unique_ids)
+    except Exception:  # noqa: BLE001
+        log.exception("full-document notes: document authorization failed")
+        return {"text": "", "error": "One or more selected documents could not be verified."}
+
+    manifests: dict[str, list[Any]] = {}
+    try:
+        for document_id in unique_ids:
+            manifests[document_id] = _load_canonical_manifest(documents[document_id])
+    except Exception:  # noqa: BLE001
+        log.exception("full-document notes: canonical manifest load failed")
+        return {
+            "text": "",
+            "warning": "One or more selected documents are not fully indexed yet, so a complete summary isn't possible right now.",
+        }
+
+    expected_pages = sum(
+        1 for manifest in manifests.values() for page in manifest if page.required_for_processing
+    )
+    if expected_pages > settings.full_document_max_total_expected_pages:
+        return {
+            "text": "",
+            "warning": (
+                f"The selected document(s) have {expected_pages} pages to cover, above the "
+                f"{settings.full_document_max_total_expected_pages}-page limit for a single complete summary."
+            ),
+        }
+
+    try:
+        result = process_full_documents(
+            user_id=user_id, course_id=course_id, question=question,
+            pipeline="summarization", documents=documents, manifests=manifests,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.exception("full-document notes: exhaustive processing failed")
+        return {"text": "", "error": str(e)}
+
+    if not result["coverageResult"]["complete"]:
+        return {
+            "text": "",
+            "warning": "Minallo could not verify complete coverage of every page, so it did not generate an incomplete summary. Please try again.",
+        }
+
+    return {
+        "text": result["answer"],
+        "fullDocumentCoverage": True,
+        "groundedSources": [
+            {
+                "documentId": document_id,
+                "fileName": doc_names.get(document_id, source.get("fileName", "Unknown")),
+                "pageStart": source.get("pageStart"),
+                "pageEnd": source.get("pageEnd"),
+            }
+            for document_id, source in zip(unique_ids, result["sources"])
+        ],
+    }
+
+
 def generate_notes(
     *,
     user_id: str,
@@ -124,6 +390,18 @@ def generate_notes(
     topic: str | None,
     doc_names: dict[str, str],
 ) -> dict[str, Any]:
+    # "Summarize the whole document / every page / complete script" must
+    # route through exhaustive, coverage-verified processing — never through
+    # the broad top-k retrieval below, which cannot back a completeness claim
+    # for a long document. An ordinary topic summary ("summarize the main
+    # concepts") does not match this and keeps using broad RAG as before.
+    resolved_access, _ = resolve_document_access(question=topic or "", requested=None, viewer_context=None)
+    if resolved_access is ResolvedDocumentAccess.FULL_DOCUMENT:
+        return _generate_full_document_notes(
+            user_id=user_id, course_id=course_id, document_ids=document_ids,
+            question=topic or "", doc_names=doc_names,
+        )
+
     query = (topic or "overview main concepts definitions formulas theorems examples exercise patterns common mistakes exam relevant").strip()
     sb = get_supabase()
 
@@ -134,6 +412,9 @@ def generate_notes(
         document_ids=document_ids,
         top_k=40,
     )
+    # Review-2 finding #5 — backfill source filenames for course-wide
+    # generation (documentIds=None means doc_names starts empty).
+    backfill_doc_names(chunks, doc_names)
     if not chunks:
         return {"text": "", "warning": "No relevant material found in the selected documents."}
 
@@ -141,11 +422,12 @@ def generate_notes(
     max_tokens, length_cue = _length_target(len(chunks), total_pages)
 
     context = _context_block(chunks, doc_names)
+    understanding = understanding_block_for_ids(document_ids, user_id=user_id)
 
     try:
         res = chat_json(
             system=_system_prompt(length_cue),
-            user="COURSE CONTEXT:\n\n" + context,
+            user=(understanding + "\n\n" if understanding else "") + "COURSE CONTEXT:\n\n" + context,
             max_tokens=max_tokens,
         )
     except Exception as e:  # noqa: BLE001
@@ -157,8 +439,14 @@ def generate_notes(
         "text": text,
         "pageCount": total_pages,
         "lengthCue": length_cue,
+        # Review-2 finding #6: `save_note` writes `note_sources` rows
+        # with a ``document_id`` column, but the response dict omitted it.
+        # Result: every saved note had NULL document_id and lost the
+        # chunk→source linkage. Include documentId in the payload so the
+        # save path can populate the FK.
         "groundedSources": [
             {
+                "documentId": c.document_id,
                 "fileName": doc_names.get(c.document_id, "Unknown"),
                 "pageStart": c.page_start,
                 "pageEnd": c.page_end,
@@ -180,6 +468,7 @@ def save_note(
     title: str,
     text: str,
     sources: list[dict[str, Any]],
+    note_type: str = "notes",
 ) -> str | None:
     if not text.strip():
         return None
@@ -190,7 +479,7 @@ def save_note(
             "course_id":        course_id,
             "document_id":      document_id,
             "title":            title[:180] or "Untitled notes",
-            "type":             "notes",
+            "type":             note_type,
             "content_markdown": text,
             "updated_at":       datetime.now(timezone.utc).isoformat(),
         }).execute()
