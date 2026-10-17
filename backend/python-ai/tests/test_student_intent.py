@@ -275,6 +275,46 @@ def test_german_negation_prohibits_without_cancelling_primary_task(monkeypatch):
 # propagate, regardless of HOW it misbehaves.
 # ---------------------------------------------------------------------------
 
+def test_semantic_model_cannot_drop_a_deterministic_prohibition(monkeypatch):
+    """The regex-mirrored tests above only cover the model correctly
+    echoing the prohibition back. The real-world failure mode is the model
+    complying with the positive task but OMITTING the negative constraint
+    from its own JSON — this must not silently erase a prohibition the
+    deterministic detector already verified (invariant 2)."""
+    message = "Explain the concept on this page in detail. Do not summarize it."
+    client = _FakeClient({
+        "primaryTask": "conceptual_explanation", "prohibitedTasks": [],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret(
+        message, mode="enabled", resolved_access=ResolvedDocumentAccess.VISIBLE_PAGE,
+        has_visible_context=True,
+    )
+    assert intent.interpretation_source == "semantic_model"
+    assert AcademicIntent.COURSE_SUMMARY in intent.prohibited_tasks
+
+
+def test_semantic_primary_task_cannot_contradict_a_deterministic_prohibition(monkeypatch):
+    """Even when the model's OWN prohibitedTasks list is empty, a primaryTask
+    that contradicts the deterministic prohibition must fail closed rather
+    than silently override it."""
+    message = "Explain the concept on this page in detail. Do not summarize it."
+    client = _FakeClient({
+        "primaryTask": "course_summary", "prohibitedTasks": [],
+        "depth": "detailed", "teachingStyle": "default",
+        "visualRequirement": False, "confidence": 0.9,
+    })
+    _patch_model(monkeypatch, client)
+    intent = _interpret(
+        message, mode="enabled", resolved_access=ResolvedDocumentAccess.VISIBLE_PAGE,
+        has_visible_context=True,
+    )
+    assert intent.interpretation_source == "fallback"
+    assert intent.primary_task is not AcademicIntent.COURSE_SUMMARY
+
+
 def test_malformed_semantic_response_falls_back(monkeypatch):
     def _malformed(*, message, dialogue, previous_turns, base, user_id):
         raise ValueError("malformed structured-output response")

@@ -328,6 +328,133 @@ def test_relevance_scoped_document_question_does_not_crash_on_undefined_name(mon
     assert b'"done": true' in joined
 
 
+def test_semantic_intent_interpretation_runs_off_the_event_loop(monkeypatch):
+    """Regression: _semantic_model_call (triggered when SEMANTIC_INTENT_MODE
+    is "shadow"/"enabled") does a blocking OpenAI call. interpret_student_
+    intent must run via run_in_threadpool like every other blocking call in
+    this handler (e.g. resolve_dialogue_semantically a few lines above its
+    call site) — calling it directly on the event loop would stall every
+    other concurrent request for the duration of that call."""
+    import threading
+
+    from app.config import get_settings
+    from app.routers import stream
+    from app.services import cache, mastery, retrieval, student_intent, tutor_state_store
+    from app.services.tutor_state import TutorState
+
+    monkeypatch.setenv("SEMANTIC_INTENT_MODE", "shadow")
+    get_settings.cache_clear()
+    try:
+        user_id = "00000000-0000-4000-8000-000000000005"
+        document_id = "00000000-0000-4000-8000-000000000006"
+        conversation_id = "semantic-intent-threadpool-check"
+        outer_thread = threading.current_thread()
+        calling_threads: list[threading.Thread] = []
+
+        real_interpret = student_intent.interpret_student_intent
+
+        def _probe(*args, **kwargs):
+            calling_threads.append(threading.current_thread())
+            return real_interpret(*args, **kwargs)
+
+        monkeypatch.setattr(student_intent, "interpret_student_intent", _probe)
+
+        latest_generation = 0
+
+        def claim(_uid, _conversation, _course, generation):
+            nonlocal latest_generation
+            if generation < latest_generation:
+                return False
+            latest_generation = generation
+            return True
+
+        monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+        monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+        monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+        monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+        monkeypatch.setattr(
+            tutor_state_store, "load_tutor_state",
+            lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+        )
+        monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+        )
+        monkeypatch.setattr(
+            stream, "_load_authorized_documents",
+            lambda *_: {
+                document_id: {
+                    "id": document_id,
+                    "user_id": user_id,
+                    "course_id": "course-1",
+                    "file_name": "formelzettel.pdf",
+                    "storage_path": "synthetic/formelzettel.pdf",
+                    "document_hash": "rev-1",
+                    "processing_status": "ready",
+                    "page_count": 2,
+                    "chunk_count": 5,
+                }
+            },
+        )
+        monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+        monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+        monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+        monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+        monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+        chunk = retrieval.RetrievedChunk(
+            chunk_id="c1", document_id=document_id, page_start=1, page_end=1,
+            text="Formula sheet contents.", score=1.0, similarity=1.0,
+            chunk_type="formula", section_title="Formelzettel",
+        )
+        monkeypatch.setattr(retrieval, "retrieve_routed_chunks", lambda **_: [chunk])
+        monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+        monkeypatch.setattr(retrieval, "retrieve_exercise_block", lambda **_: None)
+        monkeypatch.setattr(retrieval, "retrieve_formula_block", lambda **_: [])
+        monkeypatch.setattr(retrieval, "retrieve_numbered_section_chunks", lambda **_: [])
+        monkeypatch.setattr(
+            stream, "retrieve_multi_item_course_evidence",
+            lambda **_: type("R", (), {"chunks": [chunk], "evidence": [], "to_dict": lambda self: {}})(),
+        )
+        monkeypatch.setattr(
+            stream, "research_unresolved_items",
+            lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+        )
+        monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+
+        def fake_stream_answer(**_kwargs):
+            done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+            yield 'data: {"meta": true}\n\n'.encode()
+            yield b'data: {"t":"This is formelzettel.pdf."}\n\n'
+            yield f"data: {json.dumps(done)}\n\n".encode()
+
+        monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+        async def run():
+            payload = stream.AskStreamRequest(
+                courseId="course-1",
+                activeDocumentId=document_id,
+                question="what's the open document and what does it contain?",
+                visiblePage=1,
+                sourceMode="course_files",
+                openFileContext="[CURRENTLY VISIBLE PDF PAGE]\nFile: formelzettel.pdf\nPage: 1 of 2\n\n",
+                conversationId=conversation_id,
+                conversationGeneration=1,
+            )
+            response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+            return [event async for event in response.body_iterator]
+
+        asyncio.run(run())
+        assert calling_threads, "interpret_student_intent was never called"
+        assert calling_threads[0] is not outer_thread, (
+            "interpret_student_intent ran directly on the event-loop thread — "
+            "it must go through run_in_threadpool like the sibling "
+            "resolve_dialogue_semantically call"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
 def test_fast_grounded_escalation_on_a_reused_grounding_follow_up_does_not_crash(monkeypatch):
     """Regression for an UnboundLocalError: stream_top_k was assigned only
     inside the `else:` branch of `if app_or_workspace or not

@@ -243,13 +243,15 @@ through (`previous_turns`, `user_id`).
   the request handler — same shape as `resolve_dialogue_semantically`'s
   `except Exception` branch.
 - **Merge semantics**: the semantic result only ever overrides
-  `primary_task`/`prohibited_tasks`/`depth`/`teaching_style`/
-  `visual_requirement`/`confidence` on top of the already-computed
-  deterministic `StudentIntent` (via `dataclasses.replace`) — `scope`,
-  `references_resolved`/`references_unresolved`/`needs_clarification`, and
-  `student_goal` are never touched, because the model never receives the
-  trusted UI metadata or conversation-resolution internals those are
-  derived from (invariants 3 and 4 hold unchanged).
+  `primary_task`/`depth`/`teaching_style`/`visual_requirement`/`confidence`
+  on top of the already-computed deterministic `StudentIntent` (via
+  `dataclasses.replace`). `prohibited_tasks` is unioned with the
+  deterministic result's, never replaced — the model can add a prohibition
+  but can never silently drop one the deterministic regex already verified.
+  `scope`, `references_resolved`/`references_unresolved`/
+  `needs_clarification`, and `student_goal` are never touched, because the
+  model never receives the trusted UI metadata or conversation-resolution
+  internals those are derived from (invariants 3 and 4 hold unchanged).
 - **Offline eval harness**: `tests/fixtures/student_intent_eval_cases.json`
   + `tests/test_student_intent_eval_fixture.py` — see that file's docstring
   and `tests/fixtures/README.md`. Deterministic classification, the

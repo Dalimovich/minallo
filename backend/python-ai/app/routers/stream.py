@@ -1735,16 +1735,21 @@ async def ask_stream_endpoint(
         from ..services.student_intent import (  # noqa: WPS433
             intent_for_router, interpret_student_intent,
         )
-        computed_intent = interpret_student_intent(
-            question,
-            dialogue=turn_resolution,
-            resolved_access=resolved_access,
-            has_visible_context=bool(
-                grounding_request.viewerContext or payload.openFileContext
-            ),
-            mode=semantic_intent_mode,
-            previous_turns=preflight_turns,
-            user_id=user_id,
+        # _semantic_model_call (when triggered) does a blocking OpenAI call —
+        # must run off the event loop like every other blocking call in this
+        # handler (e.g. resolve_dialogue_semantically just above).
+        computed_intent = await run_in_threadpool(
+            lambda: interpret_student_intent(
+                question,
+                dialogue=turn_resolution,
+                resolved_access=resolved_access,
+                has_visible_context=bool(
+                    grounding_request.viewerContext or payload.openFileContext
+                ),
+                mode=semantic_intent_mode,
+                previous_turns=preflight_turns,
+                user_id=user_id,
+            )
         )
         student_intent = intent_for_router(semantic_intent_mode, computed_intent)
     _task_profile, execution_plan = resolve_execution_plan(

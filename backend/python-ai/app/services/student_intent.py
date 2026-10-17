@@ -15,10 +15,12 @@ client helper, same ``reasoning_effort="low"`` override, same
 contract) rather than building a second model-client stack. It is consulted
 only when ``_needs_semantic_path`` judges the deterministic result
 ambiguous — not on every message — and only ever overrides
-primary_task/prohibited_tasks/depth/teaching_style/visual_requirement/
-confidence on top of the deterministic result; scope/references_*/
-needs_clarification/student_goal always stay the trusted, deterministically
-derived values (invariants 3 and 4 below).
+primary_task/depth/teaching_style/visual_requirement/confidence on top of
+the deterministic result. ``prohibited_tasks`` is unioned with, never
+replaced by, the deterministic result's — the model can add a prohibition
+but can never silently drop one the deterministic regex already verified.
+scope/references_*/needs_clarification/student_goal always stay the
+trusted, deterministically derived values (invariants 3 and 4 below).
 
 Feature-flagged via ``Settings.semantic_intent_mode`` (``off`` / ``shadow`` /
 ``enabled``, default ``off``). See ``app/config.py``. With the flag off, the
@@ -188,12 +190,15 @@ def _semantic_model_call(
     student's current message and trusted prior turns — never retrieved
     course/document text — so nothing this call returns can have been
     shaped by document content. It only ever OVERRIDES primary_task /
-    prohibited_tasks / depth / teaching_style / visual_requirement /
-    confidence on top of ``base`` (mirroring resolve_dialogue_semantically
-    merging into ``base.__dict__`` rather than re-deriving everything);
-    scope / references_* / needs_clarification / student_goal are never
-    touched because the model never sees the trusted UI metadata (invariant
-    4) or conversation-resolution internals those are derived from.
+    depth / teaching_style / visual_requirement / confidence on top of
+    ``base`` (mirroring resolve_dialogue_semantically merging into
+    ``base.__dict__`` rather than re-deriving everything); prohibited_tasks
+    is UNIONED with ``base.prohibited_tasks``, never replaced, so the model
+    can never silently drop a prohibition the deterministic regex already
+    verified. scope / references_* / needs_clarification / student_goal are
+    never touched because the model never sees the trusted UI metadata
+    (invariant 4) or conversation-resolution internals those are derived
+    from.
 
     Returns None (not an exception) when the model's own reported
     confidence is below ``_SEMANTIC_CONFIDENCE_FLOOR`` — too unsure to trust
@@ -263,12 +268,17 @@ conversation history. Do not include reasoning."""
     prohibited_raw = data.get("prohibitedTasks")
     if not isinstance(prohibited_raw, list):
         raise ValueError("semantic prohibitedTasks must be a list")
-    prohibited_tasks = tuple(dict.fromkeys(
-        AcademicIntent(str(v)) for v in prohibited_raw[:_MAX_PROHIBITED_TASKS]
-    ))
+    # Union with base.prohibited_tasks (the deterministic regex result) —
+    # never replace it. The model must never be able to silently drop a
+    # prohibition the deterministic detector already verified (invariant 2).
+    prohibited_tasks = tuple(dict.fromkeys((
+        *base.prohibited_tasks,
+        *(AcademicIntent(str(v)) for v in prohibited_raw[:_MAX_PROHIBITED_TASKS]),
+    )))
     if primary_task in prohibited_tasks:
         # A task cannot simultaneously be what the student wants and what
-        # they ruled out — treat as malformed output, not a real signal.
+        # they (or the deterministic detector) ruled out — treat as
+        # malformed output, not a real signal.
         raise ValueError("semantic primaryTask conflicts with its own prohibitedTasks")
 
     depth = str(data.get("depth"))
