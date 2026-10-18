@@ -1107,7 +1107,11 @@ _CLAUSE_TERMINATOR_RE = re.compile(
     r"[.\n:;]|\b(?:given|where|with|gegeben|wobei|bei)\b", re.IGNORECASE,
 )
 _REQUEST_LIST_SPLIT_RE = re.compile(r"\s*(?:\band\b|\bund\b|&)\s*", re.IGNORECASE)
-_REQUEST_TRAILING_SYMBOL_RE = re.compile(r"[A-Za-z][\w{}]*$")
+# A math variable, not a word: a single letter, optionally with a digit or an
+# underscore subscript (F, v, x, B, F1, F_max). Multi-letter words like
+# "force"/"Kraft"/"equation"/"why" never match because the letter right after
+# the first one isn't a digit or underscore, so the \b boundary fails.
+_SYMBOL_TOKEN_RE = re.compile(r"\b[A-Za-z](?:_\{?[A-Za-z0-9]+\}?|[0-9])?\b")
 _REQUEST_STOPWORDS = {
     "the", "a", "an", "sie", "es", "er",
     "den", "die", "das", "der", "dem", "des",
@@ -1118,17 +1122,21 @@ _REQUEST_STOPWORDS = {
 
 
 def _extract_requested_symbols(clause: str) -> list[str]:
-    """Take the last word of each and/und-joined segment in `clause`.
+    """Take the first math-symbol-looking token of each and/und segment.
 
-    This reads "the force F" and "F and M" the same way (the symbol is
-    whatever sits at the end of its segment) without isolating the leading
-    article or descriptive noun as a separate, bogus candidate.
+    A named quantity with no explicit variable ("the force") has no symbol
+    token at all and contributes nothing, rather than inventing one from the
+    last word. A label mentioned later in the same clause ("Kraft F am
+    Träger B") never displaces the symbol that actually sits next to the
+    request ("F"), since the first symbol-like token wins.
     """
     symbols: list[str] = []
     for segment in _REQUEST_LIST_SPLIT_RE.split(clause.strip(" .:;,")):
-        match = _REQUEST_TRAILING_SYMBOL_RE.search(segment.strip())
-        if match and match.group(0).casefold() not in _REQUEST_STOPWORDS:
+        for match in _SYMBOL_TOKEN_RE.finditer(segment):
+            if match.group(0).casefold() in _REQUEST_STOPWORDS:
+                continue
             symbols.append(match.group(0))
+            break
     return symbols
 
 

@@ -112,6 +112,19 @@ def test_integer_exercise_reference_gets_same_sufficiency_checks_as_decimal() ->
         ("Berechne F und M.", ["F", "M"]),
         ("Berechnen Sie die Kraft F.", ["F"]),
         ("What does Bezugsrahmen mean?", []),  # no calc verb -> no symbol
+        # Named quantity with no explicit variable: nothing to invent.
+        ("Calculate the force.", []),
+        ("Berechne die Kraft.", []),
+        # A label mentioned later ("at support B") must not displace the
+        # symbol that actually sits next to the request.
+        ("Berechne die Kraft F am Träger B.", ["F"]),
+        # A second request-list segment with no symbol in it (an instruction,
+        # not a quantity) must not contribute a fabricated entry.
+        ("Calculate F and explain why.", ["F"]),
+        ("Berechne F und erkläre warum.", ["F"]),
+        # The symbol sits mid-clause; the trailing noun must not win.
+        ("Solve for x in the following equation.", ["x"]),
+        ("Determine the velocity v if t = 5 seconds", ["v"]),
     ],
 )
 def test_requested_quantity_extraction(question: str, expected: list[str]) -> None:
@@ -215,3 +228,45 @@ def test_requested_quantity_obligation_accepts_answer_with_the_symbol() -> None:
         o for o in obligations if o.obligation_type == "include_requested_quantity"
     )
     assert quantity_obligation.satisfied
+
+
+# --- Named quantity, no explicit variable: must not invent one and reject ---
+
+def test_named_quantity_without_symbol_does_not_falsely_reject_correct_answer() -> None:
+    """The original failure mode: "force"/"Kraft" used to be captured as the
+    requested quantity, then INCLUDE_REQUESTED_QUANTITY demanded the literal
+    word "force" appear in the answer -- which a correct "F = 12.5 N" never
+    contains. With no reliable symbol, no obligation should be raised at
+    all, so a correct answer is never rejected for lacking it."""
+    for question in ("Calculate the force.", "Berechne die Kraft."):
+        traits = classify_task_traits(question)
+        identity = identify_grounded_task(
+            question=question, current_page_text="", document_id="d",
+            filename="f.pdf", page=1, traits=traits,
+        )
+        assert identity.requested_quantities == []
+        draft = identify_draft_task("F = 12.5 N")
+        assert compare_task_identities(identity, draft, traits=traits) == []
+        obligations = answer_obligations(
+            answer="F = 12.5 N", identity=identity, traits=traits,
+        )
+        assert not any(
+            o.obligation_type == "include_requested_quantity" for o in obligations
+        )
+
+
+def test_label_mentioned_later_does_not_mask_a_wrong_symbol_answer() -> None:
+    """compare_task_identities() must still reject an answer for the wrong
+    symbol even when a same-looking label ("Träger B") appears later in the
+    question; only the real requested symbol F should be tracked."""
+    question = "Berechne die Kraft F am Träger B."
+    traits = classify_task_traits(question)
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id="d",
+        filename="f.pdf", page=1, traits=traits,
+    )
+    assert identity.requested_quantities == ["F"]
+    draft = identify_draft_task("B = 12 N")  # answers the label, not the ask
+    assert GroundingMismatch.REQUESTED_QUANTITY in compare_task_identities(
+        identity, draft, traits=traits,
+    )
