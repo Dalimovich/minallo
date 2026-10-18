@@ -128,6 +128,52 @@ def test_cache_identity_includes_generation_and_pipeline_versions() -> None:
     )
 
 
+# ── PR3: intent_fingerprint cache isolation ─────────────────────────────────
+# off/shadow always compute "" (student_intent.intent_constraints_fingerprint
+# is mode-gated) — these tests confirm that produces byte-identical cache
+# keys to pre-PR3 behavior (no mass invalidation), while a non-empty,
+# enabled-mode fingerprint produces a genuinely distinct key.
+
+
+def test_question_hash_unaffected_by_empty_intent_fingerprint() -> None:
+    """off/shadow's "" must match both a caller that omits the kwarg
+    entirely (existing cache rows) and one that passes intent_fingerprint=""
+    explicitly."""
+    from app.services.cache import question_hash
+
+    omitted = question_hash("Explain torsion")
+    empty = question_hash("Explain torsion", intent_fingerprint="")
+    none_value = question_hash("Explain torsion", intent_fingerprint=None)
+    assert omitted == empty == none_value
+
+
+def test_question_hash_separates_enabled_mode_intent_fingerprint() -> None:
+    """A non-empty (enabled-mode) fingerprint must never collide with the
+    off/shadow "" partition, nor with another distinct fingerprint."""
+    from app.services.cache import question_hash
+
+    base = question_hash("Explain torsion")
+    withheld = question_hash("Explain torsion", intent_fingerprint="intent:v1:w1h0o0")
+    hint_only = question_hash("Explain torsion", intent_fingerprint="intent:v1:w0h1o0")
+    assert base != withheld
+    assert base != hint_only
+    assert withheld != hint_only
+
+
+def test_question_hash_lookup_and_save_kwargs_must_match_to_produce_same_key() -> None:
+    """Simulates the lookup/save symmetry contract: identical kwargs (as a
+    single cache_key_kwargs dict would enforce) produce the same key;
+    mismatched intent_fingerprint values (a symmetry bug) do not."""
+    from app.services.cache import question_hash
+
+    lookup_kwargs = {"tutor_mode": "explain", "intent_fingerprint": "intent:v1:w1h0o0"}
+    save_kwargs_matching = {"tutor_mode": "explain", "intent_fingerprint": "intent:v1:w1h0o0"}
+    save_kwargs_mismatched = {"tutor_mode": "explain", "intent_fingerprint": "intent:v1:w0h0o0"}
+    question = "Quiz me but hide the answer"
+    assert question_hash(question, **lookup_kwargs) == question_hash(question, **save_kwargs_matching)
+    assert question_hash(question, **lookup_kwargs) != question_hash(question, **save_kwargs_mismatched)
+
+
 def test_document_version_hash_is_order_independent() -> None:
     from app.services.cache import document_version_hash
 

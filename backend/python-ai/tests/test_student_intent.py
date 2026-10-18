@@ -550,3 +550,91 @@ def test_student_intent_signal_is_additive_only_never_changes_the_decision():
     assert plan_with.reason == plan_without.reason
     assert "semantic_intent_available" in plan_with.signals
     assert "semantic_intent_available" not in plan_without.signals
+
+
+# ---------------------------------------------------------------------------
+# PR3: AnswerConstraints detection, the prompt overlay, and the cache
+# fingerprint. The overlay/fingerprint pair is tested directly (not just
+# through the full interpret_student_intent pipeline) since _effective_
+# constraints is their one shared source of truth — these tests pin that
+# contract so a future change to one can't silently drift from the other.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("message", "field"), [
+    ("Quiz me on thermodynamics but do not show me the answers yet.", "withhold_answer"),
+    ("Show the answer only after I try.", "withhold_answer"),
+    ("Can I get a hint, not the full solution?", "hint_only"),
+    ("Please ask one question at a time.", "one_question_at_a_time"),
+    ("Zeig mir die Antwort erst nachdem ich es versucht habe.", "withhold_answer"),
+])
+def test_detect_answer_constraints_positive(message, field):
+    constraints = si._detect_answer_constraints(message)
+    assert getattr(constraints, field) is True
+
+
+@pytest.mark.parametrize("message", [
+    "Don't quiz me today.",  # negated-quiz, NOT answer-hiding — must not cross-fire
+    "Quiz me on the whole chapter.",
+    "Solve exercise 5.1 completely, show all steps.",
+    "What is the formula for torsion?",
+])
+def test_detect_answer_constraints_negative(message):
+    constraints = si._detect_answer_constraints(message)
+    assert constraints == si.AnswerConstraints()
+
+
+def test_effective_constraints_none_intent_is_all_false():
+    assert si._effective_constraints(None) == (False, False, False)
+
+
+def test_student_intent_constraints_reminder_empty_for_no_active_constraints():
+    assert si.student_intent_constraints_reminder(None) == ("", "")
+
+
+def test_student_intent_constraints_reminder_renders_each_field():
+    intent = _interpret(
+        "Quiz me on thermodynamics but do not show me the answers yet.", mode="enabled",
+    )
+    system_suffix, user_suffix = si.student_intent_constraints_reminder(intent)
+    assert system_suffix == user_suffix  # mirrored, same text both sides
+    assert "Do NOT reveal the correct answer" in system_suffix
+
+
+def test_intent_constraints_fingerprint_off_and_shadow_are_always_empty():
+    intent = _interpret(
+        "Quiz me on thermodynamics but do not show me the answers yet.", mode="enabled",
+    )
+    # Even with an intent that DOES carry active constraints, "off"/"shadow"
+    # must still report "" — the mode gate, not the constraints, decides.
+    assert si.intent_constraints_fingerprint("off", intent) == ""
+    assert si.intent_constraints_fingerprint("shadow", intent) == ""
+    assert si.intent_constraints_fingerprint("off", None) == ""
+
+
+def test_intent_constraints_fingerprint_enabled_is_never_empty():
+    assert si.intent_constraints_fingerprint("enabled", None) != ""
+    intent = _interpret("What is torsion?", mode="enabled")
+    assert si.intent_constraints_fingerprint("enabled", intent) != ""
+
+
+def test_intent_constraints_fingerprint_distinguishes_active_constraints():
+    none_active = si.intent_constraints_fingerprint("enabled", None)
+    withheld = si.intent_constraints_fingerprint(
+        "enabled", _interpret("Quiz me but do not show me the answers yet.", mode="enabled"),
+    )
+    hint_only = si.intent_constraints_fingerprint(
+        "enabled", _interpret("Give me a hint, not the full solution.", mode="enabled"),
+    )
+    assert len({none_active, withheld, hint_only}) == 3
+
+
+def test_intent_constraints_fingerprint_version_bump_invalidates_enabled_cache(monkeypatch):
+    """Bumping the policy version must change the fingerprint for otherwise-
+    identical enabled-mode state, without touching off/shadow's "" at all."""
+    intent = _interpret("Give me a hint, not the full solution.", mode="enabled")
+    before = si.intent_constraints_fingerprint("enabled", intent)
+    monkeypatch.setattr(si, "_INTENT_POLICY_VERSION", "v2")
+    after = si.intent_constraints_fingerprint("enabled", intent)
+    assert before != after
+    assert si.intent_constraints_fingerprint("off", intent) == ""
