@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
 
+from .reliability import VisualTaskKind, classify_task_traits
+
 
 class DocumentAuthority(str, Enum):
     PROFESSOR_LECTURE = "professor_lecture"
@@ -36,6 +38,27 @@ class CourseEvidenceReport:
 _MATH_RE = re.compile(r"(?:\d|=|calculate|solve|berechne|bestimme|aufgabe|formula|formel)", re.I)
 _DEFINITION_RE = re.compile(r"(?:definition|definiere|was ist|what is|begriff)", re.I)
 _EXAM_RE = re.compile(r"(?:exam|klausur|prüfung|pruefung)", re.I)
+# A request can explicitly demand the worked/official solution regardless of
+# how its task kind otherwise classifies (e.g. "what's the official solution
+# for this formula?" still classifies as FORMULA_EXPLANATION below) -- that
+# explicit ask must still be backed by an OFFICIAL_SOLUTION-authority
+# document, never waved through just because a topically relevant chunk
+# (e.g. a student's own notes) happens to exist.
+_SOLUTION_REQUEST_RE = re.compile(
+    r"\b(?:solution|musterl[öo]sung|l[öo]sung(?:en)?|worked.?solution|answer.?key|"
+    r"official\s+answer)\b",
+    re.I,
+)
+# reliability._FORMULA_RE (feeding classify_task_traits) only matches the
+# singular "formula"/"formel" -- it also drives evidence_requirement's
+# image-capture gate elsewhere in the pipeline, so widening it there to catch
+# plurals would additionally start demanding a page image for every plural
+# "formulas"/"equations" question across /ask and /ask-stream, not just this
+# evidence check. Scoped locally instead: this plural-tolerant variant is used
+# only to recognise a formula topic for required-evidence purposes.
+_FORMULA_TOPIC_RE = re.compile(
+    r"\b(?:formulas?|equations?|formeln?|gleichung(?:en)?)\b", re.I,
+)
 
 
 def infer_document_authority(file_name: str, document_type: str | None = None) -> DocumentAuthority:
@@ -44,7 +67,7 @@ def infer_document_authority(file_name: str, document_type: str | None = None) -
         return DocumentAuthority.PROFESSOR_LECTURE
     if re.search(r"(?:official.solution|musterlösung|musterloesung|lösung|solution)", value):
         return DocumentAuthority.OFFICIAL_SOLUTION
-    if re.search(r"(?:formula.sheet|formelsammlung|formelblatt)", value):
+    if re.search(r"(?:formula.sheet|formelsammlung|formelblatt|formelzettel)", value):
         return DocumentAuthority.OFFICIAL_FORMULA_SHEET
     if re.search(r"(?:exam|klausur|prüfung|pruefung)", value):
         return DocumentAuthority.OFFICIAL_EXAM
@@ -100,13 +123,30 @@ def build_course_evidence_report(
     *, course_id: str, searched_document_ids: list[str], chunks: list[Any],
     doc_names: dict[str, str], question: str,
 ) -> CourseEvidenceReport:
-    required = ["professor definition or course explanation"]
-    if _MATH_RE.search(question or ""):
+    """Required evidence follows the student's actual learning objective, via
+    the same task classifier the rest of the pipeline already uses to tell a
+    calculation apart from an explanation (reliability.classify_task_traits)
+    -- not a flat "does the question contain a math-ish word" catch-all.
+    Explaining/defining a formula only ever needs the formula itself; solving
+    a specific exercise needs the full question+formula+solution bundle a
+    pure explanation request was never going to supply in the first place."""
+    visual_kind = classify_task_traits(question).visual_kind
+    if _EXAM_RE.search(question or ""):
+        required = ["exact exam question", "official solution method", "lecture explanation"]
+    elif visual_kind is VisualTaskKind.NUMERICAL_CALCULATION:
         required = ["question statement", "applicable formula", "official solution method"]
+    # Checked ahead of FORMULA_EXPLANATION/definition/default: an explicit
+    # solution request is its own learning objective (needs an authoritative
+    # worked solution) independent of whether the question also happens to
+    # mention a formula or use definition-style wording ("what is ...").
+    elif _SOLUTION_REQUEST_RE.search(question or ""):
+        required = ["official solution method"]
+    elif visual_kind is VisualTaskKind.FORMULA_EXPLANATION or _FORMULA_TOPIC_RE.search(question or ""):
+        required = ["applicable formula"]
     elif _DEFINITION_RE.search(question or ""):
         required = ["professor definition or convention"]
-    elif _EXAM_RE.search(question or ""):
-        required = ["exact exam question", "official solution method", "lecture explanation"]
+    else:
+        required = ["professor definition or course explanation"]
 
     authorities = {
         infer_document_authority(doc_names.get(getattr(chunk, "document_id", ""), ""))

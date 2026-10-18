@@ -247,6 +247,72 @@ def test_course_files_mode_with_relevant_but_unauthoritative_chunk_falls_back_ho
     assert done.get("usedGeneralKnowledge") is True, done
 
 
+def test_course_files_mode_irrelevant_formula_sheet_does_not_ground_on_filename_alone(monkeypatch):
+    """A document named/typed as a formula sheet (and even a chunk_type=='formula'
+    chunk) is not proof of relevance by itself -- if its actual content has
+    nothing to do with the question, the relevance gate must still block it
+    from grounding Course Files mode."""
+    user_id = "00000000-0000-4000-8000-000000000016"
+    document_id = "00000000-0000-4000-8000-000000000017"
+    unrelated_formula_chunk = RetrievedChunk(
+        chunk_id="c-unrelated-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="formula", section_title="Random notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="irrelevant-formula-sheet",
+        document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[unrelated_formula_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="irrelevant-formula-sheet",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+    assert done.get("usedGeneralKnowledge") is True, done
+
+
+def test_course_files_mode_formula_explanation_grounds_with_relevant_formula_sheet(monkeypatch):
+    """Positive counterpart, end-to-end: a genuinely relevant formula-sheet
+    chunk must ground a pure "explain the formulas" request -- the fix must
+    not make Course Files mode strictly *more* restrictive than warranted."""
+    user_id = "00000000-0000-4000-8000-000000000018"
+    document_id = "00000000-0000-4000-8000-000000000019"
+    formula_chunk = RetrievedChunk(
+        chunk_id="c-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Explain the formulas on this sheet: F = m * a and E = m * c^2.",
+        score=1.0, similarity=1.0, chunk_type="formula", section_title="Formelzettel",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="relevant-formula-sheet",
+        document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[formula_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="relevant-formula-sheet",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
 def test_explicit_file_selection_with_zero_chunks_returns_honest_unavailable(monkeypatch):
     """The original reported scenario: a specifically-selected, fully-indexed
     document whose retrieval genuinely returns zero chunks for this question

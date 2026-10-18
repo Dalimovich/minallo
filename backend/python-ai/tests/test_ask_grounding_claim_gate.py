@@ -121,6 +121,97 @@ def test_course_files_mode_with_relevant_sufficient_evidence_still_grounds(monke
     assert response.answer == "This is a real course-grounded answer."
 
 
+def test_course_files_mode_irrelevant_formula_sheet_does_not_ground_on_filename_alone(monkeypatch):
+    """A document named/typed as a formula sheet (and even a chunk_type=='formula'
+    chunk) is not proof of relevance by itself -- if its actual content has
+    nothing to do with the question, the relevance gate must still block it
+    from grounding Course Files mode."""
+    document_id = "00000000-0000-4000-8000-000000000024"
+    unrelated_formula_chunk = RetrievedChunk(
+        chunk_id="c-unrelated-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="formula", section_title="Random notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[unrelated_formula_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000004",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
+def test_course_files_mode_formula_explanation_grounds_with_relevant_formula_sheet(monkeypatch):
+    """Positive counterpart, end-to-end: a genuinely relevant formula-sheet
+    chunk must ground a pure "explain the formulas" request -- the fix must
+    not make Course Files mode strictly *more* restrictive than warranted."""
+    document_id = "00000000-0000-4000-8000-000000000025"
+    formula_chunk = RetrievedChunk(
+        chunk_id="c-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Explain the formulas on this sheet: F = m * a and E = m * c^2.",
+        score=1.0, similarity=1.0, chunk_type="formula", section_title="Formelzettel",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[formula_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000005",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope == "course_files", response
+    assert response.answer == "This is a real course-grounded answer."
+
+
+def test_official_solution_request_rejects_unrelated_student_notes_end_to_end(monkeypatch):
+    """An explicit ask for the official solution must be backed by an
+    OFFICIAL_SOLUTION-authority document -- a topically relevant student-notes
+    chunk is not a substitute, however relevant its text."""
+    document_id = "00000000-0000-4000-8000-000000000026"
+    notes_chunk = RetrievedChunk(
+        chunk_id="c-notes", document_id=document_id, page_start=1, page_end=1,
+        text="What is the official solution for this problem? My own notes say F = 12.5 N.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="My notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Mitschrift_Thermodynamik.pdf",
+        chunks=[notes_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000006",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the official solution for this problem?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
 def test_explicit_file_selection_with_zero_matching_chunks_returns_honest_unavailable(monkeypatch):
     """A specifically-selected, fully-indexed document whose retrieval genuinely
     returns zero chunks for this question must produce an honest refusal tagged
