@@ -164,12 +164,6 @@ _VISIBLE_REFERENCE_RE = re.compile(
     r"gezeigt|oben|aktuelle[rmns]?\s+seite)\b",
     re.IGNORECASE,
 )
-_EXERCISE_WITH_NUMBER_RE = re.compile(
-    r"\b(?:Aufgabe|Exercise|Question|Problem)\s+\d+(?:\.\d+)*\b",
-    re.IGNORECASE,
-)
-
-
 def is_page_bound_request(
     question: str,
     *,
@@ -1082,8 +1076,15 @@ def validate_repaired_answer(
     )
 
 
+# The keyword is required (not optional): an unprefixed decimal is a
+# measurement or a page number, never an exercise reference, so making the
+# keyword optional silently misread values like "12.5 mm" as "exercise 12.5"
+# while bare integer references ("Aufgabe 5") never matched at all (no
+# decimal group). Both failure modes let identity_is_sufficient() skip its
+# exercise-visibility checks entirely, since those only run when an
+# exercise_reference is present.
 _EXERCISE_REFERENCE_RE = re.compile(
-    r"\b(?:Aufgabe|Exercise|Question|Problem)?\s*(\d+(?:\.\d+)+)\b",
+    r"\b(?:Aufgabe|Übung|Exercise|Question|Problem)\b\s*#?\s*(\d+(?:\.\d+)*)",
     re.IGNORECASE,
 )
 _ASSIGNMENT_VALUE_RE = re.compile(
@@ -1091,6 +1092,44 @@ _ASSIGNMENT_VALUE_RE = re.compile(
     r"([+\-−]?\d+(?:[.,]\d+)?\s*(?:mm|cm|m|s|min|N|Pa|MPa|cm[³3]|mm[²³23])?)",
     re.IGNORECASE,
 )
+_REQUEST_VERB_RE = re.compile(
+    # berechnen/bestimmen/lösen drop only the trailing "n" for the informal
+    # imperative (berechne/bestimme/löse); ermitteln is irregular (ermittle,
+    # not "ermittel"), so its imperative is listed explicitly.
+    r"\b(?:calculate|compute|determine|find|solve|"
+    r"berechnen?|bestimmen?|ermittle|ermitteln|l[öo]sen?)\b",
+    re.IGNORECASE,
+)
+# A comma or "given/where/with" clause supplies known values, not the
+# requested one ("Calculate F, given L."): the clause terminator stops the
+# extraction window there so the given value never gets mistaken for the ask.
+_CLAUSE_TERMINATOR_RE = re.compile(
+    r"[.\n:;]|\b(?:given|where|with|gegeben|wobei|bei)\b", re.IGNORECASE,
+)
+_REQUEST_LIST_SPLIT_RE = re.compile(r"\s*(?:\band\b|\bund\b|&)\s*", re.IGNORECASE)
+_REQUEST_TRAILING_SYMBOL_RE = re.compile(r"[A-Za-z][\w{}]*$")
+_REQUEST_STOPWORDS = {
+    "the", "a", "an", "sie", "es", "er",
+    "den", "die", "das", "der", "dem", "des",
+    "ein", "eine", "einen", "einem", "einer",
+    "value", "wert", "result", "results", "ergebnis", "endwert",
+    "answer", "antwort", "for", "für", "to", "that", "this",
+}
+
+
+def _extract_requested_symbols(clause: str) -> list[str]:
+    """Take the last word of each and/und-joined segment in `clause`.
+
+    This reads "the force F" and "F and M" the same way (the symbol is
+    whatever sits at the end of its segment) without isolating the leading
+    article or descriptive noun as a separate, bogus candidate.
+    """
+    symbols: list[str] = []
+    for segment in _REQUEST_LIST_SPLIT_RE.split(clause.strip(" .:;,")):
+        match = _REQUEST_TRAILING_SYMBOL_RE.search(segment.strip())
+        if match and match.group(0).casefold() not in _REQUEST_STOPWORDS:
+            symbols.append(match.group(0))
+    return symbols
 
 
 def extract_text_visible_options(text: str, page: int | None) -> list[VisibleAnswerOption]:
@@ -1138,36 +1177,24 @@ def identify_grounded_task(
         )
     assignments = list(_ASSIGNMENT_VALUE_RE.finditer(evidence))
     requested: list[str] = []
-    for pattern in (
-        r"\b(?:calculate|compute|find|determine|berechne|bestimme|ermittle)\s+([A-Za-z][\w{}]*)",
-        r"\b(?:for|für)\s+([A-Za-z][\w{}]*)\b",
-    ):
-        match = re.search(pattern, question or "", re.IGNORECASE)
-        if match:
-            requested.append(match.group(1))
+    for verb_match in _REQUEST_VERB_RE.finditer(evidence):
+        window = evidence[verb_match.end():verb_match.end() + 80]
+        terminator = _CLAUSE_TERMINATOR_RE.search(window)
+        clause = window[:terminator.start()] if terminator else window
+        requested.extend(_extract_requested_symbols(clause))
     sought = re.search(
-        r"\b(?:gesucht|requested|determine|bestimme)\s*:?\s*([A-Za-z][\w{}]*)",
+        r"\b(?:gesucht|requested)\s*:?\s*"
+        r"([A-Za-z][\w{}]*(?:\s*(?:and|und|&)\s*[A-Za-z][\w{}]*)*)",
         evidence,
         re.IGNORECASE,
     )
     if sought:
-        requested.append(sought.group(1))
+        requested.extend(_extract_requested_symbols(sought.group(1)))
     for match in re.finditer(
         r"\b([A-Za-z][A-Za-z0-9_{}]*)\s*=\s*\?",
         evidence,
     ):
         requested.append(match.group(1))
-    for match in re.finditer(
-        r"\b(?:calculate|compute|determine|berechnen|bestimmen|ermitteln)"
-        r"\b[^\n.:;]{0,80}\b([A-Za-z][A-Za-z0-9_{}]*)\b",
-        evidence,
-        re.IGNORECASE,
-    ):
-        candidate = match.group(1)
-        if candidate.casefold() not in {
-            "the", "a", "an", "sie", "den", "die", "das", "value", "wert",
-        }:
-            requested.append(candidate)
     domain = None
     domain_patterns = {
         "injection_moulding": r"\b(injection mould|spritzguss|spritzgie|V_Spritz)\b",
