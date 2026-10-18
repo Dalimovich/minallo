@@ -284,6 +284,49 @@ def test_garbled_open_file_context_does_not_alone_establish_grounding(monkeypatc
     assert done["sourceScope"] == "general_knowledge", done
 
 
+def test_valid_open_page_text_still_grounds_despite_weak_retrieval(monkeypatch):
+    """Required case E: a genuinely substantive openFileContext (the open PDF
+    page's real text, clearing assess_text_quality) must still ground the
+    answer even when course-wide retrieval itself is weak/irrelevant for this
+    question -- has_strong_course_anchor ORs open_file_text_grounded
+    independently of relevance_score/evidence_report, so strong open-page
+    evidence is never accidentally rejected because retrieval came back thin."""
+
+    user_id = "00000000-0000-4000-8000-000000000018"
+    document_id = "00000000-0000-4000-8000-000000000019"
+    irrelevant_chunk = RetrievedChunk(
+        chunk_id="c-irrelevant-3", document_id="other-doc-id", page_start=5, page_end=5,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="text", section_title="Random notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="valid-open-page-weak-retrieval",
+        document_id=document_id, file_name="skript_et_23.04.pdf",
+        chunks=[irrelevant_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        openFileContext=(
+            "Nachgiebigkeit (compliance) is defined in this lecture as the "
+            "inverse of stiffness: a higher Nachgiebigkeit means the structure "
+            "deforms more under the same load. See the worked example on this "
+            "page for the governing equation and units."
+        ),
+        visiblePage=5,
+        conversationId="valid-open-page-weak-retrieval",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
 def test_course_not_found_answer_text_is_unchanged_for_unavailable_claim():
     """Sanity: the refusal copy itself wasn't touched by this fix."""
     text = course_not_found_answer()
