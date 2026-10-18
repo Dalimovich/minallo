@@ -843,16 +843,23 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     # document selection used to treat that alone as a "strong anchor",
     # which let the model answer from priors while the UI still claimed
     # "Answered using your course files" (confirmed false-grounding defect).
-    # The committed-mode path is now held to BOTH of the signals that
-    # already independently gate ordinary retrieved text elsewhere: the
+    # The committed-mode path is held to BOTH of the signals that already
+    # independently gate ordinary retrieved text elsewhere: the
     # authority-coverage evidence report (evidence_report.sufficient) AND
-    # the existing topical-relevance bar (COURSE_ANCHOR_RELEVANCE_THRESHOLD,
-    # used unconditionally below). Neither signal alone is trusted (sufficient
-    # alone measures document-authority coverage, not topical relevance).
+    # the existing topical-relevance bar (COURSE_ANCHOR_RELEVANCE_THRESHOLD).
+    # Neither signal alone is trusted (sufficient alone measures
+    # document-authority coverage, not topical relevance) -- so the bare
+    # relevance-only check below is scoped to the NON-committed path only.
+    # Applying it unconditionally let a highly-relevant-but-unauthoritative
+    # chunk (e.g. a student's own notes, which never satisfy "applicable
+    # formula"/"official solution method") OR its way past the AND for
+    # committed mode too, reinstating the exact false-grounding defect this
+    # gate exists to prevent.
     explicit_course_files = source_decision.selected_source_mode.value == "course_files"
     explicit_selection = bool(retrieval_document_ids)
+    is_committed_mode = explicit_course_files or explicit_selection
     committed_retrieved_text_grounded = bool(
-        (explicit_course_files or explicit_selection)
+        is_committed_mode
         and chunks
         and evidence_report.sufficient
         and relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
@@ -866,7 +873,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     )
     has_strong_course_anchor = bool(
         open_file_text_grounded or exercise_hit or formula_hits
-        or relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
+        or (not is_committed_mode and relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD)
         or committed_retrieved_text_grounded
     )
     if not has_strong_course_anchor:

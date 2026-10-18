@@ -208,6 +208,45 @@ def test_course_files_mode_with_relevant_sufficient_evidence_still_grounds(monke
     assert done.get("usedGeneralKnowledge") is not True, done
 
 
+def test_course_files_mode_with_relevant_but_unauthoritative_chunk_falls_back_honestly(monkeypatch):
+    """Regression guard for the committed-mode gate: a chunk can be highly
+    relevant (word overlap + similarity) and still fail evidence_report.sufficient
+    because its source document carries no authority matching what the question
+    requires (e.g. a student's own notes, which can never supply "applicable
+    formula"/"official solution method"). The bare relevance-only OR-term must
+    not let that chunk through for Course Files mode -- only the combined
+    evidence_report.sufficient AND relevance_score path may ground here."""
+
+    user_id = "00000000-0000-4000-8000-000000000014"
+    document_id = "00000000-0000-4000-8000-000000000015"
+    question = "Calculate the force F using the formula from Aufgabe 5."
+    notes_chunk = RetrievedChunk(
+        chunk_id="c-notes", document_id=document_id, page_start=3, page_end=3,
+        text="Calculate the force F using the formula from Aufgabe 5 -- my own notes.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="My notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="unauthoritative-but-relevant",
+        document_id=document_id, file_name="Mitschrift_Thermodynamik.pdf",
+        chunks=[notes_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question=question,
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="unauthoritative-but-relevant",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+    assert done.get("usedGeneralKnowledge") is True, done
+
+
 def test_explicit_file_selection_with_zero_chunks_returns_honest_unavailable(monkeypatch):
     """The original reported scenario: a specifically-selected, fully-indexed
     document whose retrieval genuinely returns zero chunks for this question
