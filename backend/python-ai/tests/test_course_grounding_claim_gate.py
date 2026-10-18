@@ -247,6 +247,89 @@ def test_course_files_mode_with_relevant_but_unauthoritative_chunk_falls_back_ho
     assert done.get("usedGeneralKnowledge") is True, done
 
 
+def test_sufficient_authority_evidence_but_low_relevance_does_not_ground(monkeypatch):
+    """The mirror case of the unauthoritative-chunk test above:
+    evidence_report.sufficient only measures document-AUTHORITY coverage (is
+    there a professor-lecture chunk at all?), not whether that chunk is
+    actually about this question. A lecture-authority chunk on a completely
+    different topic satisfies evidence_report.sufficient trivially but must
+    still fail relevance_score -- committed_retrieved_text_grounded requires
+    BOTH, and the bare relevance-only OR-term is disabled in committed mode,
+    so this must not ground either."""
+
+    user_id = "00000000-0000-4000-8000-000000000030"
+    document_id = "00000000-0000-4000-8000-000000000031"
+    off_topic_lecture_chunk = RetrievedChunk(
+        chunk_id="c-offtopic-lecture", document_id=document_id, page_start=5, page_end=5,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="text", section_title="Random notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="sufficient-evidence-low-relevance",
+        document_id=document_id, file_name="Lecture 3.pdf",
+        chunks=[off_topic_lecture_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="sufficient-evidence-low-relevance",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+
+
+def test_reused_prior_grounding_followup_to_a_different_exercise_requires_fresh_retrieval(monkeypatch):
+    """Reviewer-flagged risk: stream.py forces has_strong_course_anchor=True
+    whenever dialogue.requires_new_retrieval is False (a "reused prior
+    grounding" follow-up), with no fresh evidence check. A bare exercise-
+    number continuation ("5.3") after a course-grounded answer about exercise
+    5.2 used to be classified as EvidenceRequirement.REUSE_PRIOR_GROUNDED
+    (dialogue_state.py's CONTINUE_NEXT_QUESTION act inherited the generic
+    "continuing previous goal" path meant for paraphrase/clarification), which
+    skipped retrieval entirely for a DIFFERENT exercise nothing in the
+    conversation has evidence for yet -- the model would answer 5.3 from
+    priors while the force-true still claimed sourceScope="course_files".
+    Fixed by requiring fresh evidence for CONTINUE_NEXT_QUESTION
+    (dialogue_state._VERIFICATION_SENSITIVE_ACTS). With chunks genuinely
+    empty for 5.3, this must now land on an honest non-course_files scope,
+    not a false grounding claim."""
+
+    user_id = "00000000-0000-4000-8000-000000000032"
+    document_id = "00000000-0000-4000-8000-000000000033"
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="exercise-switch-followup",
+        document_id=document_id, file_name="Lecture 3.pdf",
+        chunks=[],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="5.3",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="exercise-switch-followup",
+        conversationGeneration=1,
+        previousTurns=[
+            {"role": "user", "text": "Solve exercise 5.2."},
+            {
+                "role": "assistant", "text": "The verified result for 5.2 is x = 4.",
+                "sourceScope": "course_files", "groundingMode": "relevance",
+            },
+        ],
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+
+
 def test_explicit_file_selection_with_zero_chunks_returns_honest_unavailable(monkeypatch):
     """The original reported scenario: a specifically-selected, fully-indexed
     document whose retrieval genuinely returns zero chunks for this question

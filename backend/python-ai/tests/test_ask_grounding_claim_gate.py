@@ -121,6 +121,76 @@ def test_course_files_mode_with_relevant_sufficient_evidence_still_grounds(monke
     assert response.answer == "This is a real course-grounded answer."
 
 
+def test_course_files_mode_with_relevant_but_unauthoritative_chunk_falls_back_honestly(monkeypatch):
+    """Mirrors test_course_grounding_claim_gate.py's /ask-stream coverage of the
+    same committed-mode gate: a chunk can be highly relevant (word overlap +
+    similarity) and still fail evidence_report.sufficient because its source
+    document carries no authority matching what the question requires (e.g. a
+    student's own notes, which can never supply "applicable formula"/"official
+    solution method"). The bare relevance-only OR-term must not let that chunk
+    through for Course Files mode -- only the combined evidence_report.sufficient
+    AND relevance_score path may ground here."""
+    document_id = "00000000-0000-4000-8000-000000000030"
+    question = "Calculate the force F using the formula from Aufgabe 5."
+    notes_chunk = RetrievedChunk(
+        chunk_id="c-notes", document_id=document_id, page_start=3, page_end=3,
+        text="Calculate the force F using the formula from Aufgabe 5 -- my own notes.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="My notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Mitschrift_Thermodynamik.pdf",
+        chunks=[notes_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000007",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question=question,
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
+def test_sufficient_authority_evidence_but_low_relevance_does_not_ground(monkeypatch):
+    """The mirror case: evidence_report.sufficient only measures document-
+    AUTHORITY coverage (is there a professor-lecture chunk at all?), not
+    whether that chunk is actually about this question. A lecture-authority
+    chunk on a completely different topic satisfies evidence_report.sufficient
+    trivially but must still fail relevance_score -- committed_retrieved_text_
+    grounded requires BOTH, and the bare relevance-only OR-term is disabled in
+    committed mode, so this must not ground either."""
+    document_id = "00000000-0000-4000-8000-000000000031"
+    off_topic_lecture_chunk = RetrievedChunk(
+        chunk_id="c-offtopic-lecture", document_id=document_id, page_start=5, page_end=5,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="text", section_title="Random notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Lecture 3.pdf",
+        chunks=[off_topic_lecture_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000008",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
 def test_explicit_file_selection_with_zero_matching_chunks_returns_honest_unavailable(monkeypatch):
     """A specifically-selected, fully-indexed document whose retrieval genuinely
     returns zero chunks for this question must produce an honest refusal tagged

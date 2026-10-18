@@ -138,6 +138,33 @@ def test_bare_number_continues_same_workflow():
     assert "same tutoring workflow" in result.resolved_request
 
 
+def test_bare_exercise_continuation_after_grounded_answer_requires_fresh_retrieval():
+    """A bare label ("5.3") moves active_question to a DIFFERENT exercise than
+    the one the previous answer was grounded in. Without requires_fresh_evidence,
+    this fell into the generic "continues previous goal" path and inherited
+    EvidenceRequirement.REUSE_PRIOR_GROUNDED from the prior grounded turn --
+    skipping retrieval for an exercise nothing in the conversation has evidence
+    for yet. stream.py's has_strong_course_anchor force-true for
+    requires_new_retrieval=False then let it claim sourceScope="course_files"
+    with zero actual evidence (see test_course_grounding_claim_gate.py's
+    test_reused_prior_grounding_followup_to_a_different_exercise_requires_fresh_retrieval
+    for the end-to-end router regression)."""
+    result = resolve_dialogue(
+        "5.3",
+        previous_turns=[
+            {"role": "user", "text": "Solve exercise 5.2."},
+            {
+                "role": "assistant", "text": "The verified result for 5.2 is x = 4.",
+                "sourceScope": "course_files", "groundingMode": "relevance",
+            },
+        ],
+        response_language="en",
+    )
+    assert result.dialogue_act == DialogueAct.CONTINUE_NEXT_QUESTION
+    assert result.active_question == "5.3"
+    assert result.requires_new_retrieval
+
+
 def test_confusion_changes_response_mode_and_tracks_repeated_attempts():
     result = resolve_dialogue(
         "I don't understand",

@@ -294,6 +294,15 @@ _VERIFICATION_SENSITIVE_ACTS = {
     DialogueAct.RETRY_PREVIOUS_REQUEST, DialogueAct.ANSWER_ALL_REQUESTED,
     DialogueAct.REQUEST_RESULT_ONLY, DialogueAct.REQUEST_FIRST_STEP,
     DialogueAct.CONTINUE_FROM_STEP, DialogueAct.REUSE_VERIFIED_RESULT,
+    # A bare label ("5.3") moves `active_question` to a DIFFERENT exercise
+    # than the one the previous answer was grounded in -- REUSE_PRIOR_GROUNDED
+    # exists for paraphrasing the SAME already-discussed content (see its
+    # other members above / test_conversational_evidence_resolution.py), not
+    # for a new exercise nothing in the conversation has evidence for yet.
+    # Without this, stream.py's has_strong_course_anchor force-true for
+    # requires_new_retrieval=False let the model answer the new exercise
+    # from priors while still claiming sourceScope="course_files".
+    DialogueAct.CONTINUE_NEXT_QUESTION,
 }
 
 
