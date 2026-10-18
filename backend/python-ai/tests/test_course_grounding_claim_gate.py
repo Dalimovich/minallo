@@ -511,6 +511,136 @@ def test_fast_grounded_sufficient_evidence_request_completes_with_terminal_done(
     assert done.get("answerMode") == "explain"
 
 
+def test_explain_formula_sheet_content_grounds_without_requiring_solution_method(monkeypatch):
+    """Regression for the overly-restrictive side of the evidence-requirement
+    fix: build_course_evidence_report used to require question statement +
+    applicable formula + official solution method for ANY question matching
+    a math-ish pattern, including a pure "explain this" request that names no
+    exercise and wants no derivation. "Explain the formulas on this sheet"
+    against an authorized formula chunk from an unauthoritative-by-name file
+    (formelzettel.pdf doesn't match the OFFICIAL_FORMULA_SHEET authority
+    regex either) was therefore marked insufficient and silently fell back to
+    general knowledge -- this is the scenario
+    test_visual_aids_and_learning_recommendations_do_not_block_generation in
+    test_stream_route_multiturn.py independently caught (it asserts on the
+    real course-grounded generation path, not sourceScope, so it couldn't
+    hit general knowledge without crashing on the unmocked live OpenAI call).
+    Fixed by routing EXPLANATION/FORMULA_LOOKUP intent (question_routing.
+    detect_intents) to a requirement a formula/lecture chunk can actually
+    satisfy, instead of demanding a second "official solution" document for
+    a request that isn't asking to solve anything."""
+
+    user_id = "00000000-0000-4000-8000-000000000034"
+    document_id = "00000000-0000-4000-8000-000000000035"
+    formula_chunk = RetrievedChunk(
+        chunk_id="c-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Formula sheet contents.", score=1.0, similarity=1.0,
+        chunk_type="formula", section_title="Formelzettel",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="explain-formula-sheet",
+        document_id=document_id, file_name="formelzettel.pdf",
+        chunks=[formula_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="explain-formula-sheet",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
+def test_long_wellformed_but_unrelated_open_file_page_does_not_ground(monkeypatch):
+    """assess_text_quality measures legibility (printable ratio, length, word
+    count) ONLY -- it has no relevance component. A long, well-formed PDF
+    page about a completely different topic must not ground an unrelated
+    question just because it reads cleanly; readable text is not relevant
+    text. No other evidence is supplied (chunks=[]), so this must fail
+    honestly rather than silently answering from priors under a false
+    course_files claim."""
+
+    user_id = "00000000-0000-4000-8000-000000000036"
+    document_id = "00000000-0000-4000-8000-000000000037"
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="long-unrelated-open-page",
+        document_id=document_id, file_name="skript_et_23.04.pdf",
+        chunks=[],
+    )
+
+    unrelated_page = (
+        "Chapter 9: Corporate Marketing Strategy. This chapter reviews how "
+        "pricing tiers are structured across enterprise and consumer segments, "
+        "the historical evolution of subscription bundling, and several case "
+        "studies of regional sales campaigns that succeeded despite limited "
+        "advertising budgets. Readers should note the distinction between "
+        "customer acquisition cost and lifetime value when evaluating these "
+        "campaigns, as later chapters build directly on this framework."
+    )
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        openFileContext=unrelated_page,
+        visiblePage=9,
+        conversationId="long-unrelated-open-page",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+
+
+def test_short_relevant_formula_open_file_text_grounds_via_real_evidence(monkeypatch):
+    """A short, genuinely relevant formula snippet (e.g. "F = m * a") can
+    legitimately fail assess_text_quality's length/lexical bar on its own
+    (it rewards long, word-dense pages, not terse formula notation) -- that
+    bar must not be the ONLY path to grounding, or short valid mathematical
+    evidence gets wrongly excluded. This is the realistic shape: the student
+    isn't asking about their currently-open page at all (no openFileContext,
+    so the unrelated visible-page-capture gate in reliability.py never
+    triggers), they're asking about the formula as INDEXED document content,
+    which retrieval surfaces as its own chunk (chunk_type "formula"). That
+    chunk grounds the answer through the ordinary evidence path --
+    the short-text quality bar is simply never in the way here."""
+
+    user_id = "00000000-0000-4000-8000-000000000038"
+    document_id = "00000000-0000-4000-8000-000000000039"
+    short_formula_chunk = RetrievedChunk(
+        chunk_id="c-short-formula", document_id=document_id, page_start=1, page_end=1,
+        text="F = m * a", score=1.0, similarity=1.0,
+        chunk_type="formula", section_title="Formelzettel",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="short-relevant-formula",
+        document_id=document_id, file_name="formelzettel.pdf",
+        chunks=[short_formula_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain what F = m * a represents.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="short-relevant-formula",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+
+
 def test_course_not_found_answer_text_is_unchanged_for_unavailable_claim():
     """Sanity: the refusal copy itself wasn't touched by this fix."""
     text = course_not_found_answer()

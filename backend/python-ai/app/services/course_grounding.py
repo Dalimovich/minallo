@@ -100,13 +100,29 @@ def build_course_evidence_report(
     *, course_id: str, searched_document_ids: list[str], chunks: list[Any],
     doc_names: dict[str, str], question: str,
 ) -> CourseEvidenceReport:
+    # Reuses question_routing.detect_intents (already computed for retrieval
+    # staging elsewhere, e.g. retrieval.py/multi_item_retrieval.py) instead of
+    # a second, uncoordinated set of keyword regexes here. CALCULATION/
+    # EXERCISE_SOLUTION (deriving a result from an exercise) and
+    # EXAM_PREPARATION keep the strict requirement -- an actual worked
+    # derivation or exam answer needs the problem statement, the formula, AND
+    # a solution method to ground against. EXPLANATION/FORMULA_LOOKUP
+    # (explaining content already present in an authorized PDF, e.g. "explain
+    # the formulas on this sheet") does not need a *second* document proving
+    # how to solve anything -- the formula/lecture content itself is both the
+    # thing being explained and the evidence for it.
+    from .question_routing import AcademicIntent, detect_intents
+
+    intents = set(detect_intents(question or ""))
     required = ["professor definition or course explanation"]
-    if _MATH_RE.search(question or ""):
+    if AcademicIntent.CALCULATION in intents or AcademicIntent.EXERCISE_SOLUTION in intents:
         required = ["question statement", "applicable formula", "official solution method"]
-    elif _DEFINITION_RE.search(question or ""):
+    elif AcademicIntent.DEFINITION in intents:
         required = ["professor definition or convention"]
-    elif _EXAM_RE.search(question or ""):
+    elif AcademicIntent.EXAM_PREPARATION in intents:
         required = ["exact exam question", "official solution method", "lecture explanation"]
+    elif AcademicIntent.EXPLANATION in intents or AcademicIntent.FORMULA_LOOKUP in intents:
+        required = ["applicable formula or course explanation"]
 
     authorities = {
         infer_document_authority(doc_names.get(getattr(chunk, "document_id", ""), ""))
@@ -123,6 +139,8 @@ def build_course_evidence_report(
         found.append("official solution method")
     if DocumentAuthority.PROFESSOR_LECTURE in authorities:
         found.extend(["professor definition or course explanation", "professor definition or convention", "lecture explanation"])
+    if "applicable formula" in found or "professor definition or course explanation" in found:
+        found.append("applicable formula or course explanation")
     missing = [item for item in required if item not in found]
     supporting = list(dict.fromkeys(
         getattr(chunk, "document_id", "") for chunk in chunks

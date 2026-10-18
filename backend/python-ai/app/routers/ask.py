@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -867,9 +868,26 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
     # A mere non-empty open_file_context proves the frontend sent *something*,
     # not that it's usable document content (an image-only page's text layer
     # can be a few garbled characters). Reuse the existing "is this text
-    # substantive" bar instead of trusting presence alone.
+    # substantive" bar instead of trusting presence alone. Readable text is
+    # not necessarily RELEVANT text either -- a long, well-formed but
+    # off-topic page would otherwise satisfy this on quality alone. This is
+    # a DEDICATED word-overlap check (similarity=0.0, no real embedding
+    # exists for freshly-read page text), independent of relevance_score
+    # above: that one scores the synthetic chunk's similarity as its own
+    # text quality (by design, to stop a garbled page's hardcoded-high
+    # similarity from faking relevance -- see 6dcc89f4), which would let a
+    # long, well-formed but irrelevant page's HIGH quality inflate the same
+    # relevance_score in the opposite direction if reused here.
+    open_file_relevance = (
+        course_relevance_score(
+            question,
+            [SimpleNamespace(text=open_file_context, similarity=0.0, chunk_type="open_context")],
+        )
+        if open_file_context.strip() else 0.0
+    )
     open_file_text_grounded = (
         assess_text_quality(open_file_context) >= TEXT_QUALITY_SUFFICIENT_THRESHOLD
+        and open_file_relevance >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
     )
     has_strong_course_anchor = bool(
         open_file_text_grounded or exercise_hit or formula_hits

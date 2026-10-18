@@ -5896,8 +5896,26 @@ async def _prepare_ask_stream_response(
     # *something*, not that it's usable document content (an image-only
     # page's text layer can be a few garbled characters). Reuse the existing
     # "is this text substantive" bar instead of trusting presence alone.
+    # Readable text is not necessarily RELEVANT text either -- a long,
+    # well-formed but off-topic page would otherwise satisfy this on quality
+    # alone. Dedicated word-overlap check (similarity=0.0 -- no real
+    # embedding exists for freshly-read page text; using quality as a stand-in
+    # here would let a long, well-formed but irrelevant page's HIGH quality
+    # inflate this the same way a hardcoded-high similarity once faked
+    # relevance for garbled text -- see 6dcc89f4). Unlike /ask, openFileContext
+    # here never joins `chunks`, so this is scored independently rather than
+    # via the chunk-derived relevance_score above.
+    open_file_text = payload.openFileContext or ""
+    open_file_relevance = (
+        course_relevance_score(
+            question,
+            [SimpleNamespace(text=open_file_text, similarity=0.0, chunk_type="open_context")],
+        )
+        if open_file_text.strip() else 0.0
+    )
     open_file_text_grounded = (
         assess_text_quality(payload.openFileContext or "") >= TEXT_QUALITY_SUFFICIENT_THRESHOLD
+        and open_file_relevance >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
     )
     has_strong_course_anchor = bool(
         open_file_text_grounded or open_file_images or exercise_hit or formula_hits
