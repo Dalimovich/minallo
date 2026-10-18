@@ -125,6 +125,22 @@ def test_integer_exercise_reference_gets_same_sufficiency_checks_as_decimal() ->
         # The symbol sits mid-clause; the trailing noun must not win.
         ("Solve for x in the following equation.", ["x"]),
         ("Determine the velocity v if t = 5 seconds", ["v"]),
+        # "a"/"A" is a legitimate symbol (acceleration, area), not just the
+        # English article -- it must not be discarded when it's the only
+        # candidate the clause offers.
+        ("Calculate the acceleration a.", ["a"]),
+        ("Calculate area A.", ["A"]),
+        ("Find the acceleration a given t.", ["a"]),
+        # "<preposition> <noun> <letter>" names the object the quantity
+        # belongs to ("beam B", "point B", "support A", "node C"), not the
+        # requested quantity itself -- with no explicit symbol for the named
+        # quantity, nothing should be invented from the label.
+        ("Calculate the force on beam B.", []),
+        ("Find the reaction at support A.", []),
+        ("Determine the displacement of node C.", []),
+        # A quantity noun directly followed by its symbol (no preposition
+        # in between) is the request-plus-symbol pattern, not a label.
+        ("Calculate the force F at point B.", ["F"]),
     ],
 )
 def test_requested_quantity_extraction(question: str, expected: list[str]) -> None:
@@ -146,6 +162,43 @@ def test_given_value_in_same_sentence_is_not_mistaken_for_the_ask() -> None:
     identity = identify_grounded_task(
         question="Calculate the force F, given L.",
         current_page_text="",
+        document_id="doc-1",
+        filename="exam.pdf",
+        page=1,
+        traits=traits,
+    )
+    assert identity.requested_quantities == ["F"]
+
+
+def test_unrelated_exercise_on_the_same_page_does_not_leak_into_the_request() -> None:
+    """A PDF page is evidence for resolving the task, not an independent
+    source of what was asked. A separate exercise elsewhere on the visible
+    page asking for p/v/M must not get attributed to a question that only
+    asked about F."""
+    traits = classify_task_traits("Calculate the force F.")
+    identity = identify_grounded_task(
+        question="Calculate the force F.",
+        current_page_text=(
+            "Aufgabe 2: Bestimme den Druck p.\n"
+            "Aufgabe 3: Ermittle die Geschwindigkeit v.\n"
+            "Gesucht: M"
+        ),
+        document_id="doc-1",
+        filename="exam.pdf",
+        page=1,
+        traits=traits,
+    )
+    assert identity.requested_quantities == ["F"]
+
+
+def test_selected_region_still_contributes_requested_quantity() -> None:
+    """Unlike the rest of the page, the region the student actually
+    selected reflects their own intent and should still count."""
+    traits = classify_task_traits("What is being asked here?")
+    identity = identify_grounded_task(
+        question="What is being asked here?",
+        current_page_text="Aufgabe 2: Bestimme den Druck p.",
+        selected_region_text="Berechne die Kraft F.",
         document_id="doc-1",
         filename="exam.pdf",
         page=1,
@@ -269,4 +322,27 @@ def test_label_mentioned_later_does_not_mask_a_wrong_symbol_answer() -> None:
     draft = identify_draft_task("B = 12 N")  # answers the label, not the ask
     assert GroundingMismatch.REQUESTED_QUANTITY in compare_task_identities(
         identity, draft, traits=traits,
+    )
+
+
+def test_object_label_without_explicit_symbol_does_not_falsely_reject_correct_answer() -> None:
+    """"Calculate the force on beam B." never states a symbol for the force
+    itself -- B names the beam. Treating B as the requested quantity would
+    demand the literal letter B appear in the answer and would reject a
+    correct "F = 12.5 N". With no reliable symbol, no such obligation
+    should be raised."""
+    question = "Calculate the force on beam B."
+    traits = classify_task_traits(question)
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id="d",
+        filename="f.pdf", page=1, traits=traits,
+    )
+    assert identity.requested_quantities == []
+    draft = identify_draft_task("F = 12.5 N")
+    assert compare_task_identities(identity, draft, traits=traits) == []
+    obligations = answer_obligations(
+        answer="F = 12.5 N", identity=identity, traits=traits,
+    )
+    assert not any(
+        o.obligation_type == "include_requested_quantity" for o in obligations
     )

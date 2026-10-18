@@ -1087,6 +1087,25 @@ _EXERCISE_REFERENCE_RE = re.compile(
     r"\b(?:Aufgabe|Übung|Exercise|Question|Problem)\b\s*#?\s*(\d+(?:\.\d+)*)",
     re.IGNORECASE,
 )
+
+
+def _own_exercise_segment(page_text: str, exercise_ref: str) -> str:
+    """The slice of `page_text` under the given exercise's own heading, up
+    to the next exercise heading (or end of text). A sibling exercise's
+    "gesucht:"/verb/`= ?` sits past that boundary and is excluded."""
+    own = re.search(
+        rf"\b(?:Aufgabe|Übung|Exercise|Question|Problem)\b\s*#?\s*"
+        rf"{re.escape(exercise_ref)}\b",
+        page_text,
+        re.IGNORECASE,
+    )
+    if own is None:
+        return ""
+    rest = page_text[own.end():]
+    following = _EXERCISE_REFERENCE_RE.search(rest)
+    return rest[:following.start()] if following else rest
+
+
 _ASSIGNMENT_VALUE_RE = re.compile(
     r"\b([A-Za-z][A-Za-z0-9_{}]*)\s*=\s*"
     r"([+\-−]?\d+(?:[.,]\d+)?\s*(?:mm|cm|m|s|min|N|Pa|MPa|cm[³3]|mm[²³23])?)",
@@ -1119,21 +1138,44 @@ _REQUEST_STOPWORDS = {
     "value", "wert", "result", "results", "ergebnis", "endwert",
     "answer", "antwort", "for", "für", "to", "that", "this",
 }
+# "a"/"A" is both the English article and a common symbol (acceleration,
+# area): only discard it as an article when some other candidate in the
+# same segment could be the real symbol ("a force F" -> F). When it's the
+# only token the clause offers ("the acceleration a"), there is nothing
+# else it could be, so it is kept rather than discarded down to nothing.
+#
+# "<preposition> <noun> <LETTER>" ("at point B", "on beam B", "of node C")
+# names the object the quantity belongs to, not the quantity itself: the
+# letter there is a label, not the answer. A noun directly followed by a
+# letter with no preposition between them ("force F", "area A") is the
+# quantity-plus-symbol pattern instead, and is never flagged.
+_OBJECT_LABEL_CONTEXT_RE = re.compile(
+    r"\b(?:at|on|in|of|an|am|bei|auf|für|von|zu|near)\b\s+\S+\s*$",
+    re.IGNORECASE,
+)
 
 
 def _extract_requested_symbols(clause: str) -> list[str]:
-    """Take the first math-symbol-looking token of each and/und segment.
+    """Take the first math-symbol-looking token of each and/und segment that
+    isn't an object/location label.
 
     A named quantity with no explicit variable ("the force") has no symbol
     token at all and contributes nothing, rather than inventing one from the
     last word. A label mentioned later in the same clause ("Kraft F am
-    Träger B") never displaces the symbol that actually sits next to the
-    request ("F"), since the first symbol-like token wins.
+    Träger B", "force on beam B") never gets mistaken for the requested
+    symbol; when every candidate in a segment turns out to be a label, the
+    segment contributes nothing rather than a guess.
     """
     symbols: list[str] = []
     for segment in _REQUEST_LIST_SPLIT_RE.split(clause.strip(" .:;,")):
-        for match in _SYMBOL_TOKEN_RE.finditer(segment):
-            if match.group(0).casefold() in _REQUEST_STOPWORDS:
+        all_matches = list(_SYMBOL_TOKEN_RE.finditer(segment))
+        if not all_matches:
+            continue
+        non_stopword = [
+            m for m in all_matches if m.group(0).casefold() not in _REQUEST_STOPWORDS
+        ]
+        for match in non_stopword or all_matches:
+            if _OBJECT_LABEL_CONTEXT_RE.search(segment[:match.start()]):
                 continue
             symbols.append(match.group(0))
             break
@@ -1183,24 +1225,37 @@ def identify_grounded_task(
         exercise = _EXERCISE_REFERENCE_RE.search(
             selected_region_text or current_page_text or ""
         )
+    # What the student is asking for comes from their own words, their own
+    # selection, and -- only when they referenced a specific exercise -- that
+    # exercise's own text on the page, never a sibling exercise elsewhere on
+    # it. A PDF page commonly holds several exercises, and a verb or
+    # "gesucht:" for a *different* one (asking for p, v, M, ...) must not get
+    # attributed to a question that only asked about F. current_page_text as
+    # a whole stays evidence for resolving the task (exercise visibility,
+    # assignments, options) but never redefines what was requested.
+    request_evidence = "\n".join([
+        question or "",
+        selected_region_text or "",
+        _own_exercise_segment(current_page_text or "", exercise.group(1)) if exercise else "",
+    ])
     assignments = list(_ASSIGNMENT_VALUE_RE.finditer(evidence))
     requested: list[str] = []
-    for verb_match in _REQUEST_VERB_RE.finditer(evidence):
-        window = evidence[verb_match.end():verb_match.end() + 80]
+    for verb_match in _REQUEST_VERB_RE.finditer(request_evidence):
+        window = request_evidence[verb_match.end():verb_match.end() + 80]
         terminator = _CLAUSE_TERMINATOR_RE.search(window)
         clause = window[:terminator.start()] if terminator else window
         requested.extend(_extract_requested_symbols(clause))
     sought = re.search(
         r"\b(?:gesucht|requested)\s*:?\s*"
         r"([A-Za-z][\w{}]*(?:\s*(?:and|und|&)\s*[A-Za-z][\w{}]*)*)",
-        evidence,
+        request_evidence,
         re.IGNORECASE,
     )
     if sought:
         requested.extend(_extract_requested_symbols(sought.group(1)))
     for match in re.finditer(
         r"\b([A-Za-z][A-Za-z0-9_{}]*)\s*=\s*\?",
-        evidence,
+        request_evidence,
     ):
         requested.append(match.group(1))
     domain = None
