@@ -973,6 +973,15 @@ def pair_coordinate_answer_options(
     return options
 
 
+def _mentions_symbol(value: str, folded_answer: str) -> bool:
+    """Token-aware check for whether `value` (a requested symbol like "a"
+    or "F") appears in `folded_answer` as its own token, not merely as a
+    substring of an unrelated word -- a plain `in` check lets a single
+    letter like "a" match inside "mass" and falsely satisfy the obligation
+    without the answer ever addressing that symbol."""
+    return bool(re.search(rf"\b{re.escape(value.casefold())}\b", folded_answer))
+
+
 def answer_obligations(
     *,
     answer: str,
@@ -986,7 +995,7 @@ def answer_obligations(
         obligations.append(AnswerObligation(
             AnswerObligationType.INCLUDE_REQUESTED_QUANTITY.value,
             identity.requested_quantities,
-            any(value.casefold() in folded for value in identity.requested_quantities),
+            any(_mentions_symbol(value, folded) for value in identity.requested_quantities),
         ))
     option_texts = identity.option_texts()
     if option_texts and identity.task_kind.startswith("checkbox"):
@@ -1092,10 +1101,17 @@ _EXERCISE_REFERENCE_RE = re.compile(
 def _own_exercise_segment(page_text: str, exercise_ref: str) -> str:
     """The slice of `page_text` under the given exercise's own heading, up
     to the next exercise heading (or end of text). A sibling exercise's
-    "gesucht:"/verb/`= ?` sits past that boundary and is excluded."""
+    "gesucht:"/verb/`= ?` sits past that boundary and is excluded.
+
+    ``\\b`` alone is not exact-number matching: "5" immediately followed by
+    ".3" still has a `\\b` between the digit and the dot, so a plain
+    trailing ``\\b`` would treat "Aufgabe 5.3" as a heading for exercise
+    "5" too. ``(?![\\d.])`` after the number rules out a longer number
+    continuing right where this one was supposed to end.
+    """
     own = re.search(
         rf"\b(?:Aufgabe|Übung|Exercise|Question|Problem)\b\s*#?\s*"
-        rf"{re.escape(exercise_ref)}\b",
+        rf"{re.escape(exercise_ref)}(?![\d.])",
         page_text,
         re.IGNORECASE,
     )
@@ -1174,8 +1190,18 @@ def _extract_requested_symbols(clause: str) -> list[str]:
         non_stopword = [
             m for m in all_matches if m.group(0).casefold() not in _REQUEST_STOPWORDS
         ]
+        # When every match is a stopword, "a"/"A" is the only live case
+        # (the rest of _REQUEST_STOPWORDS never matches the single-letter
+        # symbol pattern at all). Accept it only when nothing meaningful
+        # follows it in the segment ("acceleration a" -- trailing, nothing
+        # else it could be). "a" with more text after it ("a force", "a
+        # mass") is the leading English article introducing that noun, not
+        # a symbol, and must contribute nothing rather than itself.
+        using_fallback = not non_stopword
         for match in non_stopword or all_matches:
             if _OBJECT_LABEL_CONTEXT_RE.search(segment[:match.start()]):
+                continue
+            if using_fallback and segment[match.end():].strip():
                 continue
             symbols.append(match.group(0))
             break

@@ -16,6 +16,7 @@ import pytest
 from app.services.reliability import (
     GroundingMismatch,
     _EXERCISE_REFERENCE_RE,
+    _own_exercise_segment,
     answer_obligations,
     classify_task_traits,
     compare_task_identities,
@@ -131,6 +132,11 @@ def test_integer_exercise_reference_gets_same_sufficiency_checks_as_decimal() ->
         ("Calculate the acceleration a.", ["a"]),
         ("Calculate area A.", ["A"]),
         ("Find the acceleration a given t.", ["a"]),
+        # "a"/"A" as a LEADING article introducing a noun ("a force", "a
+        # mass") is not the symbol -- only a TRAILING "a"/"A" with nothing
+        # else in the clause can be the symbol itself.
+        ("Calculate a force.", []),
+        ("Calculate a mass.", []),
         # "<preposition> <noun> <letter>" names the object the quantity
         # belongs to ("beam B", "point B", "support A", "node C"), not the
         # requested quantity itself -- with no explicit symbol for the named
@@ -346,3 +352,102 @@ def test_object_label_without_explicit_symbol_does_not_falsely_reject_correct_an
     assert not any(
         o.obligation_type == "include_requested_quantity" for o in obligations
     )
+
+
+def test_leading_article_a_does_not_falsely_reject_a_correct_answer() -> None:
+    """"Calculate a force."/"Calculate a mass." never name a symbol for the
+    quantity -- "a" there is the English article introducing "force"/"mass",
+    not a variable. Treating "a" as the requested quantity would demand the
+    letter "a" appear in the answer, which it trivially does inside almost
+    any word, and would never meaningfully reject a wrong answer either."""
+    for question in ("Calculate a force.", "Calculate a mass."):
+        traits = classify_task_traits(question)
+        identity = identify_grounded_task(
+            question=question, current_page_text="", document_id="d",
+            filename="f.pdf", page=1, traits=traits,
+        )
+        assert identity.requested_quantities == []
+        draft = identify_draft_task("F = 12.5 N")
+        assert compare_task_identities(identity, draft, traits=traits) == []
+        obligations = answer_obligations(
+            answer="F = 12.5 N", identity=identity, traits=traits,
+        )
+        assert not any(
+            o.obligation_type == "include_requested_quantity" for o in obligations
+        )
+
+
+# --- Subexercise heading collision: "Aufgabe 5.3" is not "Aufgabe 5" -----
+
+@pytest.mark.parametrize(
+    "page_text,exercise_ref,expected",
+    [
+        # No heading for exercise 5 itself -- only its subexercise 5.3 --
+        # must resolve to nothing, never to 5.3's own text.
+        ("Aufgabe 5.3 Gesucht: p", "5", ""),
+        # The subexercise's own heading still resolves correctly.
+        ("Aufgabe 5.3 Gesucht: p", "5.3", " Gesucht: p"),
+        # A real "Aufgabe 5" heading still resolves normally, including
+        # when a differently-numbered subexercise sits right next to it.
+        ("Aufgabe 5 Gesucht: F\nAufgabe 5.3 Gesucht: p", "5", " Gesucht: F\n"),
+    ],
+)
+def test_own_exercise_segment_does_not_confuse_subexercise_headings(
+    page_text: str, exercise_ref: str, expected: str,
+) -> None:
+    assert _own_exercise_segment(page_text, exercise_ref) == expected
+
+
+def test_subexercise_heading_does_not_leak_into_a_different_exercise_number() -> None:
+    """Downstream: a question referencing "Aufgabe 5" on a page that only
+    has "Aufgabe 5.3" (no bare "Aufgabe 5" heading) must not pick up 5.3's
+    "Gesucht: p" as if it were exercise 5's own requested quantity."""
+    traits = classify_task_traits("Calculate Aufgabe 5")
+    identity = identify_grounded_task(
+        question="Calculate Aufgabe 5",
+        current_page_text="Aufgabe 5.3 Gesucht: p",
+        document_id="d", filename="f.pdf", page=1, traits=traits,
+    )
+    assert identity.exercise_reference == "5"
+    assert identity.requested_quantities == []
+
+
+# --- Token-aware single-letter quantity matching in answer_obligations ---
+
+def test_single_letter_symbol_is_not_matched_as_a_substring_of_another_word() -> None:
+    """A requested symbol "a" must be checked as its own token, not as a
+    substring: "a" sits inside "mass", "answer", "page" etc. without the
+    answer ever actually addressing the quantity "a"."""
+    question = "Calculate the acceleration a."
+    traits = classify_task_traits(question)
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id="d",
+        filename="f.pdf", page=1, traits=traits,
+    )
+    assert identity.requested_quantities == ["a"]
+    obligations = answer_obligations(
+        answer="The mass is 12 kg.", identity=identity, traits=traits,
+    )
+    quantity_obligation = next(
+        o for o in obligations if o.obligation_type == "include_requested_quantity"
+    )
+    assert not quantity_obligation.satisfied
+
+
+def test_single_letter_symbol_still_matches_as_its_own_token() -> None:
+    """Guard against the opposite failure: tightening the match to be
+    token-aware must not stop it from matching the symbol when it
+    genuinely IS present as its own token."""
+    question = "Calculate the acceleration a."
+    traits = classify_task_traits(question)
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id="d",
+        filename="f.pdf", page=1, traits=traits,
+    )
+    obligations = answer_obligations(
+        answer="a = 9.8 m/s^2", identity=identity, traits=traits,
+    )
+    quantity_obligation = next(
+        o for o in obligations if o.obligation_type == "include_requested_quantity"
+    )
+    assert quantity_obligation.satisfied
