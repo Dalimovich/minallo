@@ -20,6 +20,7 @@ honest "could not find enough evidence" refusal.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 
 from app.services.retrieval import RetrievedChunk
@@ -325,6 +326,67 @@ def test_valid_open_page_text_still_grounds_despite_weak_retrieval(monkeypatch):
 
     assert done["sourceScope"] == "course_files", done
     assert done.get("usedGeneralKnowledge") is not True, done
+
+
+def test_fast_grounded_sufficient_evidence_request_completes_with_terminal_done(monkeypatch):
+    """Regression for the FAST_GROUNDED fallback_research crash: when
+    fast_grounded_evidence_is_sufficient(...) is True, fallback_research was
+    built as a bare SimpleNamespace(sources=[]) with no prompt_overlay()
+    method, but gen() unconditionally calls fallback_research.prompt_overlay()
+    while building the prompt for stream_answer() -- every such request
+    silently degraded to a "could not be completed" SSE error (caught by
+    _stream_live_answer's try/except, never a raised exception). Forces the
+    FAST_GROUNDED lane the same way test_stream_route_multiturn.py's sibling
+    regression does (wrap the real resolve_execution_plan, override only the
+    lane via dataclasses.replace) but, unlike that test, lets real retrieval
+    run on a genuinely relevant chunk and forces
+    fast_grounded_evidence_is_sufficient to True so this test actually reaches
+    the SimpleNamespace(sources=[]) branch the sibling regression does not."""
+    from app.services.execution_router import ExecutionLane
+
+    user_id = "00000000-0000-4000-8000-000000000020"
+    document_id = "00000000-0000-4000-8000-000000000021"
+    relevant_chunk = RetrievedChunk(
+        chunk_id="c-relevant-fg", document_id=document_id, page_start=12, page_end=12,
+        text="Nachgiebigkeit is defined in the lecture as the inverse of stiffness.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture 3: Nachgiebigkeit",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="fast-grounded-sufficient-evidence",
+        document_id=document_id, file_name="Lecture 3.pdf",
+        chunks=[relevant_chunk],
+    )
+
+    _real_resolve_execution_plan = stream_mod.resolve_execution_plan
+
+    def _forced_fast_grounded(*args, **kwargs):
+        task_profile, plan = _real_resolve_execution_plan(*args, **kwargs)
+        forced_plan = dataclasses.replace(
+            plan, executionLane=ExecutionLane.FAST_GROUNDED, initialLane=ExecutionLane.FAST_GROUNDED,
+        )
+        return task_profile, forced_plan
+
+    monkeypatch.setattr(stream_mod, "resolve_execution_plan", _forced_fast_grounded)
+    monkeypatch.setattr(stream_mod, "fast_grounded_evidence_is_sufficient", lambda **_k: True)
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="fast-grounded-sufficient-evidence",
+        conversationGeneration=1,
+    )
+    events, done = _run(stream_mod, payload, user_id)
+
+    joined = b"".join(events)
+    assert b"prompt_overlay" not in joined, joined
+    assert b'"code": "live_generation_failed"' not in joined, joined
+    assert b'"code": "stream_ended_without_terminal_event"' not in joined, joined
+    assert done["done"] is True
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("answerMode") == "explain"
 
 
 def test_course_not_found_answer_text_is_unchanged_for_unavailable_claim():

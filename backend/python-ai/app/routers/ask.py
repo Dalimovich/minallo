@@ -773,8 +773,17 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
             page_start=None,
             page_end=None,
             text=open_file_context[:12000],
+            # score stays artificially high so rank_course_chunks still puts the
+            # open page first in the prompt regardless of its text quality --
+            # that priority is independent of grounding honesty. similarity,
+            # though, feeds course_relevance_score's 0.35-weighted term below;
+            # a hardcoded 0.99 there let a single garbled character (e.g. an
+            # image-only page's text layer) manufacture relevance_score high
+            # enough to clear COURSE_ANCHOR_RELEVANCE_THRESHOLD on its own,
+            # bypassing the open_file_text_grounded/assess_text_quality gate
+            # this same fix added specifically to prevent that.
             score=99.0,
-            similarity=0.99,
+            similarity=assess_text_quality(open_file_context),
             chunk_type="open_context",
             section_title="Open PDF (visible page)",
             is_synthetic=False,
