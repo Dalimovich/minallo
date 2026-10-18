@@ -1,0 +1,290 @@
+"""Regression tests for the course-grounding anchor gate (has_strong_course_anchor)
+in /ask-stream and /ask.
+
+Prior behavior: Course Files mode or an explicit document selection treated
+ANY non-empty retrieved-chunk list as sufficient grounding, with no check on
+relevance or evidence coverage. Because a course-wide vector search almost
+always returns *something* from some document, this let the model answer
+from priors while the UI still rendered "Answered using your course files".
+
+Fixed behavior: that path now additionally requires evidence_report.sufficient
+(authority-coverage) AND relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD.
+A bare non-empty openFileContext string is also no longer trusted on
+presence alone -- it must clear the existing text-quality bar. When neither
+holds and the grounding policy forbids a general-knowledge fallback, the
+response is tagged sourceScope="unavailable" (not "course_files"), so the
+frontend's setBubbleSubtitle never shows a false grounding claim next to an
+honest "could not find enough evidence" refusal.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+
+from app.services.retrieval import RetrievedChunk
+from app.services.source_router import course_not_found_answer
+
+
+def _patch_common(monkeypatch, *, user_id: str, conversation_id: str, document_id: str,
+                   file_name: str, chunks: list[RetrievedChunk], chunk_count: int | None = None):
+    from app.routers import stream
+    from app.services import mastery, retrieval, tutor_state_store
+    from app.services.tutor_state import TutorState
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", lambda *_a, **_k: True)
+    monkeypatch.setattr(tutor_state_store, "current_persisted_generation", lambda *_a, **_k: 1)
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id,
+                "user_id": user_id,
+                "course_id": "course-1",
+                "file_name": file_name,
+                "storage_path": f"synthetic/{file_name}",
+                "document_hash": "rev-1",
+                "processing_status": "ready",
+                "page_count": 2,
+                # Deliberately independent of len(chunks): this is the
+                # document's indexed-chunk count (the cheap readiness-check
+                # metadata at stream.py's _selected_document_readiness_issue),
+                # not how many chunks THIS question's retrieval returned. A
+                # document genuinely indexed with content can still retrieve
+                # zero chunks for an off-topic/unmatched question -- collapsing
+                # the two made the zero-retrieved-chunks test accidentally hit
+                # the unrelated "still being indexed" (missing_chunks) guard
+                # instead of the grounding gate under test.
+                "chunk_count": chunk_count if chunk_count is not None else max(len(chunks), 1),
+                # Required alongside chunk_count>0 for the same readiness
+                # check: a blank active_index_revision reads as
+                # "missing_active_revision" (also a pre-grounding-gate guard).
+                "active_index_revision": "rev-1",
+                "structural_index_status": "ready",
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    # stream.py imports these names directly (`from ..services.X import name`),
+    # so each binds its own reference in stream's namespace at import time --
+    # patching the defining module's attribute (e.g. cache.fetch_course_version_hash)
+    # does NOT affect the name stream.py already resolved. Patch on `stream` itself.
+    monkeypatch.setattr(stream, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(stream, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(stream, "save_answer", lambda **_: None)
+    monkeypatch.setattr(stream, "get_german_learner_profile", lambda *_a, **_k: None)
+
+    monkeypatch.setattr(stream, "retrieve_routed_chunks", lambda **_: list(chunks))
+    monkeypatch.setattr(stream, "retrieve_exercise_block", lambda **_: None)
+    monkeypatch.setattr(stream, "retrieve_formula_block", lambda **_: [])
+    monkeypatch.setattr(stream, "retrieve_numbered_section_chunks", lambda **_: [])
+    # retrieve_visible_page_chunks is imported lazily inside the function body
+    # (`from ..services.retrieval import ...` at call time), so patching the
+    # defining module's attribute here does take effect.
+    monkeypatch.setattr(retrieval, "retrieve_visible_page_chunks", lambda **_: [])
+    monkeypatch.setattr(
+        stream, "retrieve_multi_item_course_evidence",
+        lambda **_: type("R", (), {
+            "chunks": list(chunks), "evidence": [], "to_dict": lambda self: {},
+        })(),
+    )
+    monkeypatch.setattr(
+        stream, "research_unresolved_items",
+        lambda *_a, **_k: type("FR", (), {"sources": [], "prompt_overlay": lambda self: ""})(),
+    )
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+    # Lazily imported inside _selected_document_index_corrupt at call time, so
+    # patching the defining module's attribute here takes effect. Without
+    # this, the live second-layer document-health check hits Supabase for
+    # real and fails the DNS/network sandboxing this test suite requires.
+    from app.services import document_health
+    monkeypatch.setattr(
+        document_health, "validate_active_document_index",
+        lambda *_a, **_k: {"health": document_health.DocumentIndexHealth.READY},
+    )
+
+    def fake_stream_answer(**_kwargs):
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield 'data: {"meta": true}\n\n'.encode()
+        yield b'data: {"t":"This is a real course-grounded answer."}\n\n'
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    def fake_stream_general_answer(*_a, **_k):
+        yield {"t": "General-knowledge answer (not from course files)."}
+        yield {"done": True}
+
+    monkeypatch.setattr(stream, "stream_general_answer", fake_stream_general_answer)
+    return stream
+
+
+def _run(stream, payload, user_id: str) -> tuple[list[bytes], dict]:
+    async def run():
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    done_line = next(e for e in events if b'"done": true' in e or b'"done":true' in e)
+    done_json = json.loads(done_line.decode().removeprefix("data: ").strip())
+    return events, done_json
+
+
+def test_course_files_mode_with_irrelevant_chunks_falls_back_honestly(monkeypatch):
+    """The exact defect under fix: Course Files mode + chunks from an unrelated
+    document must NOT be treated as sufficient grounding. With the default
+    (non-"only") Course Files wording the policy allows a general-knowledge
+    fallback, so this must land there -- never on sourceScope="course_files"."""
+
+    user_id = "00000000-0000-4000-8000-000000000010"
+    document_id = "00000000-0000-4000-8000-000000000011"
+    irrelevant_chunk = RetrievedChunk(
+        chunk_id="c-irrelevant", document_id="other-doc-id", page_start=5, page_end=5,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="text", section_title="Random notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="irrelevant-chunks",
+        document_id=document_id, file_name="skript_et_23.04.pdf",
+        chunks=[irrelevant_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="irrelevant-chunks",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+    assert done.get("usedGeneralKnowledge") is True, done
+
+
+def test_course_files_mode_with_relevant_sufficient_evidence_still_grounds(monkeypatch):
+    """Regression guard: a genuinely on-topic, authority-matching chunk must
+    still be accepted -- the fix must not make Course Files mode strictly
+    *more* restrictive than warranted."""
+
+    user_id = "00000000-0000-4000-8000-000000000012"
+    document_id = "00000000-0000-4000-8000-000000000013"
+    relevant_chunk = RetrievedChunk(
+        chunk_id="c-relevant", document_id=document_id, page_start=12, page_end=12,
+        text="Nachgiebigkeit is defined in the lecture as the inverse of stiffness.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture 3: Nachgiebigkeit",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="relevant-chunks",
+        document_id=document_id, file_name="Lecture 3.pdf",
+        chunks=[relevant_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="relevant-chunks",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
+def test_explicit_file_selection_with_zero_chunks_returns_honest_unavailable(monkeypatch):
+    """The original reported scenario: a specifically-selected, fully-indexed
+    document whose retrieval genuinely returns zero chunks for this question
+    must produce an honest "not found" refusal tagged sourceScope="unavailable"
+    -- never "course_files". The SELECTED_FILES_ONLY policy this triggers
+    forbids a general-knowledge fallback, so this is the path that used to
+    silently answer from priors under a false grounding claim. chunk_count=5
+    keeps the document's indexed-chunk metadata nonzero so this exercises the
+    grounding gate itself, not the separate/unrelated "still being indexed"
+    (missing_chunks) early-return guard."""
+
+    user_id = "00000000-0000-4000-8000-000000000014"
+    document_id = "00000000-0000-4000-8000-000000000015"
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="indexed-doc-no-matching-chunks",
+        document_id=document_id, file_name="skript_et_23.04.pdf",
+        chunks=[], chunk_count=5,
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        documentIds=[document_id],
+        question="Summarize chapter 4 of this document.",
+        sourceMode="course_files",
+        courseFileScope="specific_files",
+        conversationId="indexed-doc-no-matching-chunks",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    # _stream_static_answer derives confidence/unsupported from answer_mode
+    # ("strong" here, same as a genuinely-grounded answer) -- it reflects
+    # confidence in the delivered refusal text, not whether grounding
+    # succeeded. The claim that matters is sourceScope, asserted above and
+    # below: never "course_files" alongside this refusal.
+    assert done["sourceScope"] == "unavailable", done
+    assert done["sourceScope"] != "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
+def test_garbled_open_file_context_does_not_alone_establish_grounding(monkeypatch):
+    """A near-empty/garbled openFileContext (e.g. an image-only page's text
+    layer) must not, by mere presence, prove usable document content reached
+    the model. Same irrelevant-chunk setup as the first test, plus a
+    single-character openFileContext -- outcome must be unchanged."""
+
+    user_id = "00000000-0000-4000-8000-000000000016"
+    document_id = "00000000-0000-4000-8000-000000000017"
+    irrelevant_chunk = RetrievedChunk(
+        chunk_id="c-irrelevant-2", document_id="other-doc-id", page_start=5, page_end=5,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="text", section_title="Random notes",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="garbled-open-file-context",
+        document_id=document_id, file_name="skript_et_23.04.pdf",
+        chunks=[irrelevant_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the definition of Nachgiebigkeit in the lecture?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        openFileContext="x",
+        visiblePage=5,
+        conversationId="garbled-open-file-context",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+
+
+def test_course_not_found_answer_text_is_unchanged_for_unavailable_claim():
+    """Sanity: the refusal copy itself wasn't touched by this fix."""
+    text = course_not_found_answer()
+    assert "could not find enough" in text.lower()

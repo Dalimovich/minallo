@@ -251,6 +251,13 @@ def classify_task_traits(
     )
 
 
+# The existing bar for "this text alone is clean/substantial enough to rely
+# on without corroborating evidence" (previously inlined only in
+# evidence_requirement below). Reused as-is wherever else that same question
+# ("is this text real, substantive content, not just a non-empty flag?") comes up.
+TEXT_QUALITY_SUFFICIENT_THRESHOLD = 0.80
+
+
 def assess_text_quality(text: str) -> float:
     clean = (text or "").strip()
     if not clean:
@@ -279,7 +286,7 @@ def evidence_requirement(
             VisualTaskKind.TEXT_EXPLANATION,
         }
         and current_page_text.strip()
-        and text_quality >= 0.80
+        and text_quality >= TEXT_QUALITY_SUFFICIENT_THRESHOLD
     ):
         return "text_sufficient"
     if traits.requires_visual_evidence:
@@ -1546,6 +1553,7 @@ def task_aware_cache_key(
 __all__ = [
     "AllowedMappingLabel",
     "AnswerObligationType",
+    "TEXT_QUALITY_SUFFICIENT_THRESHOLD",
     "ClassifiedNumber",
     "CalculationContext",
     "CheckboxGeometry",

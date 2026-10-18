@@ -89,6 +89,7 @@ from ..services.retrieval import (
 )
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.reliability import (
+    TEXT_QUALITY_SUFFICIENT_THRESHOLD,
     GroundedRequestContext,
     assess_text_quality,
     classify_task_traits,
@@ -99,6 +100,7 @@ from ..services.reliability import (
     merge_grounded_task_identity,
 )
 from ..services.source_router import (
+    COURSE_ANCHOR_RELEVANCE_THRESHOLD,
     CourseFileScope,
     SourceDecision,
     SourceScope,
@@ -5828,7 +5830,12 @@ async def _prepare_ask_stream_response(
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
     fallback_research = (
-        SimpleNamespace(sources=[])
+        # FAST_GROUNDED skips web fallback research entirely, but gen() below
+        # always calls fallback_research.prompt_overlay() -- a bare
+        # SimpleNamespace(sources=[]) lacked it and crashed every sufficient-
+        # evidence FAST_GROUNDED request (caught by _stream_live_answer as a
+        # silent "could not be completed" error).
+        SimpleNamespace(sources=[], prompt_overlay=lambda: "")
         if fast_evidence_sufficient
         else await run_in_threadpool(lambda: research_unresolved_items(
             multi_item_result,
@@ -5857,20 +5864,38 @@ async def _prepare_ask_stream_response(
         relevance_score=relevance_score,
         used_document_ids=list(dict.fromkeys(c.document_id for c in chunks if c.document_id)),
     )
-    # The user has committed to grounding on their files when EITHER they picked
-    # Course Files mode OR they explicitly selected specific documents (even in
-    # Auto mode). In that case any retrieved chunk is a sufficient anchor:
-    # command-style requests ("generate an exam from these files", "a question
-    # for every lecture") share almost no words with the content, so the
-    # relevance gate would otherwise wrongly downgrade them to general knowledge
-    # despite an explicit selection. Auto mode WITHOUT a selection keeps the
-    # low-relevance downgrade (falls through to a general answer below).
+    # Non-empty retrieved chunks are never grounding by themselves -- a course
+    # with ANY other indexed document always returns *something* from a
+    # course-wide vector search, whether or not it's about this question or
+    # this student's actual target file. Course Files mode / an explicit
+    # document selection used to treat that alone as a "strong anchor",
+    # which let the model answer from priors while the UI still claimed
+    # "Answered using your course files" (confirmed false-grounding defect).
+    # The committed-mode path is now held to BOTH of the signals that
+    # already independently gate ordinary retrieved text elsewhere: the
+    # authority-coverage evidence report (evidence_report.sufficient) AND
+    # the existing topical-relevance bar (COURSE_ANCHOR_RELEVANCE_THRESHOLD,
+    # used unconditionally below). Neither signal alone is trusted (sufficient
+    # alone measures document-authority coverage, not topical relevance).
     explicit_course_files = source_decision.selected_source_mode.value == "course_files"
     explicit_selection = bool(retrieval_document_ids)
+    committed_retrieved_text_grounded = bool(
+        (explicit_course_files or explicit_selection)
+        and chunks
+        and evidence_report.sufficient
+        and relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
+    )
+    # A mere non-empty openFileContext string proves the frontend sent
+    # *something*, not that it's usable document content (an image-only
+    # page's text layer can be a few garbled characters). Reuse the existing
+    # "is this text substantive" bar instead of trusting presence alone.
+    open_file_text_grounded = (
+        assess_text_quality(payload.openFileContext or "") >= TEXT_QUALITY_SUFFICIENT_THRESHOLD
+    )
     has_strong_course_anchor = bool(
-        payload.openFileContext or open_file_images or exercise_hit or formula_hits
-        or relevance_score >= 0.18
-        or ((explicit_course_files or explicit_selection) and chunks)
+        open_file_text_grounded or open_file_images or exercise_hit or formula_hits
+        or relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
+        or committed_retrieved_text_grounded
     )
     # App/workspace questions need no course anchor — they're answered from the
     # product map + live workspace block, not from retrieved chunks. (Without
@@ -5880,9 +5905,19 @@ async def _prepare_ask_stream_response(
         has_strong_course_anchor = True
     if not has_strong_course_anchor:
         if not policy_allows_general_knowledge(source_decision.grounding_policy):
+            # source_decision.source_scope is still COURSE_FILES here (set
+            # before retrieval ran); left as-is, setBubbleSubtitle would show
+            # "Answered using your course files" above a refusal that just
+            # said the opposite. Correct it the same way general_decision
+            # below corrects it for the general-knowledge fallback.
+            not_found_decision = replace(
+                source_decision,
+                source_scope=SourceScope.UNAVAILABLE,
+                source_label="",
+            )
             return _stream_static_answer(
                 text=course_not_found_answer(),
-                decision=source_decision,
+                decision=not_found_decision,
                 answer_mode="strong",
                 status_key="no_strong_match",
             )

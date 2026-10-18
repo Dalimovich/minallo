@@ -45,6 +45,7 @@ from ..services.embeddings import EmbeddingServiceUnavailable
 from ..services.retrieval_debug import DebugPayload, record_retrieval_debug
 from ..services.usage_meter import record_usage
 from ..services.source_router import (
+    COURSE_ANCHOR_RELEVANCE_THRESHOLD,
     CourseFileScope,
     SourceDecision,
     SourceScope,
@@ -55,6 +56,7 @@ from ..services.source_router import (
     effective_document_ids,
     policy_allows_general_knowledge,
 )
+from ..services.reliability import TEXT_QUALITY_SUFFICIENT_THRESHOLD, assess_text_quality
 from ..services.web_answer import generate_web_answer
 from ..supabase_client import get_supabase
 
@@ -825,22 +827,52 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         relevance_score=relevance_score,
         used_document_ids=list(dict.fromkeys(c.document_id for c in chunks if c.document_id)),
     )
-    # The user committed to grounding on their files when EITHER they picked
-    # Course Files mode OR they explicitly selected specific documents (even in
-    # Auto mode). Then any retrieved chunk is a sufficient anchor — a command
-    # request ("generate an exam from these files") shares almost no words with
-    # the content and would otherwise be wrongly downgraded despite the explicit
-    # selection. Auto mode without a selection still downgrades when relevance is low.
+    # Non-empty retrieved chunks are never grounding by themselves -- a course
+    # with ANY other indexed document always returns *something* from a
+    # course-wide vector search, whether or not it's about this question or
+    # this student's actual target file. Course Files mode / an explicit
+    # document selection used to treat that alone as a "strong anchor",
+    # which let the model answer from priors while the UI still claimed
+    # "Answered using your course files" (confirmed false-grounding defect).
+    # The committed-mode path is now held to BOTH of the signals that
+    # already independently gate ordinary retrieved text elsewhere: the
+    # authority-coverage evidence report (evidence_report.sufficient) AND
+    # the existing topical-relevance bar (COURSE_ANCHOR_RELEVANCE_THRESHOLD,
+    # used unconditionally below). Neither signal alone is trusted (sufficient
+    # alone measures document-authority coverage, not topical relevance).
     explicit_course_files = source_decision.selected_source_mode.value == "course_files"
     explicit_selection = bool(retrieval_document_ids)
+    committed_retrieved_text_grounded = bool(
+        (explicit_course_files or explicit_selection)
+        and chunks
+        and evidence_report.sufficient
+        and relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
+    )
+    # A mere non-empty open_file_context proves the frontend sent *something*,
+    # not that it's usable document content (an image-only page's text layer
+    # can be a few garbled characters). Reuse the existing "is this text
+    # substantive" bar instead of trusting presence alone.
+    open_file_text_grounded = (
+        assess_text_quality(open_file_context) >= TEXT_QUALITY_SUFFICIENT_THRESHOLD
+    )
     has_strong_course_anchor = bool(
-        open_file_context or exercise_hit or formula_hits
-        or relevance_score >= 0.18
-        or ((explicit_course_files or explicit_selection) and chunks)
+        open_file_text_grounded or exercise_hit or formula_hits
+        or relevance_score >= COURSE_ANCHOR_RELEVANCE_THRESHOLD
+        or committed_retrieved_text_grounded
     )
     if not has_strong_course_anchor:
         if not policy_allows_general_knowledge(source_decision.grounding_policy):
-            answer = _simple_source_answer(course_not_found_answer(), source_decision)
+            # source_decision.source_scope is still COURSE_FILES here (set
+            # before retrieval ran); left as-is, the frontend would show
+            # "Answered using your course files" above a refusal that just
+            # said the opposite. Correct it the same way general_decision
+            # below corrects it for the general-knowledge fallback.
+            not_found_decision = replace(
+                source_decision,
+                source_scope=SourceScope.UNAVAILABLE,
+                source_label="",
+            )
+            answer = _simple_source_answer(course_not_found_answer(), not_found_decision)
         else:
             general_decision = replace(
                 source_decision,

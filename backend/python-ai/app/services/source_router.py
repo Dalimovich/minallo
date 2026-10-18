@@ -37,6 +37,12 @@ class SourceScope(str, Enum):
     GENERAL_KNOWLEDGE = "general_knowledge"
     NEEDS_CLARIFICATION = "needs_clarification"
     VISUAL_UPLOAD = "visual_upload"
+    # Retrieval ran but didn't clear the course-grounding bar, and the
+    # grounding policy forbids a general-knowledge fallback. The frontend
+    # (setBubbleSubtitle in shell.ts) has no case for this value, so it
+    # falls through to its default "Answer source unavailable" -- the
+    # refusal text must never be shown under a false "course files" claim.
+    UNAVAILABLE = "unavailable"
 
 
 class CourseFileScope(str, Enum):
