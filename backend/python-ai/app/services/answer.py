@@ -38,6 +38,7 @@ from .answer_intent import (
     wants_professor_style,
 )
 from .retrieval import RetrievedChunk
+from .student_intent import StudentIntent, student_intent_constraints_reminder
 
 log = logging.getLogger(__name__)
 
@@ -2124,6 +2125,7 @@ def generate_answer(
     active_document_id: str | None = None,
     grounding_policy: str = "strict_course",
     request_plan_overlay: str | None = None,
+    student_intent: StudentIntent | None = None,
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes.
 
@@ -2206,6 +2208,8 @@ def generate_answer(
             if references:
                 exam_style = "authentic-reference"
     system_prompt = apply_grounding_policy_prompt(system_prompt, grounding_policy)
+    intent_system_suffix, intent_user_suffix = student_intent_constraints_reminder(student_intent)
+    system_prompt += intent_system_suffix
     # Route by answer mode: math/exercise questions hit the strong model,
     # everything else stays on the cheaper mini model. Math reasoning is
     # where mini gets variable distinctions wrong (d vs d_3) and silently
@@ -2237,6 +2241,7 @@ def generate_answer(
         if understanding:
             user_message += "\n\n" + understanding
         user_message += "\n\nCOURSE CONTEXT:\n\n" + context_block
+    user_message += intent_user_suffix
 
     # Worked math/exercise solutions in KaTeX overrun the small default budget
     # and truncate mid-calculation; give the math path room to finish.

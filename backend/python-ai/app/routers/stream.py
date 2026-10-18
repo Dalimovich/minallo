@@ -2010,6 +2010,7 @@ async def ask_stream_endpoint(
                         turn_resolution.resolved_request,
                         previous_turns=previous_turns,
                         context_block=fast_context_block,
+                        student_intent=student_intent,
                     )
                 )
                 for event in fast_events:
@@ -2897,6 +2898,7 @@ async def ask_stream_endpoint(
                         "turn_resolution": turn_resolution,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
+                        "student_intent": student_intent,
                     },
                 )
             )
@@ -2983,6 +2985,7 @@ async def ask_stream_endpoint(
                         "turn_resolution": turn_resolution,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
+                        "student_intent": student_intent,
                     },
                 )
             while not status_queue.empty():
@@ -3074,6 +3077,7 @@ async def ask_stream_endpoint(
                             "turn_resolution": turn_resolution,
                             "grounding_request": grounding_request,
                             "grounding_resolution": grounding_resolution,
+                            "student_intent": student_intent,
                         },
                     )
                     body_iterator = prepared.body_iterator.__aiter__()
@@ -3255,6 +3259,7 @@ async def ask_stream_endpoint(
                         retry_done = False
                         for retry_event in stream_general_answer(
                             turn_resolution.resolved_request, previous_turns=retry_previous_turns,
+                            student_intent=student_intent,
                         ):
                             if isinstance(retry_event.get("t"), str):
                                 retry_answer_parts.append(retry_event["t"])
@@ -3477,6 +3482,16 @@ async def _prepare_ask_stream_response(
     # caller bug, not something to silently paper over with a placeholder.
     grounding_request = (preflight or {}).get("grounding_request")
     grounding_resolution = (preflight or {}).get("grounding_resolution")
+    # Same pass-through, no fallback recomputation: unlike dialogue/
+    # execution_plan, a missing value here legitimately means "off" or
+    # "shadow" mode decided not to forward one (student_intent.
+    # intent_for_router) — recomputing independently would double-pay for
+    # the semantic model call and could disagree with the caller's result.
+    student_intent = (preflight or {}).get("student_intent")
+    from ..services.student_intent import intent_constraints_fingerprint  # noqa: WPS433
+    intent_fingerprint = intent_constraints_fingerprint(
+        get_settings().semantic_intent_mode, student_intent,
+    )
     if automatic_context_section and tutor_state:
         # The standalone chatbot has one chronological visible transcript.
         # For server-created document/course sections, use only that section's
@@ -3983,6 +3998,7 @@ async def _prepare_ask_stream_response(
                 question, prefix=prefix, max_tokens=1200,
                 previous_turns=previous_turns_payload,
                 context_block=format_learner_profile_block(learner_profile),
+                student_intent=student_intent,
             ),
             decision=source_decision,
             answer_mode="general",
@@ -4336,6 +4352,7 @@ async def _prepare_ask_stream_response(
             f"{get_settings().openai_generate_model}|"
             f"{get_settings().openai_generate_model_strong}"
         ),
+        "intent_fingerprint": intent_fingerprint,
     }
     from ..services.question_routing import build_question_routing_plan  # noqa: WPS433
     cache_routing_plan = build_question_routing_plan(question)
@@ -5896,6 +5913,7 @@ async def _prepare_ask_stream_response(
                 question, prefix=auto_general_prefix(), max_tokens=1200,
                 previous_turns=previous_turns_payload,
                 context_block=format_learner_profile_block(learner_profile),
+                student_intent=student_intent,
             ),
             decision=general_decision,
             answer_mode="general",
@@ -6179,6 +6197,7 @@ async def _prepare_ask_stream_response(
                 + grounded_request_context.prompt_overlay()
                 + explanation_plan.prompt_overlay()
             ),
+            student_intent=student_intent,
         )
         for chunk_bytes in gen_iter:
             for ready_event in _poll_decoration_ready():
@@ -6259,6 +6278,7 @@ async def _prepare_ask_stream_response(
                                     "requested numerical/list constraint. Do not return an evidence placeholder."
                                 ),
                                 max_tokens=700,
+                                student_intent=student_intent,
                             )["answer"],
                         )
                         evt["multiItemCoverage"] = {
@@ -6354,6 +6374,7 @@ async def _prepare_ask_stream_response(
                                 [item.value for item in semantic_mismatches]
                                 + obligation_failures
                             ),
+                            student_intent=student_intent,
                         )
                         repaired_mismatches = (
                             compare_task_identities(
@@ -6438,6 +6459,7 @@ async def _prepare_ask_stream_response(
                             visible_page=payload.visiblePage,
                             open_context=generation_open_context,
                             image_parts=open_file_images,
+                            student_intent=student_intent,
                         )
                         repaired_verification = None
                         if repaired:

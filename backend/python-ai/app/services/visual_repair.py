@@ -11,8 +11,10 @@ from typing import Any, Callable
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..config import get_settings
+from .answer_intent import explicit_prohibition_lines
 from .openai_client import get_openai_client
 from .reliability import GroundedTaskKind, TaskTraits, VisualTaskKind
+from .student_intent import StudentIntent, student_intent_constraints_reminder
 
 log = logging.getLogger(__name__)
 
@@ -189,12 +191,27 @@ def generate_visual_repair(
     return str(response.choices[0].message.content or "").strip()
 
 
+def _prohibition_and_intent_block(question: str, student_intent: StudentIntent | None) -> str:
+    """Trailing text block for the two repair prompts below, which rebuild a
+    single-message prompt from scratch with no system message at all —
+    neither the existing no-summary/no-quiz safeguard nor any StudentIntent
+    overlay reached them before. explicit_prohibition_lines reuses the exact
+    same detection/wording answer.py already has; student_intent_constraints_
+    reminder's system half is reused here since there is only one message
+    role to append to."""
+    lines = explicit_prohibition_lines(question)
+    prohibition_block = ("\n\n" + "\n".join(lines)) if lines else ""
+    intent_system, _intent_user = student_intent_constraints_reminder(student_intent)
+    return prohibition_block + intent_system
+
+
 def _repair_prompt(
     *,
     question: str,
     draft: str,
     visible_page: int | None,
     open_context: str,
+    student_intent: StudentIntent | None = None,
 ) -> str:
     return f"""Your previous draft incorrectly claimed that the visible PDF page,
 formula, diagram, or table was unavailable.
@@ -222,7 +239,7 @@ Previous incorrect draft:
 
 Current visible-page text:
 {open_context[:12000]}
-"""
+""" + _prohibition_and_intent_block(question, student_intent)
 
 
 async def repair_false_visual_denial(
@@ -235,12 +252,14 @@ async def repair_false_visual_denial(
     image_parts: list[dict[str, object]],
     model: str,
     generator: Callable[..., str] = generate_visual_repair,
+    student_intent: StudentIntent | None = None,
 ) -> str | None:
     prompt = _repair_prompt(
         question=question,
         draft=draft,
         visible_page=visible_page,
         open_context=open_context,
+        student_intent=student_intent,
     )
     try:
         return await asyncio.wait_for(
@@ -264,6 +283,7 @@ def repair_false_visual_denial_sync(
     image_parts: list[dict[str, object]],
     model: str | None = None,
     generator: Callable[..., str] = generate_visual_repair,
+    student_intent: StudentIntent | None = None,
 ) -> str | None:
     """Sync adapter for the existing synchronous SSE generator."""
     prompt = _repair_prompt(
@@ -271,6 +291,7 @@ def repair_false_visual_denial_sync(
         draft=draft,
         visible_page=visible_page,
         open_context=open_context,
+        student_intent=student_intent,
     )
     chosen_model = model or get_settings().openai_generate_model
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="visual-repair")
@@ -296,6 +317,7 @@ def generate_grounded_repair_sync(
     image_parts: list[dict[str, object]],
     mismatch_codes: list[str],
     model: str | None = None,
+    student_intent: StudentIntent | None = None,
 ) -> str | None:
     prompt = f"""The previous draft contradicted the active source task.
 Mismatch codes: {", ".join(mismatch_codes)}
@@ -313,7 +335,7 @@ Active source evidence:
 
 Incorrect draft (for contradiction diagnosis only):
 {incorrect_draft[:8000]}
-"""
+""" + _prohibition_and_intent_block(question, student_intent)
     chosen_model = model or get_settings().openai_generate_model
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="grounding-repair")
     future = executor.submit(

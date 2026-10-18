@@ -63,6 +63,7 @@ def question_hash(
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
     routing_fingerprint: str | None = None,
+    intent_fingerprint: str | None = None,
 ) -> str:
     """Composite cache key for an answer.
 
@@ -144,6 +145,13 @@ def question_hash(
         parts.append(f"ground={grounding_mode}")
     if routing_fingerprint:
         parts.append("routing=" + hashlib.sha256(routing_fingerprint.encode("utf-8")).hexdigest()[:24])
+    if intent_fingerprint:
+        # "" for off/shadow (student_intent.intent_constraints_fingerprint is
+        # mode-gated to always return "" there) — so this adds nothing to the
+        # key for those modes, preserving every existing cache row exactly.
+        # Only "enabled" ever produces a non-empty value here, which is what
+        # keeps enabled-mode answers out of the off/shadow cache partition.
+        parts.append(f"intent={intent_fingerprint}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 

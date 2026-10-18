@@ -37,8 +37,10 @@ from .access_control import heavy_model_cap_reached
 from .answer_intent import (
     AcademicIntent,
     classify_academic_intent,
+    explicit_prohibition_lines,
     wants_per_source_coverage,
 )
+from .student_intent import StudentIntent, student_intent_constraints_reminder
 from .answer import (
     ADAPTIVE_TABLE_LAYOUT_RULE,
     DEFAULT_TUTOR_MODE,
@@ -1633,6 +1635,7 @@ def stream_answer(
     dialogue_overlay: str | None = None,
     grounding_policy: str = "strict_course",
     request_plan_overlay: str | None = None,
+    student_intent: StudentIntent | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -2203,6 +2206,19 @@ def stream_answer(
         has_visible_context=include_source_zero,
         has_history=bool(previous_turns),
     )
+    # explicit_prohibition_lines is the same no-summary/no-quiz detection
+    # answer.py's intent_style_instruction already applies — stream_answer
+    # never called intent_style_instruction at all, so this path had no
+    # such safeguard; reusing the extracted helper closes that gap without
+    # introducing a second, parallel detection. student_intent_constraints_
+    # reminder is "" unless mode="enabled" produced active answer_constraints
+    # (see StudentIntent/intent_for_router) — appended last, true end of
+    # system_prompt, matching this helper's own documented positioning rule.
+    prohibition_lines = explicit_prohibition_lines(question)
+    if prohibition_lines:
+        system_prompt += "\n\n" + "\n".join(prohibition_lines)
+    intent_system_suffix, intent_user_suffix = student_intent_constraints_reminder(student_intent)
+    system_prompt += intent_system_suffix
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:
@@ -2265,6 +2281,11 @@ def stream_answer(
             user_message += _FIGURE_READ_INSTRUCTION
         else:
             log.info("figure-vision: will_attach_figure was set but no image rendered")
+
+    # True end of user_message — after every later overlay (figure
+    # instruction included), mirroring the system_prompt-side placement
+    # above. Must stay here, not earlier, or a later overlay dilutes it.
+    user_message += intent_user_suffix
 
     image_parts = [*open_image_parts, *figure_image_parts]
     log.info(

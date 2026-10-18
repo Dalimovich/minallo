@@ -17,10 +17,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import require_internal_token
+from ..config import get_settings
 from ..services.answer import DEFAULT_TUTOR_MODE, generate_answer, is_app_question, normalise_tutor_mode
 from ..services.answer_intent import chitchat_answer, is_non_academic_chitchat
 from ..services.cache import fetch_course_version_hash, lookup_answer, save_answer
+from ..services.dialogue_state import DialogueAct, DialogueResolution
 from ..services.general_answer import generate_general_answer
+from ..services.grounding_contract import ResolvedDocumentAccess
+from ..services.student_intent import StudentIntent, intent_constraints_fingerprint, intent_for_router, interpret_student_intent
 from ..services.fallback_research import research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
@@ -430,6 +434,55 @@ def _simple_source_answer(text: str, decision: SourceDecision) -> dict[str, Any]
     }, decision)
 
 
+def _student_intent_for_ask(
+    question: str, *, open_file_context: str, user_id: str,
+) -> StudentIntent | None:
+    """Mirrors app/routers/stream.py's gated StudentIntent computation for
+    this non-streaming endpoint — same interpret_student_intent/
+    intent_for_router pair, same SEMANTIC_INTENT_MODE gate, "" cost when off.
+
+    ask_endpoint is a plain sync `def`, not `async def` — FastAPI already
+    runs it in its own worker thread, so (unlike stream.py's async handler)
+    no run_in_threadpool wrapper is needed around this blocking call.
+
+    AskRequest carries no conversation-history field at all, so
+    DialogueResolution is a trivial single-turn stub: no history means no
+    follow-up/correction/active-exercise-reference resolution is possible,
+    so active_question/previous_question stay None and conversation_intent
+    stays its NEW_QUESTION default — this is the honest value, not a
+    simplification that loses real signal. resolved_access is derived only
+    from open_file_context, which ask_endpoint already validates and bounds
+    (see the length check above) before this is ever called — VISIBLE_PAGE
+    exactly when there is trusted open-page content, RELEVANCE otherwise.
+    This mirrors the same has_visible_context signal passed below; nothing
+    here invents or broadens access beyond what the request already
+    established for retrieval."""
+    semantic_intent_mode = get_settings().semantic_intent_mode
+    if semantic_intent_mode == "off":
+        return None
+    resolved_access = (
+        ResolvedDocumentAccess.VISIBLE_PAGE if open_file_context else ResolvedDocumentAccess.RELEVANCE
+    )
+    dialogue = DialogueResolution(
+        original_message=question,
+        dialogue_act=DialogueAct.NEW_QUESTION,
+        resolved_request=question,
+        active_question=None,
+        previous_question=None,
+        response_language="",
+        requires_new_retrieval=True,
+        invalidate_previous_answer=False,
+        requested_depth="normal",
+        explanation_attempt=0,
+    )
+    computed_intent = interpret_student_intent(
+        question, dialogue=dialogue, resolved_access=resolved_access,
+        has_visible_context=bool(open_file_context), mode=semantic_intent_mode,
+        user_id=user_id,
+    )
+    return intent_for_router(semantic_intent_mode, computed_intent)
+
+
 @router.post("/ask", response_model=AskResponse)
 def ask_endpoint(payload: AskRequest) -> AskResponse:
     _require_uuid(payload.userId, "userId")
@@ -512,6 +565,9 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                     chunks=[],
                     doc_names={},
                     tutor_mode=tutor_mode,
+                    student_intent=_student_intent_for_ask(
+                        question, open_file_context=open_file_context, user_id=payload.userId,
+                    ),
                 ),
                 app_decision,
             )
@@ -593,7 +649,15 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
 
     if source_decision.source_scope == SourceScope.GENERAL_KNOWLEDGE:
         prefix = auto_general_prefix() if source_decision.selected_source_mode.value == "auto" else ""
-        answer = _with_source_meta(generate_general_answer(question, prefix=prefix), source_decision)
+        answer = _with_source_meta(
+            generate_general_answer(
+                question, prefix=prefix,
+                student_intent=_student_intent_for_ask(
+                    question, open_file_context=open_file_context, user_id=payload.userId,
+                ),
+            ),
+            source_decision,
+        )
         _meter("ask_general", answer, payload.userId)
         return AskResponse(
             answer=answer["answer"],
@@ -642,6 +706,14 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         active_document_id=payload.activeDocumentId,
         course_file_scope=course_file_scope,
     )
+    # Computed once here, reused by whichever branch below actually
+    # generates (the general-knowledge fallback at "not has_strong_course_
+    # anchor" or the main generate_answer call) — both are downstream
+    # continuations of this same request, so one computation covers both
+    # rather than paying for the semantic path twice.
+    grounded_student_intent = _student_intent_for_ask(
+        question, open_file_context=open_file_context, user_id=payload.userId,
+    )
     cache_key_kwargs = {
         "tutor_mode": tutor_mode,
         "active_document_id": payload.activeDocumentId,
@@ -651,6 +723,9 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
         "course_file_scope": source_decision.course_file_scope.value,
         "selected_document_ids": retrieval_document_ids,
         "grounding_mode": source_decision.grounding_policy.value,
+        "intent_fingerprint": intent_constraints_fingerprint(
+            get_settings().semantic_intent_mode, grounded_student_intent,
+        ),
     }
     if not payload.bypassCache and cacheable:
         version_hash = fetch_course_version_hash(payload.userId, payload.courseId)
@@ -848,7 +923,9 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                 source_label="Using: General knowledge",
             )
             answer = _with_source_meta(
-                generate_general_answer(question, prefix=auto_general_prefix()),
+                generate_general_answer(
+                    question, prefix=auto_general_prefix(), student_intent=grounded_student_intent,
+                ),
                 general_decision,
             )
         _meter("ask_general", answer, payload.userId)
@@ -896,6 +973,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                 answer_plan_overlay(multi_item_result)
                 + fallback_research.prompt_overlay()
             ),
+            student_intent=grounded_student_intent,
         )
         if fallback_research.sources:
             answer["groundedSources"] = [
@@ -916,6 +994,7 @@ def ask_endpoint(payload: AskRequest) -> AskResponse:
                         "requested numerical/list constraint. Do not return an evidence placeholder."
                     ),
                     max_tokens=700,
+                    student_intent=grounded_student_intent,
                 )["answer"],
             )
             answer["answer"] = completed_text
