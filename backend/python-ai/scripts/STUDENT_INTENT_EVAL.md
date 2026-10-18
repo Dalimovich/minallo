@@ -80,3 +80,72 @@ JSON contains all per-case fields and raw synthetic model responses, plus totals
 The adjacent Markdown gives a quick summary. Review every mismatch before
 attributing it to the model: fixture issues, confidence rejection, merge losses,
 missed escalation and unresolved trusted references are distinct causes.
+
+## PR3 adjudication (2026-10-18)
+
+Independent review of all 23 fixture entries, as required before PR3's typed
+answer-constraint policy and `_DEICTIC_RE` fix could be considered complete.
+The `reports/student-intent-2026-10-17*` files above are the historical
+baseline from the live evaluation that first surfaced these issues — **not
+edited by this adjudication**; they remain the record of what the real model
+and the pre-PR3 code actually did on that date. Only the fixture
+(`tests/fixtures/student_intent_eval_cases.json`) itself was updated, where
+justified below.
+
+**Real student-facing failures, now fixed by this PR:**
+
+- `quiz-answer-hiding-known-gap` — "do not show me the answers yet" previously
+  reached no typed field at all (`knownGap: true`). Fixed: the new
+  deterministic `_WITHHOLD_ANSWER_RE` sets `answer_constraints.withhold_answer
+  =True`, independent of `prohibited_tasks`/`NEGATED_QUIZ_RE` (this is "quiz me
+  but hide the answer", not "do not quiz me" — verified not to cross-fire with
+  either). `_needs_semantic_path` escalation is unchanged (still false) — that
+  is a separate, pre-existing heuristic-tuning question, not touched here.
+  Fixture updated: `expectedAnswerConstraints: {"withholdAnswer": true}`,
+  `knownGap` removed.
+- `ordinal-deictic-false-positive-known-gap` — "the second law of
+  thermodynamics" was flagged as an unresolved back-reference
+  (`needs_clarification=True`) for a fully self-contained question. Fixed: a
+  narrow negative-lookahead exclusion on `_DEICTIC_RE`'s ordinal branch (named
+  concept nouns — law/theorem/postulate/principle/rule/equation/formula/
+  axiom/derivative/integral + plurals), verified not to affect the sibling
+  `missing-context-deictic`/`missing-context-resolved-via-visible-context`
+  cases (bare "this"/"that" references, and "the second problem/question/one"
+  phrasing, still correctly flagged). Fixture updated:
+  `expectedNeedsClarification: false`, `knownGap` removed. Id intentionally
+  left unchanged (same message, same case — only the previously-buggy
+  observed behavior changed; relabeling the id itself would not be justified
+  by a behavior fix).
+
+**Incidental improvement, not a gap fix:**
+
+- `hint-request` — "Can I get a hint for exercise 4.2?" already correctly set
+  `depth="one_step"`. Now also sets `answer_constraints.hint_only=True` (reuses
+  `dialogue_state.wants_hint_only`, the same detection the depth field already
+  relied on) — this is the same underlying signal gaining a second, explicit
+  typed representation, not a new detection. Fixture updated:
+  `expectedAnswerConstraints: {"hintOnly": true}`.
+
+**Ambiguous taxonomy, reviewed and NOT changed (out of this PR's scope):**
+
+- `explain-request` ("Explain Newton's third law of motion.") and
+  `negative-instruction-quiz` ("Explain Newton's third law. Do not quiz me on
+  it.") both classify as `case_or_application_reasoning` rather than
+  `definition_or_theorem` or `conceptual_explanation`, which would arguably fit
+  "explain this law" phrasing at least as well. This is `classify_academic_
+  intent`'s existing regex-priority behavior in `answer_intent.py` — a
+  deterministic-routing question entirely orthogonal to PR3 (typed answer
+  constraints + wiring them into generation). Changing it would mean editing
+  the core intent classifier, a materially larger and unrelated surface, with
+  its own regression risk across every other caller of `classify_academic_
+  intent`. Left as-is; flagged here for a future, separate taxonomy-tuning
+  pass, per "do not relabel cases simply to improve reported accuracy."
+
+**All remaining 18 cases** (`historical-bwl-page6`, `positive-summary-request`,
+`summarize-task`, `contradictory-instruction`, `german-negative-instruction`,
+`english-plain-question`, `mixed-language-code-switch`, `follow-up-why`,
+`correction`, `malformed-model-output`, `timeout`, `diagram-reference`,
+`page-reference`, `quiz-request`, `solve-request`, `compare-request`,
+`missing-context-deictic`, `missing-context-resolved-via-visible-context`)
+were reviewed against their existing `expectedBehavior` rubric and found
+correctly labeled; no changes.

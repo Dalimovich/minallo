@@ -41,12 +41,33 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from .answer_intent import AcademicIntent, NEGATED_QUIZ_RE, NEGATED_SUMMARY_RE, classify_academic_intent, wants_professor_style
-from .dialogue_state import ConversationIntent, DialogueResolution, TurnRelation
+from .dialogue_state import ConversationIntent, DialogueResolution, TurnRelation, wants_hint_only
 from .grounding_contract import ResolvedDocumentAccess
 
 log = logging.getLogger(__name__)
 
 InterpretationSource = Literal["deterministic", "semantic_model", "fallback"]
+
+
+@dataclass(frozen=True)
+class AnswerConstraints:
+    """Explicit, student-requested constraints on how an answer is
+    delivered — orthogonal to ``primary_task``/``prohibited_tasks`` (PR1/PR2):
+    a student can ask to be quizzed (``primary_task=quiz_generation``) while
+    also asking that the answer be withheld — that is not a contradiction,
+    and must not be confused with an outright "don't quiz me"
+    (``NEGATED_QUIZ_RE``/``prohibited_tasks``), which is a different request.
+
+    All fields default False so ``AnswerConstraints()`` (no active
+    constraints) is always the correct, no-op default — this is what keeps
+    ``off``/``shadow`` byte-identical to pre-PR3 behavior (see
+    ``student_intent_constraints_reminder`` and ``intent_constraints_
+    fingerprint`` below, which both treat an all-False instance as "nothing
+    to add")."""
+
+    withhold_answer: bool = False        # "don't show the answer(s) yet" / "only after I try"
+    hint_only: bool = False              # "give me a hint, not the full solution"
+    one_question_at_a_time: bool = False  # "ask one question at a time"
 
 
 @dataclass(frozen=True)
@@ -99,6 +120,7 @@ class StudentIntent:
     student_goal: str
     primary_task: AcademicIntent
     prohibited_tasks: tuple[AcademicIntent, ...]
+    answer_constraints: AnswerConstraints
     depth: str
     teaching_style: str
     scope: ResolvedDocumentAccess
@@ -122,8 +144,52 @@ _VISUAL_RE = re.compile(
     r"zeichnung|skizze|diagramm|zeichne|skizziere)\b",
     re.IGNORECASE,
 )
+# Concept nouns that follow an ordinal ("the second LAW", "the second
+# POSTULATE") name a specific, self-contained concept rather than a
+# conversational back-reference — excluded here so "the second
+# problem/question/one/part/..." (anything else) still counts as deictic.
+# Deliberately a narrow exclusion list, not an inclusion whitelist: this
+# only has to name what CONCEPT words look like, not enumerate every
+# legitimate back-reference noun (which would risk missing one and
+# reintroducing false negatives). Fixes the known gap documented in
+# tests/fixtures/student_intent_eval_cases.json's
+# "ordinal-deictic-false-positive-known-gap" case ("the second law of
+# thermodynamics" was previously flagged as an unresolved reference).
+_DEICTIC_CONCEPT_EXCLUSIONS_RE = (
+    r"law|laws|theorem|theorems|postulate|postulates|principle|principles|"
+    r"rule|rules|equation|equations|formula|formulas|formulae|axiom|axioms|"
+    r"derivative|derivatives|integral|integrals"
+)
 _DEICTIC_RE = re.compile(
-    r"\b(this|that|it|these|those|the\s+(?:first|second|third|above|below)\s*\w*)\b",
+    r"\b(this|that|it|these|those|"
+    r"the\s+(?:first|second|third|above|below)\b"
+    rf"(?!\s+(?:{_DEICTIC_CONCEPT_EXCLUSIONS_RE})\b)"
+    r"\s*\w*)\b",
+    re.IGNORECASE,
+)
+# "Quiz me, but don't show the answers yet" / "show the answer only after I
+# try" — withholding an answer, not refusing to quiz at all (NEGATED_QUIZ_RE
+# is a different request: "don't quiz me"). Deliberately keyed on
+# answer/reveal wording, not quiz wording, so the two can never cross-fire.
+_WITHHOLD_ANSWER_RE = re.compile(
+    r"\b(?:don'?t|do\s+not|without)\s+(?:show|reveal|give)\s+(?:me\s+)?(?:the\s+)?answers?\b|"
+    r"\bhide\s+(?:the\s+)?answers?\b|"
+    r"\bonly\s+after\s+I\s+try\b|"
+    r"\bafter\s+I\s+(?:try|attempt)\b|"
+    r"\bnicht\s+(?:sofort\s+)?die\s+antwort(?:en)?\s+zeigen\b|"
+    r"\bantwort(?:en)?\s+verstecken\b|"
+    r"\berst\s+nachdem\s+ich\s+es\s+versucht\s+habe\b",
+    re.IGNORECASE,
+)
+# "Ask one question at a time" — pacing, independent of ORAL_EXAM_PRACTICE's
+# own hard-coded one-at-a-time prompt text (answer_intent.py) which only
+# applies to that one AcademicIntent; this applies regardless of primary_task.
+_ONE_AT_A_TIME_RE = re.compile(
+    r"\bone\s+(?:question|problem|exercise)\s+at\s+a\s+time\b|"
+    r"\bask\s+(?:me\s+)?one\s+at\s+a\s+time\b|"
+    r"\bnot\s+all\s+at\s+once\b|"
+    r"\beine\s+(?:frage|aufgabe)\s+nach\s+der\s+anderen\b|"
+    r"\bnicht\s+alles?\s+auf\s+einmal\b",
     re.IGNORECASE,
 )
 # Trigger threshold: gates whether _semantic_model_call is consulted at all
@@ -152,6 +218,19 @@ def _detect_prohibited_tasks(message: str) -> tuple[AcademicIntent, ...]:
     if NEGATED_QUIZ_RE.search(message):
         prohibited.append(AcademicIntent.QUIZ_GENERATION)
     return tuple(prohibited)
+
+
+def _detect_answer_constraints(message: str) -> AnswerConstraints:
+    """Explicit answer-release/pacing constraints. Deterministic only, by
+    design — this PR does not extend the semantic model's JSON schema (that
+    would mean new model-call cost and new live-eval cases, out of scope
+    here). Hint detection reuses ``dialogue_state.wants_hint_only`` rather
+    than a second hint regex."""
+    return AnswerConstraints(
+        withhold_answer=bool(_WITHHOLD_ANSWER_RE.search(message)),
+        hint_only=wants_hint_only(message),
+        one_question_at_a_time=bool(_ONE_AT_A_TIME_RE.search(message)),
+    )
 
 
 def _needs_semantic_path(message: str, dialogue: DialogueResolution) -> bool:
@@ -372,6 +451,7 @@ def interpret_student_intent(
         student_goal=student_goal,
         primary_task=primary_task,
         prohibited_tasks=prohibited_tasks,
+        answer_constraints=_detect_answer_constraints(text),
         depth=dialogue.requested_depth,
         teaching_style="professor_style" if wants_professor_style(text) else "default",
         scope=resolved_access,
@@ -448,7 +528,88 @@ def intent_for_router(mode: str, intent: StudentIntent | None) -> StudentIntent 
     return intent if mode == "enabled" else None
 
 
+# Bump whenever _effective_constraints' shape or meaning changes, to
+# invalidate stale "enabled" cache rows (intent_constraints_fingerprint
+# below) without touching off/shadow's "" partition, which never changes.
+_INTENT_POLICY_VERSION = "v1"
+
+
+def _effective_constraints(intent: StudentIntent | None) -> tuple[bool, bool, bool]:
+    """The single source of truth for which StudentIntent fields actually
+    change generated output. Both student_intent_constraints_reminder and
+    intent_constraints_fingerprint read ONLY through this — never
+    intent.answer_constraints' fields directly — so a new constraint can't
+    be added to the prompt overlay without the cache fingerprint picking it
+    up, or vice versa; the two cannot drift apart from each other."""
+    if intent is None:
+        return (False, False, False)
+    c = intent.answer_constraints
+    return (c.withhold_answer, c.hint_only, c.one_question_at_a_time)
+
+
+def student_intent_constraints_reminder(intent: StudentIntent | None) -> tuple[str, str]:
+    """(system_suffix, user_suffix) for the student's explicit answer-release/
+    pacing constraints (AnswerConstraints — withhold_answer/hint_only/
+    one_question_at_a_time). Both are "" when intent is None or carries no
+    active constraints — a guaranteed no-op, which is what keeps off/shadow
+    byte-identical to pre-PR3 behavior when this is appended unconditionally
+    at a call site.
+
+    Does NOT re-render prohibited_tasks (course_summary/quiz_generation) —
+    those already reach the prompt via answer_intent.explicit_prohibition_
+    lines/intent_style_instruction; duplicating them here would risk the two
+    texts drifting apart.
+
+    Callers must append the returned suffixes as the literal LAST line of
+    system_prompt and user_message/user_content respectively — mid-prompt
+    placement has been shown (in the sibling no-summary fix) to be
+    insufficient against later overlays diluting it."""
+    withhold, hint_only, one_at_a_time = _effective_constraints(intent)
+    if not (withhold or hint_only or one_at_a_time):
+        return "", ""
+    lines = ["", "STUDENT-REQUESTED ANSWER CONSTRAINTS (explicit — do not weaken, ignore, or override these):"]
+    if withhold:
+        lines.append(
+            "- Do NOT reveal the correct answer(s) or final solution in this response. "
+            "Answer only up to the point the student asked for; withhold the result itself."
+        )
+    if hint_only:
+        lines.append(
+            "- Give a hint only. Do NOT provide the complete derivation, full solution, or final result."
+        )
+    if one_at_a_time:
+        lines.append(
+            "- Ask exactly ONE question at a time, then stop and wait for the student's response "
+            "before continuing. Do NOT list multiple questions at once."
+        )
+    suffix = "\n".join(lines)
+    return suffix, suffix
+
+
+def intent_constraints_fingerprint(mode: str, intent: StudentIntent | None) -> str:
+    """Cache-key discriminator for app/services/cache.py's question_hash.
+
+    "off" and "shadow" ALWAYS return "" — not because this call happens to
+    see no active constraints, but because mode itself gates it: neither
+    mode can ever reach generation (student_intent_constraints_reminder is
+    never even called with a non-None intent in those modes), so they must
+    always share the pre-PR3 cache partition exactly, with no schema bump
+    and no invalidation of existing rows.
+
+    "enabled" ALWAYS returns a non-empty, version-marked, mode-distinct
+    string — e.g. "intent:v1:w0h0o0" when nothing happens to be active that
+    turn, "intent:v1:w1h0o1" when some are — so an enabled-mode cache entry
+    can never be structurally confused with, or reused by, an off/shadow
+    lookup, even in the edge case where enabled's rendered prompt text would
+    otherwise have been byte-identical to off/shadow's for that question."""
+    if mode != "enabled":
+        return ""
+    withhold, hint_only, one_at_a_time = _effective_constraints(intent)
+    return f"intent:{_INTENT_POLICY_VERSION}:w{int(withhold)}h{int(hint_only)}o{int(one_at_a_time)}"
+
+
 __all__ = [
-    "InterpretationSource", "StudentIntent", "execution_signal",
-    "intent_for_router", "interpret_student_intent",
+    "AnswerConstraints", "InterpretationSource", "StudentIntent",
+    "execution_signal", "intent_constraints_fingerprint", "intent_for_router",
+    "interpret_student_intent", "student_intent_constraints_reminder",
 ]

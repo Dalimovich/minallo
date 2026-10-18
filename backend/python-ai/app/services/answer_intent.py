@@ -673,16 +673,16 @@ def intent_allows_missing_input(intent: AcademicIntent | str | None) -> bool:
     return intent_is_math_like(intent)
 
 
-def intent_style_instruction(intent: AcademicIntent | str | None, question: str | None = None) -> str:
-    intent = _normalise_intent(intent) or AcademicIntent.GENERAL_COURSE_QA
-    lines = ["", "", "ACADEMIC TASK INTENT ROUTING:"]
-
-    # Explicit prohibitions are stated here, independent of which intent the
-    # request routed to — the routing fix above only stops the WRONG task
-    # (summarize/quiz) from being picked; this is what tells the model not to
-    # produce that structure as an incidental default, including imitating a
-    # "Zusammenfassung" heading that may appear in the retrieved source text.
+def explicit_prohibition_lines(question: str | None) -> list[str]:
+    """The student's explicit "do not summarize" / "do not quiz me" prompt
+    lines, independent of which AcademicIntent a request routed to and
+    independent of intent_style_instruction's broader per-intent routing
+    block. Extracted so paths that don't go through intent_style_instruction
+    at all (general_answer.py, visual_repair.py) can still reuse the exact
+    same detection + wording as the grounded path, rather than re-deriving
+    their own slice of it or going without this safeguard entirely."""
     text = question or ""
+    lines: list[str] = []
     if _SUMMARY_PROHIBITION_RE.search(text):
         lines.append(
             "- The student explicitly prohibited summarizing. Do NOT include a "
@@ -692,6 +692,19 @@ def intent_style_instruction(intent: AcademicIntent | str | None, question: str 
         )
     if _NO_QUIZ_RE.search(text):
         lines.append("- The student explicitly asked not to be quizzed; do not turn this into quiz questions.")
+    return lines
+
+
+def intent_style_instruction(intent: AcademicIntent | str | None, question: str | None = None) -> str:
+    intent = _normalise_intent(intent) or AcademicIntent.GENERAL_COURSE_QA
+    lines = ["", "", "ACADEMIC TASK INTENT ROUTING:"]
+
+    # Explicit prohibitions are stated here, independent of which intent the
+    # request routed to — the routing fix above only stops the WRONG task
+    # (summarize/quiz) from being picked; this is what tells the model not to
+    # produce that structure as an incidental default, including imitating a
+    # "Zusammenfassung" heading that may appear in the retrieved source text.
+    lines.extend(explicit_prohibition_lines(question))
 
     if intent == AcademicIntent.CASE_OR_APPLICATION_REASONING:
         lines.extend([
@@ -834,6 +847,7 @@ __all__ = (
     "chitchat_answer",
     "academic_intent_from_turn",
     "classify_academic_intent",
+    "explicit_prohibition_lines",
     "intent_allows_missing_input",
     "intent_is_math_like",
     "intent_is_self_contained",

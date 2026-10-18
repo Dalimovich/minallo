@@ -169,10 +169,23 @@ _ALL_RE = re.compile(
     r"^\s*(?:all|all of them|everything|alle|alle davon)\s*[.!?]*\s*$",
     re.IGNORECASE,
 )
-_HINT_RE = re.compile(
+HINT_RE = re.compile(
     r"\b(?:hint|clue|small tip|tipp|hinweis|indice)\b",
     re.IGNORECASE,
 )
+_NO_CLUE_RE = re.compile(r"\b(?:no|without)\s+(?:a\s+)?clue\b", re.IGNORECASE)
+
+
+def wants_hint_only(text: str) -> bool:
+    """True when the student is asking for a hint rather than the full
+    answer/solution. Public (no leading underscore) and exposed as a
+    function, not just the regex, so other modules reuse the exact
+    hint-vs-"no clue" check rather than re-deriving their own slice of it —
+    same one-source-of-truth convention as NEGATED_SUMMARY_RE/NEGATED_QUIZ_RE
+    in answer_intent.py."""
+    return bool(HINT_RE.search(text) and not _NO_CLUE_RE.search(text))
+
+
 _OVERVIEW_RE = re.compile(
     r"\b(?:overview|summary only|high[- ]level|überblick|ueberblick|aperçu|apercu)\b",
     re.IGNORECASE,
@@ -714,7 +727,7 @@ def resolve_dialogue(
             f"{('exercise group ' + active) if active else 'the active exercise group'} "
             "sequentially and completely. Do not replace the solutions with a topic overview."
         )
-    elif _HINT_RE.search(text) and not re.search(r"\b(?:no|without)\s+(?:a\s+)?clue\b", text, re.I):
+    elif wants_hint_only(text):
         act = DialogueAct.REQUEST_HINT
         depth = "one_step"
         resolved = (
@@ -1096,4 +1109,4 @@ def _safe_conversational_fallback(
 __all__ = ["ConversationIntent", "DialogueAct", "DialogueResolution", "EvidenceRequirement",
            "SpeechAct", "TaskFamily", "TurnRelation", "is_pure_social_turn",
            "needs_semantic_resolution", "resolve_dialogue", "resolve_dialogue_semantically",
-           "resolve_evidence_requirement"]
+           "resolve_evidence_requirement", "wants_hint_only"]

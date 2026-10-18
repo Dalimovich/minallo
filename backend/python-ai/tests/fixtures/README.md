@@ -74,13 +74,15 @@ language (code-switched) phrasing, follow-ups and corrections, diagram and
 page references, quiz/hint/solve/explain/compare/summarize tasks, missing
 context, and malformed-model-output/timeout fallback. Includes the
 historical BWL page-6 request ("Explain the concept on this page in detail.
-Do not summarize it.") that the whole initiative exists to fix. Two cases
-are tagged `"knownGap": true` — documented, pre-existing limitations the
-corpus surfaces rather than silently fixes (see their `expectedBehavior`
-text): an answer-hiding quiz constraint the negation regex doesn't catch,
-and a pre-existing `_DEICTIC_RE` false positive on "the second law" style
-phrasing. Neither is in this PR's scope (tuning the deterministic trigger
-heuristics vs. adding the model call).
+Do not summarize it.") that the whole initiative exists to fix.
+
+Two cases were originally tagged `"knownGap": true` and are now fixed by
+PR3 (see their `expectedBehavior` text, prefixed "PR3 ADJUDICATION"): the
+quiz-answer-hiding case now sets `answer_constraints.withhold_answer` via
+the new typed policy, and the `_DEICTIC_RE` "the second law" false positive
+is fixed with a narrow concept-noun exclusion. Neither case's
+`_needs_semantic_path` escalation behavior changed — only what the
+deterministic adapter now records changed.
 
 ### Case Schema
 
@@ -96,6 +98,7 @@ heuristics vs. adding the model call).
 | `expectedProhibitedTasks` | yes | List of `AcademicIntent` values, in order |
 | `expectedNeedsClarification` | yes | Expected no-fabrication outcome |
 | `expectedEscalates` | yes | Expected `_needs_semantic_path` result |
+| `expectedAnswerConstraints` | no | PR3: `{"withholdAnswer", "hintOnly", "oneQuestionAtATime"}` subset, default all `false` when omitted |
 | `simulateModelFailure` | no | `null` \| `"malformed"` \| `"timeout"` — only meaningful when `expectedEscalates: true` |
 | `knownGap` | no | `true` marks a documented, not-fixed-here limitation |
 | `expectedBehavior` | yes | Human-readable rubric |

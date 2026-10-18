@@ -230,9 +230,9 @@
       "expectedProhibitedTasks": [],
       "expectedNeedsClarification": false,
       "expectedEscalates": false,
+      "expectedAnswerConstraints": {"withholdAnswer": true},
       "simulateModelFailure": null,
-      "knownGap": true,
-      "expectedBehavior": "KNOWN GAP (not fixed by this PR): \"do not show me the answers\" is an answer-hiding constraint NEGATED_QUIZ_RE does not recognize (it only matches negation adjacent to quiz\\*/test me/abfrag\\*), and it does not trip any OTHER _needs_semantic_path trigger either, so this case never escalates and the constraint is silently dropped. Left as a deterministic-heuristic tuning decision for the team rather than unilaterally widened in this PR — widening _needs_semantic_path's negation trigger would increase per-request cost for a case this corpus entry exists to surface, not to quietly fix."
+      "expectedBehavior": "PR3 ADJUDICATION (was knownGap, now fixed): \"do not show me the answers yet\" is detected by the new deterministic _WITHHOLD_ANSWER_RE into StudentIntent.answer_constraints.withhold_answer=True, independent of NEGATED_QUIZ_RE/prohibited_tasks (this is \"quiz me but hide the answer\", not \"do not quiz me\" — the two must never be confused). Still does not trip _needs_semantic_path (unchanged, still deterministic-only, still no escalation) — that heuristic-tuning question remains open and is unrelated to whether the constraint reaches the typed contract, which it now does."
     },
     {
       "id": "hint-request",
@@ -247,8 +247,9 @@
       "expectedProhibitedTasks": [],
       "expectedNeedsClarification": false,
       "expectedEscalates": false,
+      "expectedAnswerConstraints": {"hintOnly": true},
       "simulateModelFailure": null,
-      "expectedBehavior": "depth must be \"one_step\", distinguishing a hint request from a full-solution request."
+      "expectedBehavior": "depth must be \"one_step\", distinguishing a hint request from a full-solution request. PR3 ADJUDICATION: also now sets answer_constraints.hint_only=True (via dialogue_state.wants_hint_only, reused rather than re-detected) — this is the same underlying signal as the depth check, now additionally exposed as an explicit generation constraint."
     },
     {
       "id": "solve-request",
@@ -329,11 +330,10 @@
       "hasVisibleContext": false,
       "expectedPrimaryTask": "case_or_application_reasoning",
       "expectedProhibitedTasks": [],
-      "expectedNeedsClarification": true,
+      "expectedNeedsClarification": false,
       "expectedEscalates": false,
       "simulateModelFailure": null,
-      "knownGap": true,
-      "expectedBehavior": "KNOWN GAP (pre-existing, not introduced by this PR): _DEICTIC_RE's \"the (first|second|third|above|below)\" alternative matches \"the second law\" as if it were a deictic back-reference, incorrectly setting needs_clarification=True for a fully self-contained, unambiguous question. Does not escalate (no negation/code-switch/correction/low confidence), so there is currently no path to correct it. Surfaced here for the team to decide whether to tighten _DEICTIC_RE or add it as an escalation trigger — not fixed in this PR (out of scope: this PR adds the semantic model call, not deterministic-regex tuning)."
+      "expectedBehavior": "PR3 ADJUDICATION (was knownGap, now fixed): _DEICTIC_RE's ordinal branch previously matched \"the second law\" as a deictic back-reference. Fixed with a narrow negative-lookahead exclusion (law/theorem/postulate/principle/rule/equation/formula/axiom/derivative/integral + plurals) right after the ordinal, so \"the second law/theorem/...\" no longer matches while \"the second problem/question/one/part/...\" (anything else) still does — confirmed by the sibling cases missing-context-deictic/missing-context-resolved-via-visible-context, which are unaffected. needs_clarification now correctly stays False for this fully self-contained question. Id kept as-is (not relabeled) since the case itself — and the underlying message — is unchanged; only the observed, now-correct behavior changed. German ordinal deixis (\"die zweite Aufgabe\") remains entirely unhandled by _DEICTIC_RE — a separate, pre-existing gap, not touched here (would be new scope, not a narrow correction)."
     }
   ]
 }

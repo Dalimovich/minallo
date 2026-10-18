@@ -45,6 +45,20 @@ _REQUIRED_FIELDS = (
     "expectedProhibitedTasks", "expectedNeedsClarification", "expectedEscalates",
     "expectedBehavior",
 )
+# expectedAnswerConstraints is optional per case (PR3) — most cases carry no
+# answer-release/pacing constraint at all, so omitting it defaults to "none
+# active" rather than forcing all 23 entries to spell out three explicit
+# False values.
+_DEFAULT_ANSWER_CONSTRAINTS = {
+    "withholdAnswer": False, "hintOnly": False, "oneQuestionAtATime": False,
+}
+
+
+def _expected_answer_constraints(case: dict) -> tuple[bool, bool, bool]:
+    expected = {**_DEFAULT_ANSWER_CONSTRAINTS, **case.get("expectedAnswerConstraints", {})}
+    return (
+        expected["withholdAnswer"], expected["hintOnly"], expected["oneQuestionAtATime"],
+    )
 _ACCESS_BY_NAME = {
     "relevance": ResolvedDocumentAccess.RELEVANCE,
     "visible_page": ResolvedDocumentAccess.VISIBLE_PAGE,
@@ -101,6 +115,11 @@ def test_case_has_required_fields(case: dict) -> None:
             f"case {case['id']!r} sets simulateModelFailure but never escalates "
             "— the failure path would never be exercised"
         )
+    if "expectedAnswerConstraints" in case:
+        assert set(case["expectedAnswerConstraints"]) <= set(_DEFAULT_ANSWER_CONSTRAINTS), (
+            f"case {case['id']!r} has an unknown expectedAnswerConstraints key"
+        )
+        assert all(isinstance(v, bool) for v in case["expectedAnswerConstraints"].values())
 
 
 def test_fixture_covers_every_required_category() -> None:
@@ -128,6 +147,11 @@ def test_deterministic_classification_matches_expected(case: dict) -> None:
     assert intent.primary_task.value == case["expectedPrimaryTask"], case["expectedBehavior"]
     assert [p.value for p in intent.prohibited_tasks] == case["expectedProhibitedTasks"], case["expectedBehavior"]
     assert intent.needs_clarification == case["expectedNeedsClarification"], case["expectedBehavior"]
+    assert (
+        intent.answer_constraints.withhold_answer,
+        intent.answer_constraints.hint_only,
+        intent.answer_constraints.one_question_at_a_time,
+    ) == _expected_answer_constraints(case), case["expectedBehavior"]
     assert intent.interpretation_source == "deterministic"
 
 
@@ -168,6 +192,11 @@ def test_fallback_reproduces_deterministic_fields(case: dict, monkeypatch) -> No
     assert intent.primary_task.value == case["expectedPrimaryTask"]
     assert [p.value for p in intent.prohibited_tasks] == case["expectedProhibitedTasks"]
     assert intent.needs_clarification == case["expectedNeedsClarification"]
+    assert (
+        intent.answer_constraints.withhold_answer,
+        intent.answer_constraints.hint_only,
+        intent.answer_constraints.one_question_at_a_time,
+    ) == _expected_answer_constraints(case)
 
 
 # ── Downstream execution-plan compatibility ─────────────────────────────────
