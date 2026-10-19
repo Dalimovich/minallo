@@ -83,6 +83,35 @@ def test_empty_claimed_target_never_resolves():
     assert resolve_target_identity("   ", original_message="anything") is False
 
 
+def test_sub_label_of_verified_active_question_resolves_without_literal_mention():
+    """Regression for the live eval's document-scope-correction-not-
+    full-document case: 'you didn't answer parts a and c' never literally
+    says '5a'/'5c', only the already-verified active_question '5'. A
+    strict, well-formed sub-label of a TRUSTED active_question is no less
+    trustworthy than the exercise itself (same canonical label grammar
+    policy_compiler's rule 4 already uses for narrower-inherits-from-
+    broader, reused via is_narrower_exercise_label)."""
+    assert resolve_target_identity(
+        "5a", original_message="You didn't answer everything.", verified_active_question="5",
+    ) is True
+    assert resolve_target_identity(
+        "5c", original_message="You didn't answer everything.", verified_active_question="5",
+    ) is True
+
+
+def test_target_broader_than_or_unrelated_to_active_question_still_does_not_resolve():
+    """Non-regression: only a STRICT NARROWING of the verified
+    active_question is trusted -- never the reverse (a broader claim),
+    and never an unrelated sibling label that merely shares a leading
+    digit."""
+    assert resolve_target_identity(
+        "5", original_message="Give me everything.", verified_active_question="5a",
+    ) is False
+    assert resolve_target_identity(
+        "50", original_message="Give me everything.", verified_active_question="5",
+    ) is False
+
+
 # ---------------------------------------------------------------------------
 # build_turn_ledger_from_durable_store — mocked conversation_store only.
 # ---------------------------------------------------------------------------

@@ -208,6 +208,86 @@ def test_a_target_the_student_actually_named_is_still_trusted(monkeypatch):
     assert targets["5b"].release.final_answer == "prohibited"
 
 
+def test_sub_part_of_an_already_verified_active_exercise_is_still_trusted(monkeypatch):
+    """Regression for the live eval's ``document-scope-correction-not-
+    full-document`` case (reports/semantic-intent-phase-d-eval-
+    reverify2-2026-10-20.md in the separate eval worktree, reproduced
+    here with the exact recorded previousTurns and the literal real
+    model response from that run's ledger).
+
+    'Solve exercise 5.' / 'Part b: F = 42 N.' / 'You didn't answer the
+    whole Aufgabe, parts a and c are still missing.' -- the current
+    message never literally says "5", "5a", or "5c" anywhere; it only
+    refers to the exercise via the dialogue's own already-verified
+    active_question ("5", trusted, deterministic). The model reasonably
+    split the correction into target="5a"/"5c" (never a literal token in
+    the message either).
+
+    root cause (diagnostic_policy.py's resolve_target_identity, called
+    from both adapt_deterministic_intent and semantic_intent_
+    orchestrator._apply_target_identity_gate): its active_question check
+    was an EXACT string match only, so a narrower sub-label of an
+    already-trusted active_question had no path to grounding at all --
+    neither the active_question branch (not equal) nor the literal-
+    token branch (not in the message) could ever accept it. Both "5a"
+    and "5c" were downgraded to state="unresolved" and compiled to the
+    most-restrictive fallback (official_solution prohibited), silently
+    refusing a legitimate, in-scope correction request. This is
+    unrelated to correct_full_document_scope_false_positive (which
+    already narrows the lexical "whole Aufgabe" full-document guess back
+    to RELEVANCE correctly, per test_incomplete_answer_complaint_is_
+    not_routed_to_full_document below, unaffected by this fix) -- the
+    document-scope guess was always being resolved correctly; only the
+    target identity of the requested parts was being lost.
+
+    Fixed: resolve_target_identity now also grounds a claimed target
+    that is a strict, well-formed sub-label of the verified
+    active_question (is_narrower_exercise_label, reusing policy_
+    compiler's existing rule-4 label grammar) -- never a broader or
+    unrelated claim, and still never trusting the model's claim on its
+    own."""
+    response = {
+        "relation": "continuation", "speechAct": "clarification_request", "taskFamily": "solve",
+        "continuesPreviousGoal": True, "resolvedRequest": "Provide the answers for parts a and c of exercise 5.",
+        "confidence": 0.95, "conversation": "follow_up", "studentGoal": "request_missing_parts",
+        "responseLanguage": "en",
+        "actions": [
+            {"objective": "official_solution", "target": "5a", "confidence": 0.95, "state": "requested",
+             "prohibited": [],
+             "release": {"final_answer": "permitted", "official_solution": "permitted",
+                          "explanation_depth": "unspecified", "form": "worked_solution",
+                          "max_steps": None, "max_items": None, "wait_for_student": None}},
+            {"objective": "official_solution", "target": "5c", "confidence": 0.95, "state": "requested",
+             "prohibited": [],
+             "release": {"final_answer": "permitted", "official_solution": "permitted",
+                          "explanation_depth": "unspecified", "form": "worked_solution",
+                          "max_steps": None, "max_items": None, "wait_for_student": None}},
+        ],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    previous_turns = [
+        {"role": "user", "text": "Solve exercise 5."},
+        {"role": "assistant", "text": "Part b: F = 42 N."},
+    ]
+    message = "You didn't answer the whole Aufgabe, parts a and c are still missing."
+    dialogue = resolve_dialogue(message, previous_turns=previous_turns)
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=previous_turns,
+        user_id="user-1", conversation_id=None,
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert all(a.state != "unresolved" for a in result.resolved_intent.actions)
+    targets = {a.target: a for a in result.execution_policy.actions}
+    assert targets["5a"].state == "requested"
+    assert targets["5a"].release.final_answer == "permitted"
+    assert targets["5c"].state == "requested"
+    assert targets["5c"].release.final_answer == "permitted"
+    assert result.execution_policy.needs_clarification is False
+
+
 # ---------------------------------------------------------------------------
 # Multi-turn permission persistence (Milestone 3 Priority 1 — fixes the
 # gap formerly demonstrated by test_KNOWN_GAP_a_turn_1_prohibition_is_

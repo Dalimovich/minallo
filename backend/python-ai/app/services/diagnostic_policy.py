@@ -73,7 +73,7 @@ from typing import Any, Literal, Mapping
 
 from .answer_intent import AcademicIntent
 from .dialogue_state import DialogueResolution, TurnRelation
-from .policy_compiler import ExecutionPolicy, compile_policy
+from .policy_compiler import ExecutionPolicy, compile_policy, is_narrower_exercise_label
 from .resolved_student_intent import (
     Action,
     ConversationShape,
@@ -104,7 +104,18 @@ def resolve_target_identity(
 
     - it matches the deterministic layer's own already-resolved
       ``active_question`` (trusted — produced by ``resolve_dialogue``'s
-      lexical layer, never by a model), or
+      lexical layer, never by a model), or it is a strict, well-formed
+      SUB-LABEL of that active_question (e.g. claimed "5a" when
+      active_question is "5") — the model is still not trusted to
+      invent the target from nothing, but a narrower part of an
+      already-verified, deterministically-resolved exercise is no less
+      trustworthy than the exercise itself (same canonical label grammar
+      policy_compiler's rule 4 already uses for "narrower target
+      inherits from broader parent", reused here via
+      ``is_narrower_exercise_label`` rather than re-implemented) — this
+      is what lets "you didn't answer parts a and c of [the already-
+      active exercise]" correctly resolve to grounded "5a"/"5c" actions
+      instead of being discarded as unresolved, or
     - it is in ``authorized_exercise_labels`` (a caller-supplied,
       pre-authorized set — e.g. known exercise labels for the open
       document; NEVER retrieved document TEXT, which is evidence for
@@ -120,8 +131,10 @@ def resolve_target_identity(
     claimed = (claimed_target or "").strip().lower()
     if not claimed:
         return False
-    if verified_active_question and claimed == verified_active_question.strip().lower():
-        return True
+    if verified_active_question:
+        active = verified_active_question.strip().lower()
+        if claimed == active or is_narrower_exercise_label(claimed, active):
+            return True
     if claimed in {label.strip().lower() for label in authorized_exercise_labels}:
         return True
     return bool(re.search(rf"\b{re.escape(claimed)}\b", original_message or "", re.IGNORECASE))

@@ -461,6 +461,18 @@ def _is_broader(candidate: str, target: str) -> bool:
     )
 
 
+def is_narrower_exercise_label(claimed: str, than: str) -> bool:
+    """Public wrapper over ``_is_broader`` (rule 4's canonical exercise-
+    label grammar) for callers outside this module -- specifically
+    ``diagnostic_policy.resolve_target_identity``, which needs to know
+    whether a model-claimed sub-part label (e.g. "5a") is a strict,
+    well-formed narrowing of an already-TRUSTED, deterministically
+    resolved target (e.g. "5") without re-implementing the label parser.
+    Never the other way around: a claim that "5" narrows "5a" is False,
+    same as ``_is_broader`` itself."""
+    return _is_broader(than, claimed)
+
+
 def compile_policy(
     intent: ResolvedStudentIntent,
     *,
@@ -777,5 +789,5 @@ __all__ = [
     "COMPILER_VERSION", "FIELD_NAMES", "POLICY_VERSION", "RESTRICTIVENESS_RANK",
     "ExecutionPolicy", "PLATFORM_RULES", "PlatformRule", "UNSET_SENTINELS",
     "compile_policy", "compute_policy_hash", "extract_persistable_restrictions",
-    "is_mixed_permission_policy", "is_unset_field", "more_restrictive",
+    "is_mixed_permission_policy", "is_narrower_exercise_label", "is_unset_field", "more_restrictive",
 ]
