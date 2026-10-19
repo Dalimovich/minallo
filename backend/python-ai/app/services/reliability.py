@@ -979,6 +979,38 @@ def pair_coordinate_answer_options(
     return options
 
 
+# Narrowly scoped to the coverage check below -- it never touches
+# identify_grounded_task's extraction itself, which is independently
+# noisy (see e.g. "Calculate V_Spritz for this exercise." extracting
+# ['V_Spritz', 'this', 'exercise']) and already being rewritten on a
+# separate, parallel branch (fix/exercise-and-quantity-extraction, a
+# different worktree). A "genuine" quantity symbol looks like a math
+# variable -- one letter, optionally with a numeric or underscore
+# subscript suffix (F, M, V_Spritz) -- never an ordinary multi-letter
+# word the extraction regexes also happened to grab.
+_GENUINE_QUANTITY_SYMBOL_RE = re.compile(r"^[A-Za-z](?:_\w+|\d+)?$")
+
+
+def _quantity_has_result_evidence(value: str, answer: str) -> bool:
+    """A requested quantity counts as covered only once a NUMBER follows
+    its symbol closely enough to plausibly be that symbol's own result
+    ("F = 42 N", "V_Spritz ≈ 191 cm3", "M: 17 Nm") -- not merely
+    because the bare symbol name is mentioned somewhere in the prose
+    ("the forces F and M act on the beam" never computes either one).
+    Deliberately permissive about the connector (=, ≈, :, "is",
+    "ist", ...) since real answers phrase this many ways -- unlike
+    _ASSIGNMENT_VALUE_RE's strict "=" grammar, which real phrasing like
+    "≈" doesn't satisfy.
+    # ponytail: proximity heuristic, not a parser -- a different
+    # symbol's value mentioned within the same short window can produce
+    # a false positive (e.g. "F and M = 17 Nm" would wrongly count as
+    # evidence for F too). Upgrade to real per-symbol expression parsing
+    # if that pattern shows up in practice.
+    """
+    window = r"\b" + re.escape(value) + r"\b[^\d\n]{0,20}\d"
+    return bool(re.search(window, answer or "", re.IGNORECASE))
+
+
 def answer_obligations(
     *,
     answer: str,
@@ -989,11 +1021,27 @@ def answer_obligations(
     folded = (answer or "").casefold()
     obligations: list[AnswerObligation] = []
     if identity.requested_quantities:
-        obligations.append(AnswerObligation(
-            AnswerObligationType.INCLUDE_REQUESTED_QUANTITY.value,
-            identity.requested_quantities,
-            any(value.casefold() in folded for value in identity.requested_quantities),
-        ))
+        genuine_quantities = [
+            value for value in identity.requested_quantities
+            if _GENUINE_QUANTITY_SYMBOL_RE.match(value)
+        ]
+        if genuine_quantities:
+            # ALL genuinely-extracted quantities must each have their own
+            # result evidence -- the any()-vs-all() fix (confirmed bug:
+            # "Now calculate F and M" silently passing once only F was
+            # answered). Scoped to genuine_quantities, never the raw,
+            # possibly noisy identity.requested_quantities, so ordinary
+            # single-quantity questions where extraction also grabbed an
+            # unrelated word are never penalized for that noise.
+            obligations.append(AnswerObligation(
+                AnswerObligationType.INCLUDE_REQUESTED_QUANTITY.value,
+                genuine_quantities,
+                all(_quantity_has_result_evidence(value, answer) for value in genuine_quantities),
+            ))
+        # When every extracted "quantity" is pure noise (no genuine
+        # symbol-shaped candidate at all), there is nothing trustworthy
+        # to enforce -- no obligation is added, rather than falling back
+        # to the old, weaker any()/bare-mention check on noise alone.
     option_texts = identity.option_texts()
     if option_texts and identity.task_kind.startswith("checkbox"):
         obligations.append(AnswerObligation(
