@@ -67,6 +67,37 @@ safe per-target release, if ever pursued, would need server-controlled
 per-target generation (each target's content independently scoped/
 requested, never self-reported by one model call) rather than more
 regex heuristics over free text; that is not implemented here.
+
+Hint-suppression fix (single-target scan-conditioned release): a
+DIFFERENT case than the mixed-permission one above, in kind, not just in
+degree. When the compiled ``ExecutionPolicy`` has exactly one distinct
+target — e.g. "give me a hint for 5b, but don't reveal the final
+answer" compiles to one ``Action`` (target "5b", ``final_answer=
+"prohibited"``) — there is no cross-target attribution problem at all:
+every byte of ``candidate_text`` is about that one target, because the
+generation itself was constrained (via ``policy_prompt_rendering.py``'s
+Phase C overlay) to answer only for it. The residual question is
+narrower than "which target does this text belong to" — it is "did the
+model, despite being told hint-only, slip and reveal the prohibited
+result anyway", which is exactly the shape ``_LEAK_PATTERNS`` was built
+to catch. ``enforce_release_policy_single_target`` (below) is scan-
+conditioned for exactly this case: release when the scan finds no known
+leak shape, withhold only when it matches one. It must NEVER be called
+for a policy with two or more distinct targets — callers (currently
+only ``app/routers/stream.py``) decide single- vs multi-target by
+counting distinct ``action.target`` values and route to this function
+or to ``enforce_release_policy_per_target`` accordingly; the unconditional
+multi-target guard above is untouched.
+
+Residual risk, stated plainly: a sufficiently novel, disguised final-
+answer phrasing in a single-target hint can still slip past this finite
+pattern list undetected. That gap is real and this function does not
+close it — it is the same class of risk this project already accepts
+elsewhere (trusting the model to generally follow a prompt instruction;
+``policy_prompt_rendering.py``'s own docstring already names enforcement-
+by-instruction as its only mechanism). A stronger backstop (e.g.
+comparing the hint against a grounded/verified correct value) would be a
+separate, bigger piece of work, not implemented here.
 """
 
 from __future__ import annotations
@@ -98,6 +129,20 @@ _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     )),
     ("official_solution_phrase", re.compile(
         r"\b(?:official\s+solution|musterl(?:ö|oe)sung|solution\s+key|answer\s+key)\b",
+        re.IGNORECASE,
+    )),
+    # Added for the single-target hint-suppression fix: "Therefore F = 42
+    # N." (or its German equivalents) is an extremely common, plain final-
+    # result phrasing — not an exotic adversarial case — that none of the
+    # patterns above catch. It had been masked for single-target policies
+    # only because enforce_release_policy withheld unconditionally there
+    # too; now that single-target release is scan-conditioned, this shape
+    # must be caught explicitly instead of relying on the unconditional
+    # fallback that used to paper over it.
+    ("concluding_symbol_equals_number", re.compile(
+        r"\b(?:therefore|thus|hence|so|damit|also|somit|folglich)\b"
+        r"[^.\n]{0,40}\b[A-Za-zΑ-Ωα-ω][A-Za-z0-9_]{0,3}\s*=\s*"
+        r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Z°%]{0,6}\b",
         re.IGNORECASE,
     )),
 )
@@ -275,6 +320,34 @@ def enforce_release_policy_per_target(
     )
 
 
+def enforce_release_policy_single_target(
+    candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
+) -> PerTargetReleaseDecision:
+    """Scan-conditioned release gate for the genuinely single-target case
+    — see the module docstring's "Hint-suppression fix" section for why
+    this is safe here but NOT for a multi-target policy (never call this
+    for one; use ``enforce_release_policy_per_target`` instead).
+
+    Releases ``candidate_text`` unmodified when the leak-pattern scan
+    finds nothing (``no_policy``/``no_restriction``/``no_match``);
+    withholds it, exactly like ``enforce_release_policy``, only when the
+    scan actually matches a known leak shape (``matched_leak_pattern``).
+    This is the one real behavioral difference from ``enforce_release_
+    policy`` — that function ignores the scan result for its withhold
+    decision by design (see its own docstring); this one is conditioned
+    on it by design, because there is only one target in play here.
+    """
+    scan = scan_generated_answer_for_prohibited_release(candidate_text, policy=policy)
+    if scan.reason == "matched_leak_pattern":
+        return PerTargetReleaseDecision(
+            text=safe_withheld_answer_text(response_language=response_language),
+            withheld=True, structural=False, scan=scan, sections=(),
+        )
+    return PerTargetReleaseDecision(
+        text=candidate_text, withheld=False, structural=False, scan=scan, sections=(),
+    )
+
+
 def safe_withheld_answer_text(*, response_language: str) -> str:
     """What the student sees instead, when the scan withholds a response.
     Honest about WHY (their own request), never a generic error — this is
@@ -299,6 +372,7 @@ __all__ = [
     "ReleaseValidationResult",
     "enforce_release_policy",
     "enforce_release_policy_per_target",
+    "enforce_release_policy_single_target",
     "parse_target_sections",
     "safe_withheld_answer_text",
     "scan_generated_answer_for_prohibited_release",

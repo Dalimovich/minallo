@@ -249,12 +249,6 @@ async def _run(stream, *, conversation_id: str, **extra_payload):
     ("Using the moment balance, we get F = m * a. Therefore F = 42 N.", b"Therefore F = 42 N"),
     (r"After simplifying, we get \boxed{42\,\text{N}}.", b"boxed"),
     ("Here is the summary:\n\n| Quantity | Value |\n|---|---|\n| Final Answer | 42 N |\n", b"Final Answer | 42 N"),
-    # A clean-looking draft with no recognizable leak SHAPE at all (no
-    # "final answer is", no boxed{}, no table, no verification framing) —
-    # exactly the case the Phase D validator's own docstring says a regex
-    # scan alone cannot catch. The fix must withhold this too, precisely
-    # because restriction, not a pattern match, is what triggers it.
-    ("The beam carries 42 N at the support.", b"The beam carries 42 N at the support"),
 ])
 def test_restricted_final_answer_never_reaches_the_sse_stream(monkeypatch, draft_text, leak_needle):
     conversation_id = f"release-gate-leak-{abs(hash(draft_text))}"
@@ -277,6 +271,66 @@ def test_restricted_final_answer_never_reaches_the_sse_stream(monkeypatch, draft
     # branch in this cascade already relies on.
     assert b'"code": "answer_release_restricted"' in body
     assert not save_calls, "a withheld/restricted answer must never be persisted to the cache"
+
+
+def test_mixed_permission_unmatched_leak_shape_still_withheld_whole_over_sse(monkeypatch):
+    """Non-regression for the MULTI-target case specifically: a clean-
+    looking draft with no recognizable leak SHAPE at all (no "final
+    answer is", no boxed{}, no table, no "therefore X ="...) must still
+    be withheld when two or more distinct targets are in play —
+    enforce_release_policy_per_target still delegates unconditionally to
+    enforce_release_policy for multi-target policies, untouched by the
+    hint-suppression fix. This is the multi-target half of the case that
+    used to be proven with a single-target policy before that fix; see
+    test_single_target_disguised_leak_with_no_known_shape_is_a_known_gap
+    below for the (intentionally different) single-target behavior."""
+    draft_text = "[[TARGET: 5a]]\nThe beam carries 42 N at the support.\n[[TARGET: 5b]]\nThink about the forces.\n[[END]]\n"
+    conversation_id = "release-gate-mixed-unmatched-shape"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_mixed_5a_permitted_5b_prohibited_policy(),
+        draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"The beam carries 42 N at the support" not in body
+    assert b'"releaseWithheld": true' in body
+    assert b'"code": "answer_release_restricted"' in body
+    assert not save_calls
+
+
+def test_single_target_disguised_leak_with_no_known_shape_is_a_known_gap(monkeypatch):
+    """Honest documentation of the residual risk the hint-suppression fix
+    explicitly does NOT close (see answer_release_validator.py's module
+    docstring): for a genuinely single-target policy, release is now
+    conditioned on the leak-pattern scan, not unconditional. A disguised
+    final-answer statement with no recognizable leak SHAPE at all ("The
+    beam carries 42 N at the support." — stating the result as a plain
+    fact, no "final answer is", no "therefore X =", no boxed{}, no
+    table) is NOT caught by this (or any realistic finite) pattern list,
+    so it IS released here, unlike before this fix (when single-target
+    restricted policies withheld unconditionally regardless of scan
+    result). This test exists so that gap is proven and visible, not
+    silently assumed away — it is not a bug in the fix, it is the fix's
+    documented, accepted residual risk."""
+    draft_text = "The beam carries 42 N at the support."
+    conversation_id = "release-gate-single-target-residual-gap"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_restrictive_policy(), draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"The beam carries 42 N at the support" in body
+    assert b'"releaseWithheld": false' in body
+    assert b'"code": "answer_release_restricted"' not in body
+    del save_calls
 
 
 def test_permitted_final_answer_still_streams_normally(monkeypatch):
@@ -319,11 +373,18 @@ def test_visual_denial_repair_cannot_bypass_the_release_gate(monkeypatch):
     mock repair_false_visual_denial_sync/generate_grounded_repair_sync at
     all: if the gate's ordering regresses and that branch runs again, this
     test would hit a real (mocked-away-at-the-httpx-level, so it fails
-    loud rather than hanging) network call instead of silently passing."""
+    loud rather than hanging) network call instead of silently passing.
+
+    Uses the MIXED-permission (multi-target) policy specifically, so this
+    keeps proving the untouched, unconditional-withhold path (the
+    hint-suppression fix only changes the single-target path — see
+    test_single_target_false_visual_denial_is_released_not_withheld
+    below for that intentionally different, single-target case)."""
     draft_text = "I'm sorry, I cannot see the image you're referring to."
     conversation_id = "release-gate-visual-denial"
     stream, save_calls = _setup(
-        monkeypatch, policy=_restrictive_policy(), draft_text=draft_text, conversation_id=conversation_id,
+        monkeypatch, policy=_mixed_5a_permitted_5b_prohibited_policy(),
+        draft_text=draft_text, conversation_id=conversation_id,
     )
     try:
         body = asyncio.run(_run(
@@ -339,6 +400,41 @@ def test_visual_denial_repair_cannot_bypass_the_release_gate(monkeypatch):
     assert b'"code": "answer_release_restricted"' in body
     assert b'"done": true' in body
     assert not save_calls
+
+
+def test_single_target_false_visual_denial_is_released_not_withheld(monkeypatch):
+    """Flagged, intentional consequence of the hint-suppression fix (see
+    answer_release_validator.py's module docstring): for a SINGLE-target
+    restricted policy, this draft contains no leak-pattern match at all
+    — it is a false claim about not seeing an attached image, not a
+    revealed final answer/official solution — so the new scan-
+    conditioned single-target gate releases it as-is instead of
+    replacing it with the generic withheld message. This is NOT a
+    release-policy leak (nothing prohibited is disclosed); it is a
+    different, orthogonal quality issue (a wrong model claim) that used
+    to be incidentally masked by the old single-target unconditional
+    withhold. The repair branch (repair_false_visual_denial_sync) still
+    never runs for a restricted target, proven the same way as the
+    sibling test above: it is not mocked, so if the gate's ordering ever
+    let it run, this test would hit a real network call and fail loud."""
+    draft_text = "I'm sorry, I cannot see the image you're referring to."
+    conversation_id = "release-gate-visual-denial-single-target"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_restrictive_policy(), draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(
+            stream, conversation_id=conversation_id,
+            openFileImages=[stream.OpenFileImagePayload(mediaType="image/jpeg", data="QQ==")],
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"cannot see the image you're referring to" in body
+    assert b'"releaseWithheld": false' in body
+    assert b'"code": "answer_release_restricted"' not in body
+    del save_calls
 
 
 # ---------------------------------------------------------------------------

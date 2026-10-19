@@ -6745,25 +6745,41 @@ async def _prepare_ask_stream_response(
                     # pending_token_events are discarded here, never
                     # flushed.
                     if policy_has_release_restriction:
-                        # Priority 2: enforce_release_policy_per_target is a
-                        # strict superset of enforce_release_policy — for a
-                        # single-target or uniformly-permitted/prohibited
-                        # policy (or any structurally-unverifiable text) it
-                        # falls straight through to the SAME unconditional
-                        # whole-response withhold as before (byte-identical
-                        # in that case). It only takes a different path for
-                        # a genuinely mixed-permission policy whose text
-                        # parses into the required [[TARGET: ...]] sections
-                        # — see answer_release_validator.py's module
-                        # docstring addendum.
-                        from ..services.answer_release_validator import (  # noqa: WPS433
-                            enforce_release_policy_per_target,
-                        )
-                        release_decision = enforce_release_policy_per_target(
-                            "".join(full_text_buf),
-                            policy=execution_policy,
-                            response_language=language_context.requested_response_language,
-                        )
+                        # Hint-suppression fix: a policy with exactly ONE
+                        # distinct target has no cross-target attribution
+                        # problem (every byte of the draft is about that
+                        # one target — see answer_release_validator.py's
+                        # module docstring "Hint-suppression fix" section),
+                        # so it gets the scan-conditioned single-target
+                        # gate: released when the leak-pattern scan finds
+                        # nothing, withheld only when it actually matches.
+                        # A policy with two or more distinct targets keeps
+                        # going through enforce_release_policy_per_target
+                        # — Priority 2's unconditional whole-response
+                        # withhold, UNCHANGED, because a clean scan there
+                        # cannot prove which target the clean-looking text
+                        # belongs to.
+                        distinct_targets = {
+                            action.target for action in execution_policy.actions
+                        } if execution_policy else set()
+                        if len(distinct_targets) <= 1:
+                            from ..services.answer_release_validator import (  # noqa: WPS433
+                                enforce_release_policy_single_target,
+                            )
+                            release_decision = enforce_release_policy_single_target(
+                                "".join(full_text_buf),
+                                policy=execution_policy,
+                                response_language=language_context.requested_response_language,
+                            )
+                        else:
+                            from ..services.answer_release_validator import (  # noqa: WPS433
+                                enforce_release_policy_per_target,
+                            )
+                            release_decision = enforce_release_policy_per_target(
+                                "".join(full_text_buf),
+                                policy=execution_policy,
+                                response_language=language_context.requested_response_language,
+                            )
                         full_text_buf.clear()
                         full_text_buf.append(release_decision.text)
                         pending_token_events.clear()
