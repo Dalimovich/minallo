@@ -142,6 +142,9 @@ def _setup(monkeypatch, *, policy, draft_text: str, conversation_id: str):
         },
     )
     monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    # Avoid a real (DNS-failing in this offline test env) Supabase call —
+    # same no-profile no-op every other mock in this fixture already uses.
+    monkeypatch.setattr(stream, "get_german_learner_profile", lambda *_a, **_k: None)
     monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
     monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
     monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
@@ -385,6 +388,42 @@ def test_mixed_permission_structural_split_delivers_5a_and_withholds_5b_over_sse
     # empty save_calls here proves nothing about release-gate
     # correctness either way. What it DOES prove, if anything was saved:
     # 5b's withheld result never made it into the cached payload either.
+    assert b"17 N" not in json.dumps(save_calls).encode()
+
+
+def test_mixed_permission_catches_unlabeled_cross_reference_smuggling_over_sse(monkeypatch):
+    """Coordinator-review adversarial case, proven at the real route/SSE
+    level (not just the helper function in isolation): 5b's prohibited
+    result is narrated inside 5a's section via a generic 'second part'
+    reference, naming neither '5b' nor matching the strict leak-phrase
+    shape. A section marker alone is not proof of attribution -- this
+    must still fall back to the whole-response withhold, not leak 17 N
+    anywhere in the SSE stream."""
+    draft_text = (
+        "[[TARGET: 5a]]\n"
+        "The answer to 5a is 42 N.\n"
+        "Also, for the second part, the value is 17 N.\n"
+        "[[TARGET: 5b]]\n"
+        "Try applying the formula.\n"
+        "[[END]]\n"
+    )
+    conversation_id = "release-gate-mixed-smuggled"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_mixed_5a_permitted_5b_prohibited_policy(),
+        draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"17 N" not in body
+    assert b"42 N" not in body  # safe degrade: whole response withheld, not a trusted partial split
+    assert b'"releaseStructural": false' in body
+    assert b'"releaseWithheld": true' in body
+    assert b'"code": "answer_release_restricted"' in body
+    assert not save_calls
     assert b"17 N" not in json.dumps(save_calls).encode()
 
 

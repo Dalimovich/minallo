@@ -39,16 +39,35 @@ attempt to surgically redact only the offending target's portion (doing
 that correctly would itself need per-target text attribution this
 plain-text scan does not have).
 
-Priority 2 addendum: ``enforce_release_policy_per_target`` (below) is
-the one place that DOES get real per-target attribution — not from
-plain-text guessing, but from a structural contract the model is
-instructed to follow (``policy_prompt_rendering.render_target_
-sectioning_contract``'s literal ``[[TARGET: ...]]``/``[[END]]``
-markers) and that is strictly, server-side parsed (``parse_target_
-sections``) before any section is ever trusted. It is additive and
-parallel to everything above, not a replacement: it only engages for a
-genuinely mixed-permission policy, and falls straight back to the
-whole-response guard above for anything it cannot verify.
+Priority 2 addendum: ``enforce_release_policy_per_target`` (below)
+structurally VERIFIES which section of the model's reply corresponds to
+which target (``policy_prompt_rendering.render_target_sectioning_
+contract``'s literal ``[[TARGET: ...]]``/``[[END]]`` markers, strictly
+server-side parsed by ``parse_target_sections`` — never a trusted-by-
+default prose heading). What it does NOT and CANNOT verify, stated
+plainly rather than implied: that the CONTENT the model writes under a
+given marker actually belongs to that target. A section boundary is a
+structural fact about where text sits; it is not independent evidence
+about what the text is ABOUT. A model can still (carelessly or
+adversarially) narrate a different, restricted target's result inside
+a permitted target's section — ``_section_leaks_another_targets_
+result`` is a best-effort, deliberately widened heuristic against the
+most likely forms of this (naming the other target's own label, or a
+generic "for the other part..."-style cross-reference next to a bare
+number), and anything it catches falls back to the whole-response
+guard above rather than being trusted. It does NOT catch every form —
+a maximally terse, context-free smuggled value with no connecting
+language and no label mention at all is NOT detected (see this
+module's test file for the adversarial cases proven caught AND the one
+proven NOT caught). Cross-target attribution here is a substantial risk
+reduction over no structural split at all, not a verified guarantee —
+genuinely closing it would need either per-target independent
+generation (so a restricted target's model call never sees/produces
+content for a permitted one) or real semantic/numeric verification,
+neither of which this module implements. It is additive and parallel
+to everything above, not a replacement: it only engages for a genuinely
+mixed-permission policy, and falls straight back to the whole-response
+guard above for anything it cannot verify.
 """
 
 from __future__ import annotations
@@ -225,30 +244,78 @@ def parse_target_sections(text: str, expected_targets: frozenset[str]) -> dict[s
     return sections
 
 
+# Generic "I'm actually talking about some OTHER part of this exercise"
+# phrasing — deliberately NOT tied to any specific target's literal
+# label, because a model can (adversarially or just carelessly) describe
+# a restricted target's result without ever naming it ("also, for the
+# second part, the value is 17 N"). Bilingual, covers ordinals, "part
+# <letter>", and same-ish/likewise framing in both languages.
+_CROSS_REFERENCE_RE = re.compile(
+    r"\b(?:"
+    r"(?:the\s+)?(?:second|next|other|another|previous|first)\s+part|"
+    r"part\s+[a-z]\b|"
+    r"teil\s+[a-z]\b|(?:zweiten?|n(?:ä|ae)chsten?|anderen?|vorherigen?|ersten?)\s+teil|"
+    r"(?:for\s+)?(?:the\s+)?other\s+exercise|die\s+andere\s+aufgabe|"
+    r"likewise|similarly|the\s+same\s+(?:goes|applies)\s+for|"
+    r"ebenso|genauso|das\s+gleiche\s+gilt"
+    r")\b",
+    re.IGNORECASE,
+)
+# Any bare numeric value with an optional unit — deliberately looser than
+# the strict _LEAK_PATTERNS shapes (which require a "the answer/result
+# is"-style frame): "the value is 17 N" or "17 N" alone would otherwise
+# sail through a permitted section untouched, since that section is
+# never scanned for a leak SHAPE at all (its own target permits release,
+# so _scan_text short-circuits). Combined with _CROSS_REFERENCE_RE below,
+# this is the only thing that can catch a smuggled result that never
+# names the restricted target's own label.
+_BARE_NUMBER_RE = re.compile(r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Z°%]{0,6}\b")
+
+
 def _section_leaks_another_targets_result(
     section_text: str, *, own_target: str, policy: ExecutionPolicy,
 ) -> bool:
     """Heuristic safety net against the model putting a DIFFERENT,
     restricted target's result inside this (permitted) section under the
-    wrong heading: true only if this section's text BOTH matches a known
-    leak pattern AND explicitly names some other target that the policy
-    actually restricts. Mere co-occurrence of a number is not enough —
-    that would make ordinary permitted prose ("5a's answer is 42 N")
-    unusable — this only fires when the restricted target's own label is
-    named in a section that isn't its own, the concrete sign of a
-    crossed-over or mislabeled answer."""
+    wrong heading. Two independent triggers, either is enough:
+
+    1. The section's text matches a known leak SHAPE (``_LEAK_PATTERNS``)
+       AND explicitly names some other target's own label — the most
+       direct sign of a crossed-over/mislabeled answer.
+    2. The section's text mentions ANY generic "other part of this
+       exercise" phrasing (``_CROSS_REFERENCE_RE``, never tied to one
+       specific label) alongside a bare number — catching the laundered
+       case where the model never names the other target at all (e.g.
+       "also, for the second part, the value is 17 N").
+
+    IMPORTANT, stated plainly rather than implied: this is still a
+    text-pattern heuristic, not a verified guarantee. It cannot
+    distinguish "this section's own, genuinely permitted result happens
+    to use ordinary language" from "this section is narrating a
+    different target's restricted result with zero connecting phrase at
+    all" — a maximally terse, context-free smuggled number with no
+    cross-reference language and no mention of the other target's label
+    is NOT caught by either trigger (see test_maximally_evasive_... in
+    this module's test file, which exists specifically to prove and
+    document that residual gap rather than hide it). Both triggers are
+    deliberately widened in favor of MORE false positives (falling back
+    to the safe whole-response withhold) over fewer, per this module's
+    fail-closed philosophy — but neither is a semantic/numeric
+    verification of which result belongs to which target, which no
+    plain-text scan can provide."""
     other_restricted = {
         action.target for action in policy.actions
         if action.target != own_target and _action_prohibits_release(action)
     }
     if not other_restricted:
         return False
-    if not any(pattern.search(section_text or "") for _name, pattern in _LEAK_PATTERNS):
-        return False
-    return any(
-        re.search(rf"\b{re.escape(target)}\b", section_text or "", re.IGNORECASE)
-        for target in other_restricted
+    text = section_text or ""
+    labeled_leak = (
+        any(pattern.search(text) for _name, pattern in _LEAK_PATTERNS)
+        and any(re.search(rf"\b{re.escape(target)}\b", text, re.IGNORECASE) for target in other_restricted)
     )
+    unlabeled_cross_reference = bool(_CROSS_REFERENCE_RE.search(text) and _BARE_NUMBER_RE.search(text))
+    return labeled_leak or unlabeled_cross_reference
 
 
 def _section_header(action: Action) -> str:

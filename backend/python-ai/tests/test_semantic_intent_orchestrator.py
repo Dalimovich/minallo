@@ -246,7 +246,12 @@ def test_turn_1_prohibition_is_carried_into_turn_2_via_persisted_history(monkeyp
     }
     client_1 = _FakeClient(turn_1_response)
     _patch_model(monkeypatch, client_1)
-    message_1 = 'The professor said "don\'t reveal the final answer" for 5b.'
+    # A DIRECT instruction from the student -- not a quote attributed to
+    # a third party (see test_quoted_third_party_statement_does_not_
+    # establish_an_authoritative_restriction below for that distinct,
+    # separately-tested case). "Don't" triggers escalation via
+    # semantic_call_support's negation cue, same mechanism, cleaner intent.
+    message_1 = "Don't reveal the final answer for Aufgabe 5b."
     dialogue_1 = resolve_dialogue(message_1, previous_turns=[])
     turn_1 = interpret_turn_authoritatively(
         question=message_1, dialogue_base=dialogue_1, preflight_turns=[],
@@ -305,6 +310,49 @@ def test_turn_1_prohibition_is_carried_into_turn_2_via_persisted_history(monkeyp
     )
     assert turn_2.execution_policy.actions[0].release.final_answer == "prohibited"
     assert turn_2.execution_policy.actions[0].release.form == "hint"
+
+
+def test_merely_discussing_or_relaying_a_quote_does_not_establish_a_persisted_restriction(monkeypatch):
+    """Coordinator-review distinction: the student RELAYING what someone
+    else once said ('my professor mentioned that some teachers don't
+    like X') is not the same as the student themselves instructing a
+    restriction right now. Resolving that distinction correctly is
+    upstream interpretation's job (the unified-call/deterministic
+    adapters, not this persistence layer's), so this test mocks the
+    response a CORRECT interpreter would produce for a merely-discussed,
+    non-actionable mention -- no real state change for '5b' -- and
+    proves persistence faithfully reflects that: nothing gets
+    retroactively locked in just because the target's label was named
+    while discussing it."""
+    response = {
+        "relation": "new_topic", "speechAct": "question", "taskFamily": "solve",
+        "continuesPreviousGoal": False, "resolvedRequest": "Explain the beam problem.",
+        "confidence": 0.9, "conversation": "new", "studentGoal": "Explain the beam problem.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "explain", "target": "5b", "confidence": 0.9, "state": "unspecified",
+            "release": {},  # merely mentioned while discussing -- nothing actually requested/restricted
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = (
+        "My professor mentioned once that some teachers don't like showing "
+        "final answers for 5b, just so you know. Anyway, can you explain the beam problem?"
+    )
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert "5b" not in result.compiled_policy_by_target, (
+        "a merely-discussed, non-actionable mention must never get "
+        "persisted as if it were an authoritative restriction"
+    )
+    assert result.execution_policy.actions[0].release.final_answer != "prohibited"
 
 
 def test_verified_later_turn_can_explicitly_lift_a_persisted_prohibition(monkeypatch):

@@ -368,3 +368,98 @@ def test_per_target_delegates_exactly_with_no_policy_at_all():
     assert per_target.text == text
     assert per_target.withheld is False
     assert per_target.structural is False
+
+
+# ---------------------------------------------------------------------------
+# Cross-target leakage via section markers — adversarial cases (coordinator
+# review). A section marker is a structural fact about WHERE text sits,
+# never independent proof of WHAT it is about. These prove, concretely,
+# which laundered-leak shapes the heuristic in
+# _section_leaks_another_targets_result catches, and — just as
+# importantly — prove one it does NOT catch, so the residual limitation
+# is demonstrated, not just asserted in a docstring. A test where the
+# clean, well-behaved split passes (above) is NOT evidence that
+# cross-target isolation holds; these are.
+# ---------------------------------------------------------------------------
+
+def test_per_target_catches_unlabeled_cross_reference_smuggling():
+    """The exact coordinator-supplied attack: 5b's prohibited result is
+    narrated inside 5a's (permitted) section via a generic 'the second
+    part' reference, never naming '5b' and never matching the strict
+    final_answer_phrase shape ('the value is 17 N', not 'the answer is
+    17 N') -- the specific gap the broadened heuristic exists to close."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "The answer to 5a is 42 N.\n"
+        "Also, for the second part, the value is 17 N.\n"
+        "[[TARGET: 5b]]\n"
+        "Try applying the formula.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is False  # fell back whole, not a trusted partial split
+    assert decision.withheld is True
+    assert "17" not in decision.text
+    assert "42" not in decision.text  # safe degrade: even 5a's genuine content is withheld
+
+
+def test_per_target_catches_german_cross_reference_smuggling():
+    """Same laundering pattern, German phrasing ('für den zweiten Teil')
+    and no target label at all."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "Die Antwort für 5a ist 42 N.\n"
+        "Außerdem beträgt der Wert für den zweiten Teil 17 N.\n"
+        "[[TARGET: 5b]]\n"
+        "Überlege, welche Kräfte hier wirken.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert "17" not in decision.text
+
+
+def test_per_target_catches_result_table_naming_the_other_target():
+    """A table row that DOES name the restricted target directly -- the
+    original (narrower) labeled-leak trigger, still covered."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "Summary:\n\n| Quantity | Value |\n|---|---|\n| 5a final answer | 42 N |\n"
+        "| 5b final answer | 17 N |\n"
+        "[[TARGET: 5b]]\n"
+        "Think about the forces.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert "17" not in decision.text
+
+
+def test_maximally_evasive_smuggling_with_no_cross_reference_or_label_is_not_caught():
+    """HONEST, documented limitation (not a passing-safety claim): a
+    smuggled value with ZERO connecting language and ZERO mention of the
+    other target's label is textually indistinguishable from 5a's own
+    genuine content, and this heuristic does NOT catch it. This test
+    exists to prove and pin down the residual gap, per the module
+    docstring's own disclosure, not to hide it. Closing this for real
+    would need per-target independent generation or semantic/numeric
+    verification -- neither implemented here."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "The answer to 5a is 42 N. 17 N.\n"
+        "[[TARGET: 5b]]\n"
+        "Think about the forces.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    # Documenting the TRUE current behavior: this is NOT caught, so the
+    # structural split is (wrongly, from a safety standpoint) trusted
+    # and 5b's smuggled "17 N" survives into the final text.
+    assert decision.structural is True
+    assert "17 N" in decision.text
