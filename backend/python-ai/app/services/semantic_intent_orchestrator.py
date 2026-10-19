@@ -123,6 +123,7 @@ def _apply_target_identity_gate(
     original_message: str,
     verified_active_question: str | None,
     authorized_exercise_labels: frozenset[str],
+    relation: TurnRelation | None = None,
 ) -> ResolvedStudentIntent:
     """Closes the demonstrated-not-fixed gap: a unified-call action whose
     `target` cannot be grounded in trusted context (the deterministic
@@ -139,13 +140,35 @@ def _apply_target_identity_gate(
     policy`` already knows how to turn it into the most restrictive
     per-field fallback for that specific target (prohibited/hint/etc.),
     exactly the same degrade-safely contract every other untrusted claim
-    in this pipeline gets."""
-    gated_actions = tuple(
-        action if resolve_target_identity(
-            action.target, original_message=original_message,
-            verified_active_question=verified_active_question,
+    in this pipeline gets.
+
+    New-topic history isolation (mirrors the identical fix in
+    ``diagnostic_policy.adapt_deterministic_intent``): when ``relation``
+    is ``TurnRelation.NEW_TOPIC``, ``verified_active_question`` is
+    withheld from the grounding check for an action whose claimed
+    target the CURRENT message itself does not literally mention —
+    otherwise a stale active_question (which deliberately keeps
+    scanning history for genuine continuations) would let a model-
+    claimed target on an unrelated turn pass as "trusted" just because
+    it happens to match that leftover label. A target the current
+    message DOES name is unaffected (still grounded via the literal-
+    token-match branch), and every other relation is unaffected."""
+    def _grounded(target: str) -> bool:
+        active_question = verified_active_question
+        if (
+            relation is TurnRelation.NEW_TOPIC
+            and active_question
+            and not re.search(rf"\b{re.escape(target or '')}\b", original_message or "", re.IGNORECASE)
+        ):
+            active_question = None
+        return resolve_target_identity(
+            target, original_message=original_message,
+            verified_active_question=active_question,
             authorized_exercise_labels=authorized_exercise_labels,
-        ) else replace(action, state="unresolved")
+        )
+
+    gated_actions = tuple(
+        action if _grounded(action.target) else replace(action, state="unresolved")
         for action in intent.actions
     )
     return replace(intent, actions=gated_actions)
@@ -332,6 +355,7 @@ def interpret_turn_authoritatively(
                 unified.intent, original_message=question,
                 verified_active_question=dialogue.active_question,
                 authorized_exercise_labels=authorized_exercise_labels,
+                relation=dialogue.relation,
             )
             unified_call_succeeded = True
 

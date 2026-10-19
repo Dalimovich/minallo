@@ -261,6 +261,28 @@ def adapt_deterministic_intent(
     reflects what was ALREADY computed today in SHADOW/ENABLED mode,
     still zero new calls either way)."""
     target = dialogue.active_question or ""
+    # A genuinely NEW, unrelated topic (relation=NEW_TOPIC) must never
+    # silently inherit a stale active_question that only survives
+    # because dialogue_state._active_questions deliberately keeps
+    # scanning history for CONTINUATIONS — that fallback is exactly
+    # wrong once the student has moved to an unrelated question. The
+    # check below (``resolve_target_identity``) would otherwise be
+    # circular for this case: target was just set FROM active_question,
+    # so it trivially "matches" it, regardless of whether THIS message
+    # has anything to do with it. A fresh, same-turn label is unaffected
+    # — if the CURRENT message itself names this target (e.g. "let's
+    # switch to exercise 9 instead" is also NEW_TOPIC but legitimately
+    # about "9"), the literal-token-match branch below still proves it.
+    # Confirmed live, 2026-10-20 eval case "unrelated-followup-no-
+    # restriction-inheritance" (an unrelated general-knowledge follow-up
+    # right after a hint-only exchange wrongly inherited that exercise's
+    # restriction).
+    if (
+        dialogue.relation is TurnRelation.NEW_TOPIC
+        and target
+        and not re.search(rf"\b{re.escape(target)}\b", message or "", re.IGNORECASE)
+    ):
+        target = ""
     target_resolved = bool(target) and resolve_target_identity(
         target, original_message=message, verified_active_question=dialogue.active_question,
         authorized_exercise_labels=authorized_exercise_labels,

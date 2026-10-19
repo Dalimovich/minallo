@@ -501,6 +501,95 @@ def test_exercise_switch_does_not_inherit_a_different_targets_restriction(monkey
     assert result.execution_policy.actions[0].release.final_answer == "permitted"
 
 
+def test_unrelated_new_topic_followup_does_not_inherit_prior_exercises_restriction(monkeypatch):
+    """Live-eval regression (2026-10-20 independent evaluation, report
+    case "unrelated-followup-no-restriction-inheritance"): turn 1 is a
+    hint-only exchange on exercise '5' (escalates, establishes a
+    persisted final_answer=prohibited restriction for '5'). Turn 2 is a
+    fully unrelated general-knowledge question ("What is the capital of
+    Austria?") -- deterministic-only in both the real eval and here
+    (confirmed: it does not trigger needs_semantic_escalation), which is
+    exactly the path that had the bug: dialogue_state._active_questions
+    deliberately keeps scanning history for genuine continuations, so
+    dialogue.active_question was still "5" on turn 2 even though turn 2
+    has nothing to do with it, and diagnostic_policy.adapt_deterministic_
+    intent's target-identity check was circular for that fallback (target
+    was set FROM active_question, then "verified" against the same
+    active_question) -- so turn 2 silently inherited exercise 5's
+    final_answer=prohibited restriction. Fixed in adapt_deterministic_
+    intent (relation=NEW_TOPIC + no literal label in the current message
+    clears the stale target before the grounding check) and mirrored in
+    semantic_intent_orchestrator._apply_target_identity_gate for the
+    model-escalated path."""
+    message_1 = "Give me a hint for exercise 5, don't reveal the final answer."
+    turn_1_response = {
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": False, "resolvedRequest": message_1, "confidence": 0.9,
+        "conversation": "new", "studentGoal": message_1, "responseLanguage": "en",
+        "actions": [{
+            "objective": "hint", "target": "5", "confidence": 0.9, "state": "requested",
+            "release": {"final_answer": "prohibited", "form": "hint"},
+        }],
+    }
+    _patch_model(monkeypatch, _FakeClient(turn_1_response))
+    dialogue_1 = resolve_dialogue(message_1, previous_turns=[])
+    turn_1 = interpret_turn_authoritatively(
+        question=message_1, dialogue_base=dialogue_1, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-unrelated-followup",
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert turn_1.execution_policy.actions[0].target == "5"
+    assert turn_1.execution_policy.actions[0].release.final_answer == "prohibited"
+    persisted_policy = turn_1.compiled_policy_by_target
+    assert persisted_policy["5"]["final_answer"] == "prohibited"
+
+    def get_messages_after_turn_1(**_):
+        return [
+            {"client_message_id": "turn-1-user", "role": "user", "content": message_1,
+             "request_snapshot": {"policyByTarget": persisted_policy}},
+            {"client_message_id": "turn-1-assistant", "role": "assistant",
+             "content": "Sure, hint-only for exercise 5.",
+             "request_snapshot": {"policyByTarget": persisted_policy}},
+        ]
+
+    class _PoisonClient:
+        """Raises if the orchestrator ever makes a model call for turn 2
+        -- this message must stay fully deterministic, exactly matching
+        the real eval's escalates=false for this case."""
+
+        def with_options(self, **_kwargs):
+            return self
+
+        @property
+        def chat(self):
+            raise AssertionError("turn 2 must not escalate to a model call")
+
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: _PoisonClient())
+
+    message_2 = "What is the capital of Austria?"
+    dialogue_2 = resolve_dialogue(message_2, previous_turns=[
+        {"role": "user", "text": message_1}, {"role": "assistant", "text": "Sure, hint-only for exercise 5."},
+    ])
+    turn_2 = interpret_turn_authoritatively(
+        question=message_2, dialogue_base=dialogue_2, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-unrelated-followup",
+        validate_ownership=lambda **_: True, get_messages=get_messages_after_turn_1,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert turn_2.used_unified_call is False
+    # The precise claim (matching the live eval's own stated check): no
+    # action in turn 2's compiled policy targets "5" at all -- whatever
+    # UNRELATED placeholder target this deterministic-only, topic-less
+    # question resolves to is free to get its own generic, independent
+    # unresolved-target fallback (compile_policy's pre-existing, unrelated
+    # "unresolved degrades to most-restrictive" design) without that
+    # proving anything about this fix one way or the other.
+    assert not any(action.target == "5" for action in turn_2.execution_policy.actions), (
+        turn_2.execution_policy.actions
+    )
+
+
 def test_no_conversation_id_skips_history_merge_entirely(monkeypatch):
     """Legacy/non-durable-chat parity: a turn with no conversation_id at
     all must behave exactly as before -- no sentinel, no replay, no
