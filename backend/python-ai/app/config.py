@@ -123,6 +123,26 @@ class Settings(BaseSettings):
     # itself. Production default stays "off".
     semantic_intent_mode: str = Field("off", alias="SEMANTIC_INTENT_MODE")
 
+    # Disabled-by-default gates for the authoritative Semantic Student
+    # Intent Layer work (Milestone 4). Deliberately SEPARATE from
+    # semantic_intent_mode == "enabled", whose existing, already-shipped
+    # behavior (forward an inert marker, zero live effect) must stay
+    # unchanged for anyone who already has that mode set — flipping these
+    # on is a second, explicit opt-in, not implied by "enabled" alone.
+    # semantic_intent_unified_call_enabled: replace today's two sequential
+    # classification calls with the one unified call (app/services/
+    # unified_semantic_call.py) when mode == "enabled" and escalation is
+    # needed. semantic_intent_policy_enforcement_enabled: actually pass a
+    # compiled ExecutionPolicy into generation/cache/buffering instead of
+    # only computing and discarding it. Both require mode == "enabled" to
+    # have any effect at all; neither does anything under off/shadow.
+    semantic_intent_unified_call_enabled: bool = Field(
+        False, alias="SEMANTIC_INTENT_UNIFIED_CALL_ENABLED",
+    )
+    semantic_intent_policy_enforcement_enabled: bool = Field(
+        False, alias="SEMANTIC_INTENT_POLICY_ENFORCEMENT_ENABLED",
+    )
+
     # --- Transactional email (welcome mail on first login). Same Zoho account
     # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
     # rejects account passwords on SMTP). Endpoint 503s while these are unset.

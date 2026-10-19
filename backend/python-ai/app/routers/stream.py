@@ -1849,11 +1849,57 @@ async def ask_stream_endpoint(
         question, previous_turns=preflight_turns,
         response_language=payload.responseLanguage or "en",
     )
-    if needs_semantic_resolution(question, turn_resolution, preflight_turns):
+    _settings_for_unified_gate = get_settings()
+    use_unified_semantic_call = (
+        _settings_for_unified_gate.semantic_intent_mode == "enabled"
+        and _settings_for_unified_gate.semantic_intent_policy_enforcement_enabled
+        and _settings_for_unified_gate.semantic_intent_unified_call_enabled
+    )
+    # When the unified call is active, it is the ONE call budget for this
+    # turn (Semantic Student Intent Layer Phase A) -- it must never run
+    # ALONGSIDE the legacy call #1 below, or a turn could pay for two
+    # model calls. OFF/SHADOW/legacy-ENABLED (the flags off, the default)
+    # take this branch exactly as before -- byte-identical, unconditional.
+    if not use_unified_semantic_call and needs_semantic_resolution(question, turn_resolution, preflight_turns):
         turn_resolution = await run_in_threadpool(
             lambda: resolve_dialogue_semantically(
                 question, previous_turns=preflight_turns, base=turn_resolution,
             )
+        )
+    authoritative_interpretation = None
+    if use_unified_semantic_call:
+        from ..services.conversation_store import (  # noqa: WPS433
+            get_durable_conversation_messages, validate_durable_conversation,
+        )
+        from ..services.semantic_intent_orchestrator import (  # noqa: WPS433
+            correct_full_document_scope_false_positive, interpret_turn_authoritatively,
+        )
+        authoritative_interpretation = await run_in_threadpool(
+            lambda: interpret_turn_authoritatively(
+                question=question,
+                dialogue_base=turn_resolution,
+                preflight_turns=preflight_turns,
+                user_id=user_id,
+                conversation_id=payload.conversationId if payload.durableConversation else None,
+                validate_ownership=validate_durable_conversation,
+                get_messages=get_durable_conversation_messages,
+                resolved_access=resolved_access,
+                has_visible_context=bool(
+                    grounding_request.viewerContext or payload.openFileContext
+                ),
+            )
+        )
+        turn_resolution = authoritative_interpretation.dialogue
+        # Phase B required deliverable: a semantic correction/rejection
+        # ("you didn't answer the whole Aufgabe", "keine Zusammenfassung
+        # des gesamten PDFs") can lexically match resolve_document_access's
+        # own "whole/entire + document-noun" regex despite meaning the
+        # opposite. This only ever NARROWS a lexical-only guess back to
+        # the safe default (never touches an explicit UI hint) — the
+        # authorization layer below is completely independent either way.
+        resolved_access, resolution_reason = correct_full_document_scope_false_positive(
+            resolved_access=resolved_access, resolution_reason=resolution_reason,
+            resolved_intent=authoritative_interpretation.resolved_intent, dialogue=turn_resolution,
         )
     if is_pure_social_turn(question, turn_resolution):
         social_decision = classify_source_scope(
@@ -1905,6 +1951,9 @@ async def ask_stream_endpoint(
     # but never forwards to resolve_execution_plan, while "enabled" does.
     semantic_intent_mode = get_settings().semantic_intent_mode
     student_intent = None
+    execution_policy = (
+        authoritative_interpretation.execution_policy if authoritative_interpretation else None
+    )
     if semantic_intent_mode != "off":
         from ..services.student_intent import (  # noqa: WPS433
             intent_for_router, interpret_student_intent,
@@ -1912,20 +1961,40 @@ async def ask_stream_endpoint(
         # _semantic_model_call (when triggered) does a blocking OpenAI call —
         # must run off the event loop like every other blocking call in this
         # handler (e.g. resolve_dialogue_semantically just above).
-        computed_intent = await run_in_threadpool(
-            lambda: interpret_student_intent(
-                question,
-                dialogue=turn_resolution,
-                resolved_access=resolved_access,
-                has_visible_context=bool(
-                    grounding_request.viewerContext or payload.openFileContext
-                ),
-                mode=semantic_intent_mode,
-                previous_turns=preflight_turns,
-                user_id=user_id,
+        if use_unified_semantic_call:
+            # The orchestrator above already made the ONE model-call
+            # decision for this turn (or determined none was needed) —
+            # forced to mode="off" here (zero model calls) purely to
+            # populate the legacy StudentIntent-shaped consumers below
+            # (the inert execution_signal marker, the M3 diagnostic).
+            # Calling interpret_student_intent with the real mode here
+            # would risk a SECOND model call via its own internal
+            # _needs_semantic_path escalation, breaking the ≤1-call budget.
+            computed_intent = await run_in_threadpool(
+                lambda: interpret_student_intent(
+                    question, dialogue=turn_resolution, resolved_access=resolved_access,
+                    has_visible_context=bool(
+                        grounding_request.viewerContext or payload.openFileContext
+                    ),
+                    mode="off", previous_turns=preflight_turns, user_id=user_id,
+                )
             )
-        )
-        student_intent = intent_for_router(semantic_intent_mode, computed_intent)
+            student_intent = intent_for_router("enabled", computed_intent)
+        else:
+            computed_intent = await run_in_threadpool(
+                lambda: interpret_student_intent(
+                    question,
+                    dialogue=turn_resolution,
+                    resolved_access=resolved_access,
+                    has_visible_context=bool(
+                        grounding_request.viewerContext or payload.openFileContext
+                    ),
+                    mode=semantic_intent_mode,
+                    previous_turns=preflight_turns,
+                    user_id=user_id,
+                )
+            )
+            student_intent = intent_for_router(semantic_intent_mode, computed_intent)
         # Milestone 3 observational wiring (behavior-inert — see
         # diagnostic_policy.py): its return value is discarded, it never
         # gates anything below, and it runs as a bounded background task —
