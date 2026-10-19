@@ -7,6 +7,7 @@ from app.services.scoped_extraction import (
     CANONICAL_KURZFRAGEN_IDS, CoverageIntent, DiscoveryStatus, ExtractionInvariantError,
     RequestScopeManifest, RetrievalMode, ScopeItem, ScopeItemStatus, ScopedJobState,
     StructuralUnit, assert_result_invariants, classify_scoped_request,
+    correct_exhaustive_coverage_false_positive,
     persist_batch_results, promote_manifest, reconcile_structural_units,
     deduplicate_scope_items, resolve_scoped_request, retrieve_units, scoped_state_payload,
     stable_scope_key, validate_manifest,
@@ -63,6 +64,49 @@ def test_true_document_wide_request_remains_exhaustive():
     spec = classify_scoped_request("Find and answer all questions in this entire exam")
     assert spec.retrieval_mode is RetrievalMode.COVERAGE
     assert spec.coverage_intent is CoverageIntent.ALL
+
+
+# ---------------------------------------------------------------------------
+# Milestone 3 Priority 4. EXHAUSTIVE_COVERAGE_RE's bare "whole"/
+# "gesamten" match has no concept of negation or conversational
+# relation, independently of (and unguarded by) semantic_intent_
+# orchestrator's Phase B fix for the SAME shape in a DIFFERENT
+# classifier (grounding_contract.py). These are the exact reported
+# false-positive messages. classify_scoped_request itself now applies
+# the correction (so every caller, including resolve_scoped_request's
+# own internal re-classification, gets it automatically) --
+# correct_exhaustive_coverage_false_positive remains separately callable
+# and is still exercised directly below for its own idempotent-safety-
+# net contract.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("prompt", [
+    "You didn't answer the whole Aufgabe. Parts a and c are missing.",
+    "Ich möchte keine Zusammenfassung des gesamten PDFs.",
+])
+def test_correction_or_rejection_complaint_is_not_misrouted_to_exhaustive_coverage(prompt):
+    spec = classify_scoped_request(prompt)
+    assert spec.retrieval_mode is RetrievalMode.RELEVANCE
+    assert spec.coverage_intent is CoverageIntent.SINGLE
+    # The standalone correction function, called again on an already-
+    # corrected spec, must be a safe no-op (idempotent).
+    assert correct_exhaustive_coverage_false_positive(spec, message=prompt) is spec
+
+
+def test_genuine_whole_document_request_is_unaffected_by_the_correction():
+    prompt = "Please summarize the entire PDF."
+    spec = classify_scoped_request(prompt)
+    assert spec.retrieval_mode is RetrievalMode.COVERAGE
+    corrected = correct_exhaustive_coverage_false_positive(spec, message=prompt)
+    assert corrected is spec  # untouched -- never widens, and returns the same object when nothing changes
+
+
+def test_correction_never_widens_an_already_relevance_classified_spec():
+    prompt = "Exercise 7.2 - explain every question and give every answer"
+    raw = classify_scoped_request(prompt)
+    assert raw.retrieval_mode is RetrievalMode.RELEVANCE
+    corrected = correct_exhaustive_coverage_false_positive(raw, message=prompt)
+    assert corrected is raw
 
 
 def test_popup_answer_inherits_previous_focused_exercise():

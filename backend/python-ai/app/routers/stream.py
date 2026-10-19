@@ -2850,6 +2850,9 @@ async def ask_stream_endpoint(
         from ..services.scoped_extraction import (  # noqa: WPS433
             RetrievalMode, classify_scoped_request,
         )
+        # classify_scoped_request itself already narrows a correction/
+        # rejection complaint back to RELEVANCE (see scoped_extraction.
+        # py's module note) -- no separate correction step needed here.
         early_spec = classify_scoped_request(question)
         if early_spec.retrieval_mode is RetrievalMode.COVERAGE:
             from ..services.scoped_job_store import create_or_resume_job  # noqa: WPS433

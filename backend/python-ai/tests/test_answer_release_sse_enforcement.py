@@ -453,24 +453,132 @@ def test_mixed_permission_falls_back_to_whole_withhold_when_model_ignores_sectio
 
 
 # ---------------------------------------------------------------------------
-# Document-scope false-positive fix (spec §4C) — NOT re-verified here at
-# the SSE/route level, by deliberate choice, not oversight. Both the two
-# false-positive messages and the genuine full-document request are
-# phrased as a correction/rejection (that's what makes them trigger
-# resolve_document_access's lexical bug in the first place), and that
-# relation forces this specific route into the scoped async job-queue
-# worker path (RetrievalMode.COVERAGE -> scoped_job_store.
-# create_or_resume_job) rather than the direct synchronous path every
-# other test in this file exercises — a real, unmocked DB/network call
-# with no existing route-level test scaffold to borrow (checked
-# test_scoped_worker_contract.py / test_scoped_job_worker_execute.py:
-# neither mocks the route, only the worker in isolation). Building that
-# mock surface from scratch is out of scope for this pass. The fix
-# itself remains verified at the unit level, where it was already
-# thoroughly covered before this commit: test_semantic_intent_
-# orchestrator.py::test_incomplete_answer_complaint_is_not_routed_to_
-# full_document, ::test_explicit_rejection_of_full_document_summary_is_
-# not_routed_to_full_document, and ::test_genuine_full_document_request_
-# still_works all pass unchanged. Named explicitly in the final report
-# as an untested (at the route level) path, not silently assumed covered.
+# Priority 4 — document-scope route-level regression. Previously marked
+# below as a deliberate gap ("the request enters the scoped async job
+# path and hits an unmocked real network call"). Investigating that gap
+# surfaced a REAL, separate bug, fixed and unit-tested in test_scoped_
+# extraction.py: stream.py's EARLY job-precreation check (app/services/
+# scoped_extraction.classify_scoped_request -> RetrievalMode.COVERAGE ->
+# scoped_job_store.create_or_resume_job, which runs BEFORE the SSE
+# generator even starts, gated on durableConversation + a specific,
+# already-selected document) has its OWN independent "whole/entire +
+# noun" lexical classifier (EXHAUSTIVE_COVERAGE_RE), entirely separate
+# from grounding_contract.py's _FULL_DOCUMENT_RE -- semantic_intent_
+# orchestrator.correct_full_document_scope_false_positive's Phase B fix
+# never touches it. Confirmed directly with the real classifier (not
+# assumed): both false-positive messages below genuinely produced
+# RetrievalMode.COVERAGE before the new app/services/scoped_extraction.
+# py fix (correct_exhaustive_coverage_false_positive).
+#
+# That SPECIFIC job-precreation branch is NOT re-verified at the route
+# level here, by deliberate choice, same as before: reaching it needs
+# durableConversation=True PLUS an already-selected document
+# (documentIds + courseFileScope="specific_files", the only way
+# retrievalScope.type becomes anything other than "course"), which
+# cascades through an escalating chain of real, unmocked dependencies
+# this file's existing harness never needed (document_health.validate_
+# active_document_index, an index_revision_status field, an
+# unidentified HTTPException past that, and a real commentary-persist
+# network attempt) -- confirmed empirically by attempting it, not
+# assumed from reading the code. Building that mock surface is
+# disproportionate for this pass, matching what the SSE-level gap
+# comment originally found for the SAME reason. The fix remains fully
+# verified at the unit level (test_scoped_extraction.py, including
+# both exact reported messages and the genuine case).
+#
+# What IS verified below, at the real route level, with NO new mocking
+# beyond one trivial top-level function: the SAME underlying "document-
+# scope decision must not misfire" requirement, one layer up, via the
+# EXISTING grounding_contract.py classifier + Phase B fix, which the
+# original gap comment also marked unverified at the route level. A
+# genuine full-document request (no document pre-selected) correctly
+# asks the student which document to process; the two false-positive
+# messages must not.
 # ---------------------------------------------------------------------------
+
+def _use_realistic_deterministic_interpretation(monkeypatch):
+    """_setup's shared fake_interpret_turn_authoritatively hardcodes
+    resolved_intent.conversation="new" for every message (fine for the
+    release-gate tests it was built for, which don't care). The
+    document-scope correction (correct_full_document_scope_false_
+    positive) specifically branches on conversation being "correction"/
+    "rejection"/"follow_up" (or a lexical fallback that doesn't cover
+    German rejection phrasing at all) -- so proving it at the route
+    level needs the REAL deterministic adapter's actual classification,
+    not a hardcoded stand-in. Still zero model calls (mode="off")."""
+    from app.services import semantic_intent_orchestrator
+
+    def realistic_fake(*, question, dialogue_base, resolved_access, **_kwargs):
+        from app.services.diagnostic_policy import adapt_deterministic_intent
+        from app.services.policy_compiler import compile_policy
+        from app.services.student_intent import interpret_student_intent
+
+        student_intent = interpret_student_intent(
+            question, dialogue=dialogue_base, resolved_access=resolved_access, mode="off",
+        )
+        resolved_intent = adapt_deterministic_intent(
+            message=question, dialogue=dialogue_base, student_intent=student_intent,
+        )
+        policy = compile_policy(resolved_intent)
+        return semantic_intent_orchestrator.AuthoritativeInterpretation(
+            dialogue=dialogue_base, resolved_intent=resolved_intent, execution_policy=policy,
+            used_unified_call=False, unified_call_succeeded=False, compiled_policy_by_target={},
+        )
+
+    monkeypatch.setattr(
+        semantic_intent_orchestrator, "interpret_turn_authoritatively", realistic_fake,
+    )
+
+
+@pytest.mark.parametrize("message", [
+    "You didn't answer the whole Aufgabe. Parts a and c are missing.",
+    "Ich möchte keine Zusammenfassung des gesamten PDFs.",
+])
+def test_correction_or_rejection_complaint_does_not_trigger_full_document_scope_over_route(monkeypatch, message):
+    """The false-positive messages must not be treated as full-document-
+    scope requests at all: no "which document?" prompt, no error, a
+    normal streamed answer -- proven via the real /ask-stream route, not
+    just the lower-level classifier/correction functions in isolation
+    (both already unit-tested in test_semantic_intent_orchestrator.py)."""
+    conversation_id = f"document-scope-{abs(hash(message))}"
+    stream, _save_calls = _setup(
+        monkeypatch, policy=_permissive_policy(), draft_text="Here is a focused answer.",
+        conversation_id=conversation_id,
+    )
+    _use_realistic_deterministic_interpretation(monkeypatch)
+
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id, question=message))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"FULL_DOCUMENT_SCOPE_REQUIRED" not in body
+    assert b'"done": true' in body
+
+
+def test_genuine_full_document_request_still_asks_which_document_over_route(monkeypatch):
+    """Non-regression: a GENUINE whole-document request, with no
+    document pre-selected, must still be recognized as full-document
+    scope at the route level and prompt for which document to process
+    -- the correction/rejection narrowing above must never overreach
+    into blocking real full-document intent."""
+    message = "Please summarize the entire PDF."
+    conversation_id = "document-scope-genuine"
+    stream, _save_calls = _setup(
+        monkeypatch, policy=_permissive_policy(), draft_text="irrelevant for this path",
+        conversation_id=conversation_id,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_course_candidates",
+        lambda *_a, **_k: [{"id": DOCUMENT_ID, "file_name": "exam.pdf"}],
+    )
+
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id, question=message))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b'"code": "FULL_DOCUMENT_SCOPE_REQUIRED"' in body
+    assert b'"resolvedDocumentAccess": "full_document"' in body

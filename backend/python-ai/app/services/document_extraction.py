@@ -21,7 +21,9 @@ from typing import Any, Awaitable, Callable
 from ..config import get_settings
 from ..supabase_client import get_supabase
 from .llm_json import chat_json
-from .scoped_extraction import EXHAUSTIVE_COVERAGE_RE, EXTRACTION_TARGET_RE
+from .scoped_extraction import (
+    EXHAUSTIVE_COVERAGE_RE, EXTRACTION_TARGET_RE, looks_like_correction_or_rejection,
+)
 
 log = logging.getLogger(__name__)
 
@@ -328,7 +330,22 @@ def classify_document_extraction(
     )
     if explicit_question_list:
         return False, False, None
-    exhaustive = bool(_EXHAUSTIVE_RE.search(current) and _EXTRACTION_RE.search(current))
+    # Milestone 3 Priority 4 finding: this classifier shares _EXHAUSTIVE_
+    # RE/_EXTRACTION_RE with scoped_extraction.classify_scoped_request
+    # (see that module's own fix for the full history), but never had
+    # its OWN correction/rejection guard -- "You didn't answer the whole
+    # Aufgabe, parts a and c are missing" matches both an exhaustive
+    # quantifier ("whole") and an extraction-target noun ("Aufgabe")
+    # despite being a correction, not a request to extract the entire
+    # document. A THIRD, independent occurrence of the same false-
+    # positive shape, caught here with the SAME shared check -- narrows
+    # only `exhaustive`, same as scoped_extraction.py's own fix, so a
+    # genuine continuation/correction signal (`correction`, below) is
+    # still computed independently and never suppressed by this guard.
+    exhaustive = bool(
+        _EXHAUSTIVE_RE.search(current) and _EXTRACTION_RE.search(current)
+        and not looks_like_correction_or_rejection(current)
+    )
     correction = bool(_CONTINUATION_RE.search(current))
     prior_request = ""
     if correction:
