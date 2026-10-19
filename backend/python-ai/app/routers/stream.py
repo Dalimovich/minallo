@@ -6320,7 +6320,20 @@ async def _prepare_ask_stream_response(
     # concerns separate prevents the active-exercise identity validator from
     # replacing a valid ten-section answer with a quantity-mismatch warning.
     coverage_buffering = bool(multi_item_result.evidence)
-    buffer_answer_output = high_risk_validation or coverage_buffering
+    # Semantic Student Intent Layer Phase D: a compiled policy with any
+    # actual release restriction (final_answer/official_solution
+    # prohibited for some target) must be buffered and scanned before
+    # release — additive OR, never a replacement of the existing
+    # high-risk/coverage buffering triggers (docs/semantic-intent-
+    # milestone-1-report.md §7's exact specified extension).
+    policy_has_release_restriction = bool(
+        execution_policy and any(
+            action.release.final_answer == "prohibited"
+            or action.release.official_solution == "prohibited"
+            for action in execution_policy.actions
+        )
+    )
+    buffer_answer_output = high_risk_validation or coverage_buffering or policy_has_release_restriction
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
