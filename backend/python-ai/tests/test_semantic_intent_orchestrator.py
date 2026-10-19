@@ -393,6 +393,85 @@ def test_verified_later_turn_can_explicitly_lift_a_persisted_prohibition(monkeyp
     assert result.execution_policy.actions[0].release.final_answer == "permitted"
 
 
+def test_real_eval_recorded_case_explicit_hint_release_keeps_real_objective_and_preserves_other_fields(monkeypatch):
+    """Regression for the live eval's ``multiturn-explicit-later-override``
+    case (reports/semantic-intent-phase-d-eval-reverify2-2026-10-20.md in
+    the separate eval worktree) -- reproduced here with the EXACT recorded
+    previousTurns/historyRows and the LITERAL real model response captured
+    in that run's ledger (reports/...reverify2-2026-10-20.json), never a
+    new live call.
+
+    The eval's own "layer1" diff flagged this as a merge failure, but that
+    diff is misleading: it collapses ``resolved_intent.actions`` (which
+    deliberately holds BOTH the current turn's own action and a separate
+    reconstructed historical action for the same target -- see
+    ``_merge_persisted_history``) into one dict-by-target, and last-one-
+    wins there always picks the historical entry. The REAL bug this
+    exposed was downstream, in ``policy_compiler._merge_group``: it used
+    to pick the target's ``primary`` action by raw list position, so the
+    reconstructed historical action (always appended last, always
+    non-"prohibited", always ``objective="other"``) silently became
+    primary over the current turn's genuine ``objective="hint"`` action
+    purely because history existed for that target -- clobbering the
+    compiled action's objective/state and defeating the hint-objective
+    final_answer/form fallback for no reason related to the current
+    request. Fixed by ``_most_recent_action`` ranking primary by the same
+    verified ``TurnLedger`` recency rule 2 already uses for field values."""
+    persisted_policy = {
+        "5": {"final_answer": "prohibited", "official_solution": "prohibited", "form": "unspecified"},
+    }
+
+    def get_messages_with_prior_restriction(**_):
+        return [{"client_message_id": "turn-0", "role": "user", "content": "...",
+                  "request_snapshot": {"policyByTarget": persisted_policy}}]
+
+    # Literal model output captured in the live eval's ledger for this
+    # exact case -- not re-derived, not idealized.
+    response = {
+        "relation": "clarification", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": True, "resolvedRequest": "Provide hints for exercise 5.",
+        "confidence": 0.95, "conversation": "new", "studentGoal": "request_hints",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "hint", "target": "5", "confidence": 0.95, "state": "requested",
+            "prohibited": [],
+            "release": {
+                "final_answer": "unspecified", "official_solution": "unspecified",
+                "explanation_depth": "unspecified", "form": "hint",
+                "max_steps": None, "max_items": None, "wait_for_student": None,
+            },
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = "Actually, hints are fine now for exercise 5 -- you can help more actively."
+    previous_turns = [
+        {"role": "user", "text": "No hints for exercise 5, I want to solve it myself without help."},
+        {"role": "assistant", "text": "Understood, I won't give hints or solutions for exercise 5 unless you ask me to."},
+    ]
+    dialogue = resolve_dialogue(message, previous_turns=previous_turns)
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=previous_turns,
+        user_id="user-1", conversation_id="synthetic-conv-persist-2",
+        validate_ownership=lambda **_: True, get_messages=get_messages_with_prior_restriction,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    action = next(a for a in result.execution_policy.actions if a.target == "5")
+    # The field the student's current turn actually addressed wins (the
+    # override takes effect).
+    assert action.release.form == "hint"
+    # The compiled action must still reflect the CURRENT turn's real
+    # objective/state, not a historical reconstruction's placeholder --
+    # this is the primary-selection bug fix.
+    assert action.objective == "hint"
+    assert action.state == "requested"
+    # Fields this turn did NOT address must not be silently lost/reopened:
+    # the earlier, unrelated-to-hints prohibitions persist.
+    assert action.release.final_answer == "prohibited"
+    assert action.release.official_solution == "prohibited"
+
+
 def test_unverifiable_history_degrades_to_restrictive_never_to_permitted(monkeypatch):
     """A durable conversation_id is supplied (the client believes there
     is history) but the lookup itself fails (DB hiccup, not merely 'no

@@ -274,6 +274,40 @@ def _state_rank(state: str) -> int:
     return {"unspecified": 0, "unresolved": 1, "requested": 2, "prohibited": 3}.get(state, 0)
 
 
+def _most_recent_action(
+    actions: list[Action], turn_ledger: TurnLedger | None, conversation_id: str | None,
+) -> Action:
+    """Picks the action that should stand in for a target's ``primary``
+    (and therefore its ``objective``/``state``) -- the SAME recency
+    notion rule 2 already uses for field values, not raw list position.
+
+    Bug this closes: ``_reconstruct_persisted_target_actions`` always
+    appends a reconstructed historical action AFTER the current turn's
+    own action(s) in ``resolved_intent.actions`` (see semantic_intent_
+    orchestrator.py's ``_merge_persisted_history``), and that
+    reconstructed action is always a non-"prohibited", trusted stand-in
+    with ``objective="other"``. Picking "whichever trusted action comes
+    last in the list" therefore silently made a PERSISTED HISTORY
+    reconstruction the target's primary action -- clobbering the current
+    turn's real objective (e.g. "hint") with "other" every time history
+    existed for that target, which in turn defeated compile_policy's own
+    hint-objective-fallback safety check below (it keys off
+    ``base_action.objective == "hint"``) purely because history existed,
+    not because of anything about the current request. Ranking by the
+    same verified ``TurnLedger`` recency used everywhere else in this
+    module fixes it: the current turn's own action (rank ``inf``) always
+    outranks a reconstructed historical one (a real, finite turn
+    sequence), independent of which happens to be appended last. Ties
+    (e.g. two actions from the same turn) keep the original behavior --
+    the later one in ``actions`` wins."""
+    def _rank(indexed: tuple[int, Action]) -> tuple[Any, int]:
+        index, action = indexed
+        rank, _ = _resolve_turn_rank(_turn_marker(action), turn_ledger, conversation_id)
+        return (rank if rank is not None else float("-inf"), index)
+
+    return max(enumerate(actions), key=_rank)[1]
+
+
 @dataclass
 class _MergedTarget:
     working: dict[str, Any]
@@ -357,7 +391,7 @@ def _merge_group(
 
     if trusted:
         requested = [a for a in trusted if a.state != "prohibited"]
-        primary = requested[-1] if requested else trusted[-1]
+        primary = _most_recent_action(requested or trusted, turn_ledger, conversation_id)
         final_state = primary.state
         prohibited_objectives = {a.objective for a in trusted if a.state == "prohibited"}
         for a in trusted:
