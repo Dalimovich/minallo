@@ -96,6 +96,19 @@ def test_no_conversation_id_is_explicitly_history_free():
     assert result.ledger is None
 
 
+def test_no_conversation_id_with_unverified_context_is_unavailable_not_history_free():
+    """A course-rail-style request with no durable conversationId but a
+    client-supplied one and/or previousTurns is NOT genuinely history-free
+    — the caller signals that with has_unverified_context=True, and this
+    must never fall back to reading those client-supplied turns itself."""
+    result = build_turn_ledger_from_durable_store(
+        user_id="u1", conversation_id=None, has_unverified_context=True,
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+    )
+    assert result.source == "unavailable"
+    assert result.ledger is None
+
+
 def test_ownership_failure_is_unavailable_not_a_fallback():
     result = build_turn_ledger_from_durable_store(
         user_id="u1", conversation_id="conv-1",
@@ -197,6 +210,27 @@ def test_full_pipeline_with_no_conversation_id():
     )
     assert record.history_source == "history_free"
     assert isinstance(record.policy_hash, str) and record.policy_hash
+
+
+def test_full_pipeline_with_unverified_context_and_no_conversation_id():
+    """The course-rail case end to end: no durable conversation_id, but
+    the caller flags unverified context — diagnosed "unavailable", never
+    "history_free". has_unverified_context only changes this label; the
+    actual compiled policy is unaffected (no ledger either way)."""
+    dialogue, intent = _student_intent("Explain torsion.")
+    unverified_policy, unverified_record = compile_diagnostic_policy(
+        message="Explain torsion.", dialogue=dialogue, student_intent=intent,
+        user_id="u1", conversation_id=None, has_unverified_context=True,
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+    )
+    free_policy, free_record = compile_diagnostic_policy(
+        message="Explain torsion.", dialogue=dialogue, student_intent=intent,
+        user_id="u1", conversation_id=None, has_unverified_context=False,
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+    )
+    assert unverified_record.history_source == "unavailable"
+    assert free_record.history_source == "history_free"
+    assert unverified_policy == free_policy
 
 
 def test_full_pipeline_is_pure_and_deterministic():

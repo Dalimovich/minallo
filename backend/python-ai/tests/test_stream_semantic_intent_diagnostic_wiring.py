@@ -11,10 +11,14 @@ docs/semantic-intent-milestone-3-plan.md:
   "computes but discards").
 - SHADOW computes and logs a privacy-safe record but never changes the
   SSE output, cache, or persistence behavior.
-- A synthetic course-rail conversationId (durableConversation=False) is
-  never treated as trusted history — the helper always receives
-  conversation_id=None for it, and the real durable store is never
-  touched.
+- A synthetic course-rail conversationId, or client-supplied
+  previousTurns, is never treated as trusted history (conversation_id
+  stays None, the real durable store is never touched for it) — but it
+  is also never mislabeled "history_free"; only a request with neither
+  gets that label. Everything else diagnoses as "unavailable".
+- A slow durable-history lookup (validate + messages + request rows —
+  up to 4 sequential DB round trips) is bounded by a timeout and can
+  never meaningfully delay the student's response.
 - Any failure inside the new diagnostic layer degrades silently; the
   student's response is unaffected.
 
@@ -28,12 +32,25 @@ generation. `interpret_student_intent` runs for real (not mocked)
 because this exact question never trips _needs_semantic_path — see
 test_semantic_intent_interpretation_runs_off_the_event_loop, which relies
 on the same fact — so no OpenAI client is ever constructed here.
+
+LIMITATION: because `_prepare_ask_stream_response` is stubbed out, these
+tests prove the diagnostic wiring is inert AT THE PREFLIGHT BOUNDARY —
+it can't gate or change what that function is called with, and its
+result can't reach it. They do NOT independently exercise the real
+retrieval/generation/cache/persistence code inside
+`_prepare_ask_stream_response` itself with SHADOW mode on — that would
+need a full-pipeline test in the style of
+test_stream_route_multiturn.py, which this file deliberately does not
+attempt to build. The SHADOW/OFF response-parity test below is the
+strongest signal here, and it only covers the preflight + stub-response
+shape, not a real generation run.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import time
 
 import pytest
 
@@ -78,10 +95,54 @@ def test_off_mode_never_invokes_diagnostic_wiring(monkeypatch):
     assert b'"done": true' in body
 
 
-def test_shadow_mode_without_durable_conversation_is_history_free(monkeypatch):
-    """A course-rail-style request (durableConversation not set) must never
-    cause a real conversation_store lookup — it always diagnoses as
-    history_free, never a manufactured ledger."""
+def test_shadow_mode_genuinely_new_request_is_history_free(monkeypatch):
+    """A brand-new request — no conversationId, no previousTurns at all —
+    is the only case that's genuinely history_free."""
+    from app.config import get_settings
+    from app.services import conversation_store
+
+    monkeypatch.setenv("SEMANTIC_INTENT_MODE", "shadow")
+    get_settings.cache_clear()
+    try:
+        router = _setup(monkeypatch)
+
+        def _must_not_be_called(**_kwargs):
+            raise AssertionError("a request with no conversationId must never touch the real durable store")
+
+        monkeypatch.setattr(conversation_store, "validate_durable_conversation", _must_not_be_called)
+        monkeypatch.setattr(conversation_store, "get_durable_conversation_messages", _must_not_be_called)
+
+        logged = []
+        monkeypatch.setattr(router.log, "info", lambda *a, **_k: logged.append(a))
+
+        body = asyncio.run(_consume(
+            router, router.AskStreamRequest(courseId="", question=QUESTION, sourceMode="internet"),
+            "diagnostic-history-free",
+        ))
+        assert b'"done": true' in body
+
+        diagnostic_logs = [a for a in logged if a and "semantic_intent_diagnostic_policy" in str(a[0])]
+        assert diagnostic_logs, "expected one diagnostic_policy log line"
+        assert diagnostic_logs[0][2] == "history_free"
+    finally:
+        get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("payload_kwargs", [
+    # A course-rail-style synthetic conversationId, non-durable.
+    {"conversationId": "course:1:file:2:sidepanel"},
+    # No conversationId at all, but the client supplied previousTurns —
+    # these must never be read into the ledger, and the request is NOT
+    # history_free just because there's no durable id.
+    {"previousTurns": [
+        {"role": "user", "text": "Explain torsion."},
+        {"role": "assistant", "text": "Torsion twists a shaft."},
+    ]},
+])
+def test_shadow_mode_non_durable_context_is_unavailable_not_history_free(monkeypatch, payload_kwargs):
+    """Neither a synthetic conversationId nor client-supplied previousTurns
+    is proof of "no history" — both are unverified, not trusted, and must
+    never cause a real conversation_store lookup either."""
     from app.config import get_settings
     from app.services import conversation_store
 
@@ -92,8 +153,7 @@ def test_shadow_mode_without_durable_conversation_is_history_free(monkeypatch):
 
         def _must_not_be_called(**_kwargs):
             raise AssertionError(
-                "a non-durable (course-rail-style) conversationId must never "
-                "reach the real durable store"
+                "unverified, non-durable context must never reach the real durable store"
             )
 
         monkeypatch.setattr(conversation_store, "validate_durable_conversation", _must_not_be_called)
@@ -104,16 +164,15 @@ def test_shadow_mode_without_durable_conversation_is_history_free(monkeypatch):
 
         body = asyncio.run(_consume(
             router, router.AskStreamRequest(
-                courseId="", question=QUESTION, sourceMode="internet",
-                conversationId="course:1:file:2:sidepanel",  # synthetic, non-durable id
+                courseId="", question=QUESTION, sourceMode="internet", **payload_kwargs,
             ),
-            "diagnostic-history-free",
+            "diagnostic-unavailable-non-durable",
         ))
         assert b'"done": true' in body
 
         diagnostic_logs = [a for a in logged if a and "semantic_intent_diagnostic_policy" in str(a[0])]
         assert diagnostic_logs, "expected one diagnostic_policy log line"
-        assert diagnostic_logs[0][2] == "history_free"
+        assert diagnostic_logs[0][2] == "unavailable"
     finally:
         get_settings.cache_clear()
 
@@ -166,6 +225,86 @@ def test_shadow_mode_uses_the_real_durable_store_when_flagged(monkeypatch):
         diagnostic_logs = [a for a in logged if a and "semantic_intent_diagnostic_policy" in str(a[0])]
         assert diagnostic_logs, "expected one diagnostic_policy log line"
         assert diagnostic_logs[0][2] == "durable_store"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_diagnostic_wiring_runs_exactly_once_per_request(monkeypatch):
+    """Guards against a future edit accidentally calling the diagnostic
+    pipeline more than once per turn (e.g. inside a retry loop) or zero
+    times when it should run — either would misrepresent the "at most
+    one classification call per turn" budget this layer is diagnosing
+    against (note: compile_diagnostic_policy itself makes no model call
+    at all — see diagnostic_policy.test_module_makes_no_model_calls —
+    this is purely about the diagnostic computation's own call count)."""
+    from app.config import get_settings
+    from app.services import diagnostic_policy
+
+    monkeypatch.setenv("SEMANTIC_INTENT_MODE", "shadow")
+    get_settings.cache_clear()
+    try:
+        router = _setup(monkeypatch)
+        real_compile = diagnostic_policy.compile_diagnostic_policy
+        calls = []
+
+        def _counted(**kwargs):
+            calls.append(kwargs)
+            return real_compile(**kwargs)
+
+        monkeypatch.setattr(diagnostic_policy, "compile_diagnostic_policy", _counted)
+
+        body = asyncio.run(_consume(
+            router, router.AskStreamRequest(courseId="", question=QUESTION, sourceMode="internet"),
+            "diagnostic-call-count",
+        ))
+        assert b'"done": true' in body
+        assert len(calls) == 1
+    finally:
+        get_settings.cache_clear()
+
+
+def test_slow_durable_history_lookup_is_bounded_by_a_timeout(monkeypatch):
+    """get_durable_conversation_messages is NOT one bounded read — it
+    re-validates ownership and then queries two more tables, so it can be
+    up to 4 sequential DB round trips. A slow one must not meaningfully
+    delay the student's SSE response; it should be abandoned (timed out)
+    instead. Shrinks the timeout constant itself so this test doesn't
+    need to wait out the real production bound."""
+    from app.config import get_settings
+    from app.services import conversation_store
+
+    monkeypatch.setenv("SEMANTIC_INTENT_MODE", "shadow")
+    get_settings.cache_clear()
+    try:
+        router = _setup(monkeypatch)
+        monkeypatch.setattr(router, "_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(conversation_store, "update_tutor_request", lambda **_: None)
+        monkeypatch.setattr(conversation_store, "append_tutor_commentary", lambda **_: None)
+        monkeypatch.setattr(conversation_store, "validate_durable_conversation", lambda **_: True)
+
+        def _slow_get_messages(**_kwargs):
+            time.sleep(0.3)  # much slower than the 0.05s diagnostic timeout above
+            return []
+
+        monkeypatch.setattr(conversation_store, "get_durable_conversation_messages", _slow_get_messages)
+
+        warned = []
+        monkeypatch.setattr(router.log, "warning", lambda *a, **_k: warned.append(a))
+
+        started = time.perf_counter()
+        body = asyncio.run(_consume(
+            router, router.AskStreamRequest(
+                courseId="", question=QUESTION, sourceMode="internet",
+                durableConversation=True, conversationId="00000000-0000-4000-8000-00000000d099",
+                clientMessageId="client-msg-slow", assistantMessageId="assistant-msg-slow",
+            ),
+            "diagnostic-slow-history",
+        ))
+        elapsed = time.perf_counter() - started
+
+        assert b'"done": true' in body
+        assert elapsed < 0.25, f"the slow diagnostic lookup delayed the response by {elapsed:.2f}s"
+        assert any("semantic_intent_diagnostic_policy_timeout" in str(a[0]) for a in warned)
     finally:
         get_settings.cache_clear()
 

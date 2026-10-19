@@ -145,6 +145,7 @@ def build_turn_ledger_from_durable_store(
     conversation_id: str | None,
     validate_ownership: Any,
     get_messages: Any,
+    has_unverified_context: bool = False,
 ) -> DurableHistoryResult:
     """``validate_ownership``/``get_messages`` are
     ``conversation_store.validate_durable_conversation``/``get_durable_
@@ -154,8 +155,16 @@ def build_turn_ledger_from_durable_store(
     and so this module never accidentally gains a hard import-time
     dependency on Supabase being configured.
 
-    Returns ``source="history_free"`` when no ``conversation_id`` was
-    given at all (a genuinely history-free request — not an error).
+    Returns ``source="history_free"`` only when no ``conversation_id``
+    was given AND the caller has no other unverified context either
+    (``has_unverified_context=False``) — a request genuinely known to
+    have no historical dependency at all. A non-durable request that
+    still carries its own ``conversationId`` and/or client-supplied
+    ``previousTurns`` is NOT history-free — the caller should pass
+    ``has_unverified_context=True`` for it, which this function reports
+    as ``source="unavailable"`` instead, without ever reading those
+    client-supplied turns into the ledger.
+
     Returns ``source="unavailable"`` when a ``conversation_id`` WAS given
     but ownership fails to verify, or the lookup itself raises — in
     neither case does this fall back to any client-supplied substitute;
@@ -167,7 +176,10 @@ def build_turn_ledger_from_durable_store(
     beyond "ownership verified" is a product-lifecycle question, not
     something this pure function can detect)."""
     if not conversation_id:
-        return DurableHistoryResult(ledger=None, source="history_free")
+        return DurableHistoryResult(
+            ledger=None,
+            source="unavailable" if has_unverified_context else "history_free",
+        )
     try:
         owned = validate_ownership(user_id=user_id, conversation_id=conversation_id)
     except Exception:  # noqa: BLE001 — a lookup failure must degrade safely, never raise into the caller
@@ -328,6 +340,7 @@ def compile_diagnostic_policy(
     conversation_id: str | None,
     validate_ownership: Any,
     get_messages: Any,
+    has_unverified_context: bool = False,
     authorized_exercise_labels: frozenset[str] = frozenset(),
 ) -> tuple[ExecutionPolicy, DiagnosticPolicyRecord]:
     """The full diagnostic pipeline: build a real, trusted TurnLedger from
@@ -337,10 +350,18 @@ def compile_diagnostic_policy(
     record. Returns the full ExecutionPolicy too, for a caller that wants
     it for further (still non-authoritative) diagnostic comparison — but
     nothing calls this from any live consumer path (see module docstring
-    and test_diagnostic_policy_never_reaches_a_live_consumer)."""
+    and test_diagnostic_policy_never_reaches_a_live_consumer).
+
+    ``has_unverified_context`` only affects the ``history_source`` label
+    when ``conversation_id`` is falsy — see
+    ``build_turn_ledger_from_durable_store``'s docstring. ``conversation_id``
+    passed to ``compile_policy`` below stays exactly what the caller gave
+    this function either way; this parameter never widens what the
+    compiler itself treats as a trusted conversation."""
     history = build_turn_ledger_from_durable_store(
         user_id=user_id, conversation_id=conversation_id,
         validate_ownership=validate_ownership, get_messages=get_messages,
+        has_unverified_context=has_unverified_context,
     )
     intent = adapt_deterministic_intent(
         message=message, dialogue=dialogue, student_intent=student_intent,
