@@ -243,7 +243,6 @@ def test_module_makes_no_model_calls():
 
 
 @pytest.mark.parametrize("consumer_file", [
-    "app/routers/stream.py",
     "app/routers/ask.py",
     "app/services/answer.py",
     "app/services/answer_stream.py",
@@ -253,8 +252,28 @@ def test_module_makes_no_model_calls():
     "app/services/course_grounding.py",
 ])
 def test_diagnostic_policy_never_reaches_a_live_consumer(consumer_file):
-    """This PR is strictly behavior-inert: nothing that could actually
-    affect a response imports diagnostic_policy (or, transitively through
-    it, a freshly-computed ExecutionPolicy) at all."""
+    """Milestone 3 PR 2 intentionally wires app/routers/stream.py to this
+    module (see test_stream_semantic_intent_diagnostic_wiring.py) — it is
+    no longer in this list. Every OTHER consumer that could actually
+    affect a response — generation, grounding, cache, verification,
+    repair — must still never import diagnostic_policy at all."""
     text = (_BACKEND_ROOT / consumer_file).read_text(encoding="utf-8")
     assert "diagnostic_policy" not in text
+
+
+def test_stream_router_diagnostic_call_result_is_always_discarded():
+    """The one approved consumer (app/routers/stream.py) may call into this
+    module, but only through _record_semantic_intent_diagnostic_policy,
+    whose return type is None and whose own call site is a bare,
+    unassigned `await` — structurally, nothing it computes can reach
+    resolve_execution_plan, generation, grounding, verification, repair,
+    or cache. This greps the real source rather than just asserting the
+    convention, so a future edit that starts assigning/forwarding the
+    result breaks this test immediately."""
+    source = (_BACKEND_ROOT / "app/routers/stream.py").read_text(encoding="utf-8")
+    assert "from ..services.diagnostic_policy import compile_diagnostic_policy" in source
+    assert "await _record_semantic_intent_diagnostic_policy(\n" in source
+    for line in source.splitlines():
+        stripped = line.strip()
+        if "_record_semantic_intent_diagnostic_policy" in stripped and stripped.startswith(("=", "return")):
+            raise AssertionError(f"diagnostic result must never be assigned/returned: {stripped!r}")

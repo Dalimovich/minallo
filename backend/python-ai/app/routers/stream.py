@@ -476,6 +476,59 @@ def _previous_turn_to_dict(turn: "PreviousTurn") -> dict[str, str]:
     return out
 
 
+async def _record_semantic_intent_diagnostic_policy(
+    *,
+    question: str,
+    dialogue: Any,
+    computed_intent: Any,
+    user_id: str,
+    conversation_id: str | None,
+    mode: str,
+) -> None:
+    """Milestone 3 observational wiring. Computes a diagnostic-only
+    ExecutionPolicy from the StudentIntent/DialogueResolution the caller
+    already computed today (no new model call) purely to compare against
+    the legacy pipeline — see diagnostic_policy.py's module docstring.
+    The result is never returned to the caller and never reaches
+    resolve_execution_plan, generation, grounding, verification, repair,
+    or cache; any failure here must never affect the real answer.
+
+    `conversation_id` must already be gated by the caller to a verified
+    durable conversation (never a course-rail synthetic id — see
+    docs/semantic-intent-milestone-3-plan.md S4); passing None here is
+    the correct "history_free" diagnostic state, not an error.
+    """
+    from ..services.conversation_store import (  # noqa: WPS433
+        get_durable_conversation_messages, validate_durable_conversation,
+    )
+    from ..services.diagnostic_policy import compile_diagnostic_policy  # noqa: WPS433
+
+    started = time.perf_counter()
+    try:
+        _policy, record = await run_in_threadpool(
+            lambda: compile_diagnostic_policy(
+                message=question,
+                dialogue=dialogue,
+                student_intent=computed_intent,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                validate_ownership=validate_durable_conversation,
+                get_messages=get_durable_conversation_messages,
+            )
+        )
+    except Exception:  # noqa: BLE001 — diagnostic-only; must degrade silently
+        log.warning("semantic_intent_diagnostic_policy_failed mode=%s", mode, exc_info=True)
+        return
+    log.info(
+        "semantic_intent_diagnostic_policy mode=%s history_source=%s action_count=%d "
+        "target_resolved=%s needs_clarification=%s response_language=%s "
+        "policy_hash=%s latency_ms=%.1f",
+        mode, record.history_source, record.action_count, record.target_resolved,
+        record.needs_clarification, record.response_language,
+        record.policy_hash, (time.perf_counter() - started) * 1000,
+    )
+
+
 class ProblemSolverPayload(BaseModel):
     mode: str = Field(max_length=40)
     problem: str = Field(max_length=20000)
@@ -1752,6 +1805,20 @@ async def ask_stream_endpoint(
             )
         )
         student_intent = intent_for_router(semantic_intent_mode, computed_intent)
+        # Milestone 3 observational wiring (behavior-inert — see
+        # diagnostic_policy.py): never awaited for a result, never gates
+        # anything below. Only a verified durable conversationId is ever
+        # passed as history; the course-rail surface's synthetic id is
+        # never treated as trusted (docs/semantic-intent-milestone-3-plan.md
+        # S4), so it always diagnoses as history_free, not "unavailable".
+        await _record_semantic_intent_diagnostic_policy(
+            question=question,
+            dialogue=turn_resolution,
+            computed_intent=computed_intent,
+            user_id=user_id,
+            conversation_id=payload.conversationId if payload.durableConversation else None,
+            mode=semantic_intent_mode,
+        )
     _task_profile, execution_plan = resolve_execution_plan(
         question=turn_resolution.resolved_request,
         resolved_access=resolved_access,

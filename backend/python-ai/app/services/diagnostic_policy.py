@@ -1,15 +1,25 @@
-"""Milestone 3, PR 1 — strictly behavior-inert observational diagnostics.
+"""Milestone 3 — strictly behavior-inert observational diagnostics.
 
 Computes an ``ExecutionPolicy`` from EXISTING, already-gathered
 deterministic data (today's `resolve_dialogue`/`StudentIntent` fields) for
 DIAGNOSTIC COMPARISON ONLY. Never consumed by generation, routing,
-caching, or authorization — nothing in this module is imported by
-``app/routers/stream.py``, ``app/services/answer.py``,
-``app/services/answer_stream.py``, ``app/services/general_answer.py``,
-``app/services/visual_repair.py``, ``app/services/cache.py``, or
-``app/services/course_grounding.py`` (``test_diagnostic_policy_never_
+caching, or authorization.
+
+PR 1 kept this module entirely unwired (nothing imported it). PR 2 wires
+it into ``app/routers/stream.py``'s ``ask_stream_endpoint`` — see
+``_record_semantic_intent_diagnostic_policy`` there — as the one approved
+observational call site: it only ever logs a privacy-safe record, its
+result is a bare unassigned ``await``, and it runs under a try/except
+that can never propagate into the real response. Every OTHER consumer
+that could actually affect a response — ``app/routers/ask.py``,
+``app/services/answer.py``, ``app/services/answer_stream.py``,
+``app/services/general_answer.py``, ``app/services/visual_repair.py``,
+``app/services/cache.py``, ``app/services/course_grounding.py`` — still
+never imports this module at all (``test_diagnostic_policy_never_
 reaches_a_live_consumer`` asserts this directly against the actual
-module source, not just by convention).
+module source, not just by convention; ``test_stream_router_diagnostic_
+call_result_is_always_discarded`` asserts the stream.py call site itself
+never assigns/forwards the result).
 
 No new model call. The tension between "diagnostic comparison" and "no
 new live calls" is resolved by building the diagnostic
