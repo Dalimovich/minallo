@@ -204,16 +204,18 @@ def _setup(monkeypatch, *, policy, draft_text: str, conversation_id: str):
     return stream, save_calls
 
 
-async def _run(stream, *, conversation_id: str):
+async def _run(stream, *, conversation_id: str, **extra_payload):
+    question = extra_payload.pop("question", QUESTION)
     payload = stream.AskStreamRequest(
         courseId="course-1",
         activeDocumentId=DOCUMENT_ID,
-        question=QUESTION,
+        question=question,
         visiblePage=1,
         sourceMode="course_files",
         openFileContext="[CURRENTLY VISIBLE PDF PAGE]\nFile: exam.pdf\nPage: 1 of 2\n\n",
         conversationId=conversation_id,
         conversationGeneration=1,
+        **extra_payload,
     )
     response = await stream.ask_stream_endpoint(payload, {"id": USER_ID})
     return b"".join([event async for event in response.body_iterator])
@@ -282,3 +284,59 @@ def test_permitted_final_answer_still_streams_normally(monkeypatch):
     # reaches save_answer. del to make that explicit rather than silently
     # unused.
     del save_calls
+
+
+def test_visual_denial_repair_cannot_bypass_the_release_gate(monkeypatch):
+    """Repair-bypass scenario (spec §5 #6): a draft that falsely claims it
+    can't see an attached image would normally trigger stream.py's
+    false_visual_denial repair branch, which calls a FRESH, unchecked
+    model generation (repair_false_visual_denial_sync) and yields its
+    result directly — a path the centralized release gate must preempt
+    entirely for a restricted target, not merely race against. Does NOT
+    mock repair_false_visual_denial_sync/generate_grounded_repair_sync at
+    all: if the gate's ordering regresses and that branch runs again, this
+    test would hit a real (mocked-away-at-the-httpx-level, so it fails
+    loud rather than hanging) network call instead of silently passing."""
+    draft_text = "I'm sorry, I cannot see the image you're referring to."
+    conversation_id = "release-gate-visual-denial"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_restrictive_policy(), draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(
+            stream, conversation_id=conversation_id,
+            openFileImages=[stream.OpenFileImagePayload(mediaType="image/jpeg", data="QQ==")],
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"cannot see the image" not in body
+    assert b"withholding" in body.lower() or b"zur" in body.lower()
+    assert b'"code": "answer_release_restricted"' in body
+    assert b'"done": true' in body
+    assert not save_calls
+
+
+# ---------------------------------------------------------------------------
+# Document-scope false-positive fix (spec §4C) — NOT re-verified here at
+# the SSE/route level, by deliberate choice, not oversight. Both the two
+# false-positive messages and the genuine full-document request are
+# phrased as a correction/rejection (that's what makes them trigger
+# resolve_document_access's lexical bug in the first place), and that
+# relation forces this specific route into the scoped async job-queue
+# worker path (RetrievalMode.COVERAGE -> scoped_job_store.
+# create_or_resume_job) rather than the direct synchronous path every
+# other test in this file exercises — a real, unmocked DB/network call
+# with no existing route-level test scaffold to borrow (checked
+# test_scoped_worker_contract.py / test_scoped_job_worker_execute.py:
+# neither mocks the route, only the worker in isolation). Building that
+# mock surface from scratch is out of scope for this pass. The fix
+# itself remains verified at the unit level, where it was already
+# thoroughly covered before this commit: test_semantic_intent_
+# orchestrator.py::test_incomplete_answer_complaint_is_not_routed_to_
+# full_document, ::test_explicit_rejection_of_full_document_summary_is_
+# not_routed_to_full_document, and ::test_genuine_full_document_request_
+# still_works all pass unchanged. Named explicitly in the final report
+# as an untested (at the route level) path, not silently assumed covered.
+# ---------------------------------------------------------------------------
