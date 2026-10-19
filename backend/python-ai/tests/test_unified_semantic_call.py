@@ -142,29 +142,87 @@ def test_multi_action_output_case_c_shaped():
 
 
 # ---------------------------------------------------------------------------
-# safe_fallback — reuses policy_compiler's existing restrictive machinery,
-# invariant (e). Also demonstrates invariant (d)'s real cost: everything
-# degrades together, not independently.
+# Provenance gating (code review): what IS already closed vs. what is
+# genuinely still open for a model-sourced action's claims about anything
+# beyond the current message.
 # ---------------------------------------------------------------------------
 
-def test_safe_fallback_forces_every_action_unresolved_and_compiles_restrictively():
-    actions = (
-        Action(objective="explain", target="5", state="requested"),
-        Action(objective="solve", target="6", state="requested"),
+def test_cross_turn_changed_by_turn_claim_is_already_rejected_at_the_schema_level():
+    """A model cannot smuggle a cross-turn override claim through this
+    validator at all — semantic_call_support._validated_release already
+    rejects "changed_by_turn" as an unknown field for any model-sourced
+    release payload (pre-existing hardening-pass decision, re-verified
+    here at the unified-call boundary, not newly fixed by this test)."""
+    actions = [{
+        "objective": "solve", "target": "5", "state": "requested", "confidence": 0.9,
+        "release": {"final_answer": "permitted", "changed_by_turn": "turn-2"},
+    }]
+    intent = validate_unified_call_output(
+        _valid_raw(actions=actions), original_message="x", student_goal_fallback="x",
     )
-    fallback_intent = safe_fallback(original_message="x", student_goal="x", actions=actions)
+    assert intent is None  # the whole call fails closed, not just that one field
+
+
+def test_unresolved_target_identity_claim_is_not_checked_here():
+    """Demonstrates, rather than papers over, a genuinely open gap: a
+    model can claim ANY target string, including one that never appears
+    anywhere in the current message or any trusted context, and nothing
+    in this validator (or validate_action_provenance downstream) checks
+    it. This is explicitly named as a blocking gate — not solved here —
+    in docs/semantic-intent-milestone-3-plan.md before any
+    history-dependent permission change or answer-release enforcement
+    can safely consume a unified-call result."""
+    actions = [{
+        "objective": "solve", "target": "Aufgabe-7-never-mentioned-anywhere",
+        "state": "requested", "confidence": 0.9, "release": {"final_answer": "permitted"},
+    }]
+    intent = validate_unified_call_output(
+        _valid_raw(actions=actions), original_message="Explain torsion.", student_goal_fallback="x",
+    )
+    assert intent is not None  # passes today — the gap is real, not hypothetical
+    assert intent.actions[0].target == "Aufgabe-7-never-mentioned-anywhere"
+    policy = compile_policy(intent)  # compiles and PERMITS it — nothing catches this yet
+    assert policy.actions[0].release.final_answer == "permitted"
+
+
+# ---------------------------------------------------------------------------
+# safe_fallback — reuses policy_compiler's existing restrictive machinery,
+# invariant (e), and (hardening fix) preserves an already-trusted baseline
+# rather than discarding it just because THIS call failed.
+# ---------------------------------------------------------------------------
+
+def test_safe_fallback_preserves_an_already_trusted_baseline_verbatim():
+    """A unified-call failure must not erase instructions a completely
+    different, unrelated path (the deterministic layer, or a prior
+    ledger-verified turn) already established. The previous version of
+    this function force-downgraded every passed-in action to
+    "unresolved" regardless of its real trust status — fixed."""
+    trusted = (
+        Action(objective="explain", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+        Action(objective="solve", target="6", state="prohibited",
+               release=ReleaseConstraints(final_answer="prohibited")),
+    )
+    fallback_intent = safe_fallback(original_message="x", student_goal="x", trusted_actions=trusted)
+    assert fallback_intent.actions == trusted  # preserved verbatim, not downgraded
+    policy = compile_policy(fallback_intent)
+    by_target = {a.target: a.release for a in policy.actions}
+    assert by_target["5"].final_answer == "permitted"  # the trusted permission survives the failed call
+    assert by_target["6"].final_answer == "prohibited"
+    assert policy.needs_clarification is False  # nothing here is actually unresolved
+
+
+def test_safe_fallback_with_no_trusted_baseline_synthesizes_a_restrictive_placeholder():
+    """Only when there is truly nothing trusted to fall back on (brand
+    new turn, and now also a failed call) does this produce the
+    explicitly unresolved placeholder that compiles restrictively."""
+    fallback_intent = safe_fallback(original_message="x", student_goal="x", trusted_actions=())
     assert all(a.state == "unresolved" for a in fallback_intent.actions)
     policy = compile_policy(fallback_intent)
     assert policy.needs_clarification is True
     for action in policy.actions:
         assert action.release.final_answer == "prohibited"
         assert action.release.official_solution == "prohibited"
-
-
-def test_safe_fallback_with_no_prior_actions_still_produces_a_valid_intent():
-    fallback_intent = safe_fallback(original_message="x", student_goal="x", actions=())
-    policy = compile_policy(fallback_intent)
-    assert policy.needs_clarification is True
 
 
 # ---------------------------------------------------------------------------

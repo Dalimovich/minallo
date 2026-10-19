@@ -83,7 +83,6 @@ isn't silently assumed away.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any, Mapping, get_args
 
 from .resolved_student_intent import (
@@ -168,6 +167,30 @@ def validate_unified_call_output(
             )
             if validated is None:
                 return None  # one malformed/inconsistent action fails the whole call — no partial trust
+            # Provenance note (code review, Decision-2-era): an empty
+            # `provenance` tuple means "left alone" to
+            # resolved_student_intent.validate_action_provenance — correct
+            # for a deterministic parse, wrong for an UNCHECKED claim that
+            # reaches outside the current message. A model-sourced
+            # changed_by_turn claim specifically is already impossible to
+            # smuggle through here: semantic_call_support._validated_release
+            # rejects "changed_by_turn" as an unknown field for ANY
+            # model-sourced release payload (existing hardening-pass
+            # decision, confirmed still in effect by
+            # test_model_cannot_set_changed_by_turn_directly in
+            # test_semantic_call_support.py) — so that specific vector is
+            # already closed, not newly fixed here. What is NOT checked at
+            # all, by this function or validate_semantic_action: whether
+            # `target` corresponds to anything real in this conversation
+            # (a model can freely claim target="Aufgabe 7" even if no such
+            # exercise was ever mentioned), and whether `conversation`
+            # (e.g. "follow_up"/"correction") actually corresponds to a
+            # real prior turn — neither this validator nor
+            # validate_action_provenance receives the trusted viewer-
+            # context/ledger needed to check either. See
+            # test_unresolved_target_identity_claim_is_not_checked_here
+            # (demonstrates, does not fix) and the Milestone 3 plan's
+            # provenance "blocking gate" for the required follow-up.
             actions.append(validated)
     except Exception:  # noqa: BLE001 — deliberate fail-closed boundary, same house style as semantic_call_support.py
         return None
@@ -186,24 +209,44 @@ def validate_unified_call_output(
 
 
 def safe_fallback(
-    *, original_message: str, student_goal: str, actions: tuple[Action, ...], response_language: str = "",
+    *, original_message: str, student_goal: str, trusted_actions: tuple[Action, ...] = (),
+    response_language: str = "",
 ) -> ResolvedStudentIntent:
     """What a single unified-call failure (timeout, malformed JSON,
-    sub-floor confidence) degrades to. Every action's state is forced to
-    ``"unresolved"`` — ``policy_compiler.compile_policy`` already knows
-    how to turn that into a per-field restrictive fallback (not one
+    sub-floor confidence) degrades to.
+
+    Corrected behavior (code review): ``trusted_actions`` — whatever was
+    ALREADY established through a completely different, unrelated path
+    before this call was even attempted (e.g. the deterministic layer's
+    own best-effort actions, or a previously ledger-verified policy
+    carried over from an earlier turn) — is preserved VERBATIM, not
+    force-downgraded. A single failed call contributed nothing new; it
+    must not also erase instructions that were never its to lose. The
+    previous version of this function forced every passed-in action to
+    ``state="unresolved"`` unconditionally, which discarded reliable,
+    already-verified fields for no reason connected to the actual
+    failure.
+
+    Only when there is NO trusted baseline at all (a brand-new turn,
+    nothing yet established, and now also no working call) does this
+    synthesize one explicitly unresolved placeholder action —
+    ``policy_compiler.compile_policy`` already knows how to turn
+    ``state="unresolved"`` into a per-field restrictive fallback (not one
     global "safe mode"); this function does not invent new fallback
-    logic. See the module docstring's invariant (d) for why this fallback
-    covers STRICTLY MORE ground at once than either of today's two
-    independent fallbacks would on their own."""
-    unresolved_actions = tuple(replace(action, state="unresolved") for action in actions) or (
+    logic for that case either. See the module docstring's invariant (d)
+    for why a merged call's blast radius is still larger than today's two
+    independent fallbacks on an actual failure — this fix narrows that
+    gap but does not close it (a failure still loses whatever the ONE
+    call would have newly contributed; it just stops also losing what
+    was already known)."""
+    actions = trusted_actions or (
         Action(objective="other", target="unresolved", state="unresolved"),
     )
     return ResolvedStudentIntent(
         schema_version=SCHEMA_VERSION,
         original_message=original_message,
         student_goal=student_goal,
-        actions=unresolved_actions,
+        actions=actions,
         conversation="new",
         references=None,
         response_language=response_language,
