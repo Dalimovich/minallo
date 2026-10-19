@@ -839,3 +839,77 @@ def test_policy_hash_changes_when_evidence_requirements_differ_but_actions_do_no
         platform_policy_applied=(), policy_version="1.1.0", compiler_version="1.1.0",
     )
     assert hash_without_evidence != hash_with_evidence
+
+
+# ===========================================================================
+# Hint-objective fallback (live-eval fix, 2026-10-20): a "hint" objective
+# must never silently compile final_answer/form open via the general
+# _TUTORING_DEFAULT just because extraction left those fields
+# unspecified -- confirmed live, 20/20 cases in the independent eval
+# (reports/semantic-intent-phase-d-eval-2026-10-20.md, eval worktree)
+# where layer1 extraction dropped release fields to "unspecified" and
+# this default alone then opened final_answer to "permitted" for
+# explicit hint-only requests.
+# ===========================================================================
+
+def test_hint_objective_with_unspecified_release_defaults_to_prohibited_not_permitted():
+    """The exact live-eval failure shape: objective="hint", target
+    extracted correctly, but release left completely unspecified
+    (exactly what the real gpt-4o-mini response produced under the
+    pre-fix prompt, after unwrapping its mis-nested JSON). Must compile
+    to final_answer="prohibited", form="hint" -- never the general
+    tutoring default ("permitted"/"explanation") an "explain"/"solve"
+    objective would correctly get in the same situation."""
+    policy = compile_policy(_intent([
+        Action(objective="hint", target="7", state="requested", release=ReleaseConstraints()),
+    ]))
+    action = policy.actions[0]
+    assert action.release.final_answer == "prohibited"
+    assert action.release.form == "hint"
+
+
+def test_non_hint_objective_with_unspecified_release_is_unaffected():
+    """Non-regression: an "explain"/"solve" objective with unspecified
+    release must still get the ordinary tutoring default (final_answer
+    defaults open) -- the hint-objective fallback is scoped exactly to
+    objective="hint", not a general tightening of the fallback rule."""
+    policy = compile_policy(_intent([
+        Action(objective="solve", target="9", state="requested", release=ReleaseConstraints()),
+    ]))
+    action = policy.actions[0]
+    assert action.release.final_answer == "permitted"
+    assert action.release.form == "explanation"
+
+
+def test_hint_objective_explicit_final_answer_from_any_turn_still_wins():
+    """Non-regression: if ANY trusted action for this target (this turn
+    or an earlier one) explicitly addressed final_answer, that explicit
+    value wins exactly as before -- the hint-objective fallback only
+    ever fires when the field was never addressed at all, not when the
+    student explicitly permitted the final answer alongside a hint-
+    shaped request."""
+    policy = compile_policy(_intent([
+        Action(
+            objective="hint", target="7", state="requested",
+            release=ReleaseConstraints(final_answer="permitted"),
+        ),
+    ]))
+    action = policy.actions[0]
+    assert action.release.final_answer == "permitted"
+
+
+def test_hint_objective_widened_to_solve_by_a_later_turn_no_longer_gets_the_hint_default():
+    """A later turn's explicit widening to a different objective (e.g.
+    "actually just solve it fully") becomes this target's new primary
+    objective (the last requested action for the target -- same rule
+    every other "which objective governs this target" case already
+    follows) -- the hint-only fallback must not keep applying once the
+    CURRENT, authoritative objective for this target is no longer
+    "hint"."""
+    policy = compile_policy(_intent([
+        Action(objective="hint", target="7", state="requested"),
+        Action(objective="solve", target="7", state="requested"),
+    ]))
+    action = policy.actions[0]
+    assert action.objective == "solve"
+    assert action.release.final_answer == "permitted"

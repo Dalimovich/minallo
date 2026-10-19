@@ -553,18 +553,41 @@ def compile_policy(
             audit.append(f"missing_required_history:{target}:{field}")
         for field in merged.forged_turn_fields:
             audit.append(f"forged_turn_marker:{target}:{field}")
+        base_action = merged.primary if merged.primary is not None else Action(objective="other", target=target)
+        # Hint-objective fallback (Semantic Student Intent Layer, live-
+        # eval fix 2026-10-20): the CURRENT, authoritative objective for
+        # this target is "hint" -- by definition not a full/final-answer
+        # request -- so silence on final_answer/form must never default
+        # open the way _TUTORING_DEFAULT does for every other objective
+        # ("ordinary tutoring behavior is to answer unless told not
+        # to"). That blanket assumption is wrong specifically when the
+        # student's own extracted intent already says "hint": confirmed
+        # live (independent eval, reports/semantic-intent-phase-d-eval-
+        # 2026-10-20.md in the eval worktree) -- 20/20 live-model cases
+        # had their release fields land as "unspecified" at layer 1 (a
+        # separate prompt/schema bug, fixed in unified_semantic_call.py)
+        # and this tutoring default alone then turned every one of them
+        # into a wide-open final_answer="permitted" policy for what the
+        # student explicitly asked to be hint-only. Only applies when NO
+        # trusted action for this target (this turn or an earlier one)
+        # ever actually addressed the field -- an explicit value from
+        # any turn, in either direction, is untouched by this and still
+        # wins exactly as before.
+        is_hint_objective = base_action.objective == "hint"
         for field in FIELD_NAMES:
             if not is_unset_field(field, working[field]):
                 continue
             if state == "unresolved" or field in merged.contested_fields:
                 working[field] = _MOST_RESTRICTIVE[field]
                 tag = "unresolved_fallback" if state == "unresolved" else "contested_fallback"
-                audit.append(f"{tag}:{target}:{field}={working[field]!r}")
+            elif is_hint_objective and field in ("final_answer", "form"):
+                working[field] = "prohibited" if field == "final_answer" else "hint"
+                tag = "hint_objective_fallback"
             else:
                 working[field] = _TUTORING_DEFAULT[field]
-                audit.append(f"tutoring_default:{target}:{field}={working[field]!r}")
+                tag = "tutoring_default"
+            audit.append(f"{tag}:{target}:{field}={working[field]!r}")
         release = ReleaseConstraints(**{f: working[f] for f in FIELD_NAMES})
-        base_action = merged.primary if merged.primary is not None else Action(objective="other", target=target)
         compiled_actions.append(replace(
             base_action, release=release, state=state, provenance=merged.provenance,
             prohibited=tuple(sorted(merged.prohibited_objectives)),
