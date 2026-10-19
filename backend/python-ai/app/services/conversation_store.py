@@ -189,6 +189,7 @@ def update_tutor_request(
     error_code: str | None = None, retryable: bool = True,
     automatic_retry_count: int | None = None,
     answer_provenance: dict[str, Any] | None = None,
+    compiled_policy_by_target: dict[str, Any] | None = None,
 ) -> None:
     patch: dict[str, Any] = {
         "status": status, "stage": stage, "error_code": error_code,
@@ -214,6 +215,20 @@ def update_tutor_request(
             "answerProvenance": {key: answer_provenance[key] for key in
                 ("answerMode", "groundingMode", "sourceScope")
                 if isinstance(answer_provenance.get(key), str)},
+        }
+    if compiled_policy_by_target is not None:
+        # Semantic Student Intent Layer multi-turn persistence (Priority
+        # 1): the per-target release-constraint deviations this turn's
+        # compiled ExecutionPolicy resolved to (policy_compiler.extract_
+        # persistable_restrictions), reusing this EXISTING request_
+        # snapshot JSONB column -- the same field already used for
+        # answerProvenance/commentaryEvents, never a new table. A later
+        # turn's orchestrator (semantic_intent_orchestrator._reconstruct_
+        # persisted_target_actions) reads this back via the full durable
+        # turn ledger to rebuild a trusted historical Action per target.
+        patch["request_snapshot"] = {
+            **(patch.get("request_snapshot") or dict(rows[0].get("request_snapshot") or {})),
+            "policyByTarget": compiled_policy_by_target,
         }
     if final_answer is not None and rows[0].get("partial_answer"):
         saved_partial = str(rows[0]["partial_answer"]).strip()

@@ -209,39 +209,32 @@ def test_a_target_the_student_actually_named_is_still_trusted(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# KNOWN, DOCUMENTED GAP (not fixed here — see the Milestone 3 plan §4's
-# "trusted durable history" discussion and this task's own restriction
-# against inventing a new production migration/persistence contract as a
-# workaround). policy_compiler.py's cross-turn merge logic (rule 2) is
-# real and already proven correct in isolation — see test_policy_
-# compiler.py::test_earlier_turn_prohibition_then_verified_later_turn_
-# permission — but that test hand-builds BOTH turns' actions into ONE
-# intent.actions tuple for a single compile_policy call. The live
-# orchestrator never does that: interpret_turn_authoritatively runs once
-# per turn and only ever extracts action(s) for THAT turn's message, so
-# a turn-2 request that doesn't repeat turn-1's prohibition never
-# re-introduces it as a competing action for compile_policy to merge
-# against. This test demonstrates that gap concretely via two real,
-# sequential interpret_turn_authoritatively calls (not fixed by this
-# commit) rather than leaving it as an unverified claim.
+# Multi-turn permission persistence (Milestone 3 Priority 1 — fixes the
+# gap formerly demonstrated by test_KNOWN_GAP_a_turn_1_prohibition_is_
+# not_carried_into_turn_2_by_the_live_orchestrator). policy_compiler.py's
+# cross-turn merge logic (rule 2) was already correct in isolation (see
+# test_policy_compiler.py::test_earlier_turn_prohibition_then_verified_
+# later_turn_permission) -- the orchestrator simply never fed it any
+# historical action. It now does: stream.py persists each turn's
+# compiled per-target deviations (policy_compiler.extract_persistable_
+# restrictions) into that turn's EXISTING ai_tutor_requests.
+# request_snapshot ("policyByTarget", via conversation_store.
+# update_tutor_request's new compiled_policy_by_target param — no new
+# table/migration), and the next turn's interpret_turn_authoritatively
+# reconstructs it from the same durable get_messages rows already used
+# to build the turn_ledger, merging it in as a trusted historical Action
+# before compile_policy runs (semantic_intent_orchestrator.
+# _merge_persisted_history).
 # ---------------------------------------------------------------------------
 
-def test_KNOWN_GAP_a_turn_1_prohibition_is_not_carried_into_turn_2_by_the_live_orchestrator(monkeypatch):
-    """Turn 1: 'Don't reveal the final answer for 5b.' Turn 2: 'Okay,
-    give me the next hint.' (doesn't repeat the prohibition). Demonstrates
-    that the live orchestrator path currently compiles turn 2's policy
-    from turn 2's own action alone -- the turn-1 prohibition is not
-    reconstructed from durable storage and merged in, so it does NOT
-    carry forward here, even though the TurnLedger used proves turn 1
-    really happened. This is a missing persistence contract (no
-    durable store of PRIOR COMPILED release constraints per target that
-    a later turn can rebuild an Action from), not a compile_policy bug --
-    compile_policy already merges correctly whenever both turns' actions
-    are actually handed to it (see test_policy_compiler.py's own cross-
-    turn tests). Named explicitly in the final report as a remaining
-    limitation; not fixed by this change."""
+def test_turn_1_prohibition_is_carried_into_turn_2_via_persisted_history(monkeypatch):
+    """Turn 1: 'Don't reveal the final answer for 5b.' Turn 2 (same
+    durable conversation): 'Okay, give me the next hint for 5b.' --
+    doesn't repeat the prohibition. Fixed: turn 2 reconstructs turn 1's
+    persisted restriction for target '5b' and still withholds the final
+    answer."""
     turn_1_response = {
-        "relation": "new_topic", "speechAct": "statement", "taskFamily": "solve",
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "solve",
         "continuesPreviousGoal": False, "resolvedRequest": "Don't reveal the final answer for 5b.",
         "confidence": 0.9,
         "conversation": "new", "studentGoal": "Don't reveal the final answer for 5b.",
@@ -257,11 +250,15 @@ def test_KNOWN_GAP_a_turn_1_prohibition_is_not_carried_into_turn_2_by_the_live_o
     dialogue_1 = resolve_dialogue(message_1, previous_turns=[])
     turn_1 = interpret_turn_authoritatively(
         question=message_1, dialogue_base=dialogue_1, preflight_turns=[],
-        user_id="user-1", conversation_id=None,
-        validate_ownership=lambda **_: False, get_messages=lambda **_: [],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
         resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
     )
     assert turn_1.execution_policy.actions[0].release.final_answer == "prohibited"
+    # Exactly what stream.py writes into ai_tutor_requests.request_
+    # snapshot.policyByTarget after this turn completes.
+    persisted_policy = turn_1.compiled_policy_by_target
+    assert persisted_policy["5b"]["final_answer"] == "prohibited"
 
     turn_2_response = {
         "relation": "continuation", "speechAct": "task_request", "taskFamily": "solve",
@@ -276,35 +273,220 @@ def test_KNOWN_GAP_a_turn_1_prohibition_is_not_carried_into_turn_2_by_the_live_o
     }
     client_2 = _FakeClient(turn_2_response)
     _patch_model(monkeypatch, client_2)
+
+    def get_messages_after_turn_1(**_):
+        # The join-enriched shape get_durable_conversation_messages
+        # actually returns: both rows of the completed request carry the
+        # same request_snapshot.
+        return [
+            {"client_message_id": "turn-1-user", "role": "user", "content": message_1,
+             "request_snapshot": {"policyByTarget": persisted_policy}},
+            {"client_message_id": "turn-1-assistant", "role": "assistant",
+             "content": "Understood, hint-only for 5b.",
+             "request_snapshot": {"policyByTarget": persisted_policy}},
+        ]
+
     # "5b" is repeated literally here on purpose: this makes the target-
-    # identity gate (test_model_invented_target_is_never_trusted_or_
-    # authorized, this commit's actual fix) trust the target normally, so
-    # THIS test isolates the cross-turn persistence question specifically
-    # -- it must not be an accidental pass caused by the OTHER gate
-    # conservatively rejecting an unrelated, ungrounded target.
+    # identity gate trust the target normally, so this test isolates the
+    # cross-turn persistence question specifically.
     message_2 = 'Okay, "give me the next hint" for 5b then.'
     dialogue_2 = resolve_dialogue(message_2, previous_turns=[
         {"role": "user", "text": message_1}, {"role": "assistant", "text": "Understood, hint-only for 5b."},
     ])
     turn_2 = interpret_turn_authoritatively(
         question=message_2, dialogue_base=dialogue_2, preflight_turns=[],
-        user_id="user-1", conversation_id=None,
-        validate_ownership=lambda **_: False, get_messages=lambda **_: [],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=get_messages_after_turn_1,
         resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
     )
     assert turn_2.resolved_intent.actions[0].state != "unresolved", (
-        "this test must isolate the persistence gap, not the (already-"
-        "fixed, separately tested) target-identity gate -- '5b' is named "
-        "literally in message_2, so it must be trusted here"
+        "'5b' is named literally in message_2, so the (separately tested) "
+        "target-identity gate must trust it here"
     )
-    # DOCUMENTED GAP: this comes out "permitted" (the tutoring default for
-    # an unspecified field on an otherwise-trusted action), NOT
-    # "prohibited" -- turn 1's verified prohibition was never
-    # reconstructed and merged into turn 2's compile_policy call. If a
-    # future fix closes this gap by persisting and replaying prior-turn
-    # actions, this assertion should flip to "prohibited" and this
-    # test's name/docstring should be updated to say so.
-    assert turn_2.execution_policy.actions[0].release.final_answer == "permitted"
+    assert turn_2.execution_policy.actions[0].release.final_answer == "prohibited"
+    assert turn_2.execution_policy.actions[0].release.form == "hint"
+
+
+def test_verified_later_turn_can_explicitly_lift_a_persisted_prohibition(monkeypatch):
+    """A genuine, trusted current-turn instruction ('actually, go ahead
+    and give me the full answer for 5b now') must still be able to
+    override a persisted prior-turn prohibition -- persistence must never
+    become a one-way ratchet. The current turn's own action always
+    outranks history (compile_policy's existing recency rule: the
+    current turn's rank is never beaten by any verified prior turn)."""
+    persisted_policy = {"5b": {"final_answer": "prohibited", "form": "hint"}}
+
+    def get_messages_with_prior_restriction(**_):
+        return [{"client_message_id": "turn-1", "role": "user", "content": "...",
+                  "request_snapshot": {"policyByTarget": persisted_policy}}]
+
+    response = {
+        "relation": "correction", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": True, "resolvedRequest": "Actually give the full answer for 5b.",
+        "confidence": 0.9,
+        "conversation": "permission_update", "studentGoal": "Actually give the full answer for 5b.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "solve", "target": "5b", "confidence": 0.9, "state": "requested",
+            "release": {"final_answer": "permitted"},
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = 'Actually, "go ahead and show me the full answer" for 5b now.'
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=get_messages_with_prior_restriction,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert result.execution_policy.actions[0].release.final_answer == "permitted"
+
+
+def test_unverifiable_history_degrades_to_restrictive_never_to_permitted(monkeypatch):
+    """A durable conversation_id is supplied (the client believes there
+    is history) but the lookup itself fails (DB hiccup, not merely 'no
+    history yet') -- requirement 7: this must never be silently treated
+    as a blank slate that defaults a withheld field open."""
+    response = {
+        "relation": "continuation", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": True, "resolvedRequest": "Give me the next hint for 5b.",
+        "confidence": 0.9,
+        "conversation": "follow_up", "studentGoal": "Give me the next hint for 5b.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "hint", "target": "5b", "confidence": 0.9, "state": "requested",
+            "release": {},
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = 'Okay, "give me the next hint" for 5b then.'
+    dialogue = resolve_dialogue(message, previous_turns=[
+        {"role": "user", "text": "earlier turn"}, {"role": "assistant", "text": "..."},
+    ])
+
+    def get_messages_raises(**_):
+        raise RuntimeError("supabase unreachable")
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=get_messages_raises,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert result.execution_policy.actions[0].release.final_answer == "prohibited"
+    assert result.execution_policy.needs_clarification is True
+
+
+def test_cross_user_history_is_never_read_or_merged(monkeypatch):
+    """Ownership denial must stop history lookup cold -- a different
+    user's (or a no-longer-owned) conversation's persisted policy must
+    never even be read, let alone merged in."""
+    calls = []
+
+    def get_messages_tracks(**_):
+        calls.append(True)
+        return [{"client_message_id": "other-users-turn", "role": "user", "content": "...",
+                  "request_snapshot": {"policyByTarget": {"5b": {"final_answer": "prohibited"}}}}]
+
+    response = {
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": False, "resolvedRequest": "Give me the full answer for 5b.",
+        "confidence": 0.9, "conversation": "new", "studentGoal": "Give me the full answer for 5b.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "solve", "target": "5b", "confidence": 0.9, "state": "requested",
+            "release": {},
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = 'Please "give me the full answer" for 5b.'
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-2", conversation_id="conv-owned-by-someone-else",
+        validate_ownership=lambda **_: False, get_messages=get_messages_tracks,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert calls == [], "get_messages must never be called once ownership fails"
+    assert result.execution_policy.actions[0].release.final_answer == "prohibited"
+    assert result.execution_policy.needs_clarification is True
+
+
+def test_exercise_switch_does_not_inherit_a_different_targets_restriction(monkeypatch):
+    """Switching to a different exercise must never inherit an unrelated
+    exercise's persisted restriction -- matching is exact-target-string
+    only, never a label-hierarchy guess at the history-replay layer."""
+    persisted_policy = {"5a": {"final_answer": "prohibited"}}
+
+    def get_messages_with_prior_restriction(**_):
+        return [{"client_message_id": "turn-1", "role": "user", "content": "...",
+                  "request_snapshot": {"policyByTarget": persisted_policy}}]
+
+    response = {
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": False, "resolvedRequest": "Now let's do 6.",
+        "confidence": 0.9, "conversation": "exercise_switch", "studentGoal": "Now let's do 6.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "solve", "target": "6", "confidence": 0.9, "state": "requested",
+            "release": {},
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = 'Let\'s switch, "do exercise 6" now.'
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id="conv-1",
+        validate_ownership=lambda **_: True, get_messages=get_messages_with_prior_restriction,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert result.execution_policy.actions[0].target == "6"
+    assert result.execution_policy.actions[0].release.final_answer == "permitted"
+
+
+def test_no_conversation_id_skips_history_merge_entirely(monkeypatch):
+    """Legacy/non-durable-chat parity: a turn with no conversation_id at
+    all must behave exactly as before -- no sentinel, no replay, no
+    needs_clarification side effect, even though a persisted restriction
+    for the same target exists on some OTHER call's injected get_
+    messages (which must never even be consulted here, since the real
+    production call site only passes a conversation_id for durable
+    chats)."""
+    response = {
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "solve",
+        "continuesPreviousGoal": False, "resolvedRequest": "Give me the full answer for 5b.",
+        "confidence": 0.9, "conversation": "new", "studentGoal": "Give me the full answer for 5b.",
+        "responseLanguage": "en",
+        "actions": [{
+            "objective": "solve", "target": "5b", "confidence": 0.9, "state": "requested",
+            "release": {},
+        }],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = 'Please "give me the full answer" for 5b.'
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    def _must_not_be_called(**_):
+        raise AssertionError("must not be called when conversation_id is None")
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id=None,
+        validate_ownership=_must_not_be_called, get_messages=_must_not_be_called,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    assert result.execution_policy.actions[0].release.final_answer == "permitted"
+    assert result.execution_policy.needs_clarification is False
 
 
 def test_authoritative_ledger_never_built_from_unowned_conversation():

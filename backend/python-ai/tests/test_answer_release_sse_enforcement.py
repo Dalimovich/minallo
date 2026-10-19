@@ -194,6 +194,7 @@ def _setup(monkeypatch, *, policy, draft_text: str, conversation_id: str):
         return AuthoritativeInterpretation(
             dialogue=dialogue_base, resolved_intent=intent, execution_policy=policy,
             used_unified_call=True, unified_call_succeeded=True,
+            compiled_policy_by_target={},
         )
 
     monkeypatch.setattr(

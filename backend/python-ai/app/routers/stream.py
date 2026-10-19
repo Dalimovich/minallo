@@ -1954,6 +1954,16 @@ async def ask_stream_endpoint(
     execution_policy = (
         authoritative_interpretation.execution_policy if authoritative_interpretation else None
     )
+    # Multi-turn permission persistence (Priority 1): the compiled per-
+    # target deviations this turn resolved, written into the turn's own
+    # ai_tutor_requests.request_snapshot below (_mark_preflight_running)
+    # so a LATER turn's orchestrator can reconstruct them. None whenever
+    # the unified call path isn't active -- legacy OFF/SHADOW is
+    # byte-identical (update_tutor_request skips the write entirely).
+    compiled_policy_by_target = (
+        authoritative_interpretation.compiled_policy_by_target
+        if authoritative_interpretation else None
+    )
     if semantic_intent_mode != "off":
         from ..services.student_intent import (  # noqa: WPS433
             intent_for_router, interpret_student_intent,
@@ -2094,6 +2104,7 @@ async def ask_stream_endpoint(
             update_tutor_request(
                 user_id=user_id, request_id=request_id,
                 status="running", stage="request_preflight",
+                compiled_policy_by_target=compiled_policy_by_target,
             )
 
         try:

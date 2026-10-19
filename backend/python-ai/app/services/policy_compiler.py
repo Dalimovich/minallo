@@ -670,8 +670,36 @@ def compute_policy_hash(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def extract_persistable_restrictions(policy: ExecutionPolicy) -> dict[str, dict[str, Any]]:
+    """Capture, per target, only the release fields a compiled policy
+    resolved to something OTHER than the ordinary tutoring default --
+    i.e. a genuine, trusted deviation (an explicit prohibition/
+    permission, or a restrictive degrade from an unresolved/contested
+    field), never a routine default silently baked in. This is the one
+    thing safe to persist (into the turn's existing ``ai_tutor_requests.
+    request_snapshot`` JSONB column -- see semantic_intent_orchestrator.
+    py's multi-turn persistence) and replay into a LATER turn's
+    ``compile_policy`` call as a reconstructed historical ``Action``,
+    without that later turn inheriting defaults it was never actually
+    told about. A field equal to its tutoring default is omitted -- even
+    if some action explicitly set it to exactly that value, replaying it
+    changes nothing, so there is nothing worth the storage. Degenerate
+    inputs (no actions, nothing deviates) return ``{}``."""
+    out: dict[str, dict[str, Any]] = {}
+    for action in policy.actions:
+        deviations = {
+            field: getattr(action.release, field)
+            for field in FIELD_NAMES
+            if getattr(action.release, field) != _TUTORING_DEFAULT[field]
+        }
+        if deviations:
+            out[action.target] = deviations
+    return out
+
+
 __all__ = [
     "COMPILER_VERSION", "FIELD_NAMES", "POLICY_VERSION", "RESTRICTIVENESS_RANK",
     "ExecutionPolicy", "PLATFORM_RULES", "PlatformRule", "UNSET_SENTINELS",
-    "compile_policy", "compute_policy_hash", "is_unset_field", "more_restrictive",
+    "compile_policy", "compute_policy_hash", "extract_persistable_restrictions",
+    "is_unset_field", "more_restrictive",
 ]

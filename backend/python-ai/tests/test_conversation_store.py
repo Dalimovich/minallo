@@ -207,6 +207,68 @@ def test_stale_running_request_becomes_recoverable(monkeypatch) -> None:
     assert record["retryable"] is True
 
 
+def test_compiled_policy_by_target_persists_into_request_snapshot(monkeypatch) -> None:
+    """Multi-turn permission persistence (Priority 1) reuses the EXISTING
+    request_snapshot JSONB column -- never a new table. Writing it must
+    compose with an existing answerProvenance write (both land in the
+    same snapshot) and round-trip back out through get_durable_
+    conversation_messages, which is exactly what semantic_intent_
+    orchestrator._reconstruct_persisted_target_actions reads from on the
+    next turn."""
+    db = FakeSupabase()
+    db.rows["ai_chat_conversations"].append({"id": "conversation", "user_id": "user"})
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "user_client_message_id": "u-1", "assistant_client_message_id": "a-1",
+        "partial_answer": "",
+    })
+    db.rows["ai_chat_messages"].extend([
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "u-1",
+         "role": "user", "content": "Don't reveal the final answer for 5b."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "a-1",
+         "role": "assistant", "content": ""},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="running", stage="request_preflight",
+        answer_provenance={"answerMode": "tutor", "groundingMode": "course", "sourceScope": "document"},
+        compiled_policy_by_target={"5b": {"final_answer": "prohibited", "form": "hint"}},
+    )
+
+    stored_snapshot = db.rows["ai_tutor_requests"][0]["request_snapshot"]
+    assert stored_snapshot["policyByTarget"] == {"5b": {"final_answer": "prohibited", "form": "hint"}}
+    assert stored_snapshot["answerProvenance"]["answerMode"] == "tutor"  # composes, doesn't clobber
+
+    rows = conversation_store.get_durable_conversation_messages(user_id="user", conversation_id="conversation")
+    by_id = {row["client_message_id"]: row for row in rows}
+    assert by_id["u-1"]["request_snapshot"]["policyByTarget"]["5b"]["final_answer"] == "prohibited"
+    assert by_id["a-1"]["request_snapshot"]["policyByTarget"]["5b"]["final_answer"] == "prohibited"
+
+
+def test_compiled_policy_by_target_omitted_when_none_leaves_snapshot_untouched(monkeypatch) -> None:
+    """Legacy/OFF-mode parity: a call that never passes compiled_policy_
+    by_target (every existing call site, and the new one whenever
+    execution_policy is None) must not write a policyByTarget key at
+    all."""
+    db = FakeSupabase()
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "assistant_client_message_id": "a-1", "partial_answer": "",
+    })
+    db.rows["ai_chat_messages"].append({
+        "conversation_id": "conversation", "client_message_id": "a-1", "content": "",
+    })
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="running", stage="request_preflight",
+    )
+
+    assert "request_snapshot" not in db.rows["ai_tutor_requests"][0] or \
+        "policyByTarget" not in (db.rows["ai_tutor_requests"][0].get("request_snapshot") or {})
+
+
 def test_sweep_expires_every_abandoned_request_but_leaves_fresh_ones(monkeypatch) -> None:
     db = FakeSupabase()
     stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
