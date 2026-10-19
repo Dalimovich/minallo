@@ -472,6 +472,94 @@ def test_real_eval_recorded_case_explicit_hint_release_keeps_real_objective_and_
     assert action.release.official_solution == "prohibited"
 
 
+def test_KNOWN_GAP_natural_language_subexercise_reference_fails_closed_not_dropped(monkeypatch):
+    """HONEST, documented limitation -- NOT the same root cause as the
+    separate, in-progress fix/exercise-and-quantity-extraction branch
+    (confirmed by reading its diff: that branch's reliability.py/
+    student_intent.py/answer_intent.py changes are entirely about
+    extracting requested ANSWER quantities/symbols like F and M for
+    answer_obligations' grounding/visibility checks -- a completely
+    different consumer from this one, which is about whether a unified-
+    call action's own claimed TARGET LABEL can be trusted).
+
+    Live eval case ``german-multi-quantity-mixed-permission`` (reports/
+    semantic-intent-phase-d-eval-reverify2-2026-10-20.md in the separate
+    eval worktree) reported target '3b' as "not found in compiled
+    actions at all". Reproduced here with the exact recorded message and
+    the LITERAL real model response from that run's ledger: it is not
+    actually dropped. The real model never emitted the canonical label
+    '3b' the corpus expected -- it emitted the free-text target '3 (second
+    part)' (the message itself, "der zweite Teil von Aufgabe 3", never
+    says "3b" either). ``diagnostic_policy.resolve_target_identity``'s
+    grounding check -- deliberately NEVER trusting a model-claimed target
+    without a literal whole-word token match in the student's own
+    message (the exact authority boundary Milestone 3 built to stop an
+    unverified model claim from being treated as authoritative) -- then
+    correctly downgrades THAT specific action to state="unresolved",
+    which compile_policy correctly renders as its own, separate,
+    most-restrictive-fallback action: present, fail-closed, and
+    independent of the sibling target '3' action's permitted policy
+    (never inherits it).
+
+    Fixing this for real would mean teaching the identity gate to
+    recognize a purely natural-language ordinal/part reference ("der
+    zweite Teil", "the second part") as grounding for an arbitrary
+    model-claimed sub-label -- but nothing in this codebase does that
+    mapping today, and building it now would mean trusting the model's
+    own choice of WHICH letter the "second part" is, exactly the kind of
+    unverified model-sourced target claim this gate exists to refuse.
+    That would weaken a documented, deliberate safety boundary, not fix
+    a bug -- out of scope here. The current behavior (fail closed, never
+    silently inherit a sibling's permission) is the safe direction; the
+    system just can't additionally honor the hint-only request for that
+    sub-part without a literal label to ground it against."""
+    response = {
+        "relation": "new_topic", "speechAct": "task_request", "taskFamily": "calculate",
+        "continuesPreviousGoal": False,
+        "resolvedRequest": "Calculate F and M completely for exercise 3, but for the "
+                           "second part of exercise 3, just provide a hint.",
+        "confidence": 0.95, "conversation": "new", "studentGoal": "request_a_calculation_and_a_hint",
+        "responseLanguage": "de",
+        "actions": [
+            {"objective": "solve", "target": "3", "confidence": 0.95, "state": "requested",
+             "prohibited": [],
+             "release": {"final_answer": "permitted", "official_solution": "unspecified",
+                          "explanation_depth": "unspecified", "form": "worked_solution",
+                          "max_steps": None, "max_items": None, "wait_for_student": None}},
+            {"objective": "hint", "target": "3 (second part)", "confidence": 0.9, "state": "requested",
+             "prohibited": [],
+             "release": {"final_answer": "prohibited", "official_solution": "unspecified",
+                          "explanation_depth": "unspecified", "form": "hint",
+                          "max_steps": None, "max_items": None, "wait_for_student": None}},
+        ],
+    }
+    client = _FakeClient(response)
+    _patch_model(monkeypatch, client)
+    message = (
+        "Berechne bitte F und M für Aufgabe 3 vollständig, aber für den "
+        "zweiten Teil von Aufgabe 3 reicht ein Tipp."
+    )
+    dialogue = resolve_dialogue(message, previous_turns=[])
+
+    result = interpret_turn_authoritatively(
+        question=message, dialogue_base=dialogue, preflight_turns=[],
+        user_id="user-1", conversation_id=None,
+        validate_ownership=lambda **_: True, get_messages=lambda **_: [],
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, has_visible_context=False,
+    )
+    by_target = {a.target: a for a in result.execution_policy.actions}
+    main = by_target["3"]
+    assert main.release.final_answer == "permitted"
+    # The ungrounded sub-part claim is NOT silently dropped -- it is
+    # present under the model's own (non-canonical) label.
+    sub_part = by_target["3 (second part)"]
+    assert sub_part.state == "unresolved"
+    # Fail-closed, not a leak: it must never inherit the sibling target's
+    # permitted final_answer just because both mention "Aufgabe 3".
+    assert sub_part.release.final_answer == "prohibited"
+    assert result.execution_policy.needs_clarification is True
+
+
 def test_unverifiable_history_degrades_to_restrictive_never_to_permitted(monkeypatch):
     """A durable conversation_id is supplied (the client believes there
     is history) but the lookup itself fails (DB hiccup, not merely 'no
