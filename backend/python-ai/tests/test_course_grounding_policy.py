@@ -216,6 +216,63 @@ def test_official_solution_request_is_not_hijacked_by_definition_wording() -> No
     assert report.required_evidence == ["official solution method"]
 
 
+def test_ascii_umlaut_solution_request_rejects_unrelated_lecture_chunk() -> None:
+    """ASCII transliteration of German umlauts ("Musterloesung"/"Loesung"
+    for "Musterlösung"/"Lösung") is common (non-umlaut keyboards, some API
+    encodings) and must trigger the same official-solution-authority
+    requirement as the proper-umlaut spelling -- otherwise this recreates
+    the exact DEFINITION-branch authority bypass the precedence fix closed,
+    just reached through a different spelling of the same request."""
+    chunks = [Chunk("c-lecture", "lec", chunk_type="text")]
+    for question in ("Was ist die Musterloesung dafuer?", "Zeig mir die Loesung."):
+        report = build_course_evidence_report(
+            course_id="course-a", searched_document_ids=["lec"], chunks=chunks,
+            doc_names={"lec": "Professor Vorlesung.pdf"}, question=question,
+        )
+        assert not report.sufficient, question
+        assert report.required_evidence == ["official solution method"], question
+
+
+def test_ascii_umlaut_solution_request_is_satisfied_by_a_solution_document() -> None:
+    chunks = [Chunk("c-sol", "sol", chunk_type="text")]
+    report = build_course_evidence_report(
+        course_id="course-a", searched_document_ids=["sol"], chunks=chunks,
+        doc_names={"sol": "Musterloesung.pdf"},
+        question="Was ist die Musterloesung dafuer?",
+    )
+    assert report.sufficient, report.missing_evidence
+
+
+def test_negated_solution_request_does_not_demand_official_solution_authority() -> None:
+    """"Keine Lösung, nur einen Hinweis" / "don't show the solution, explain
+    the formula" are explanation/hint requests, not demands for an official
+    answer -- the explicit negation must suppress the official-solution
+    requirement the bare word "solution"/"Lösung" would otherwise trigger."""
+    formula_chunk = Chunk("c-formula", "sheet", chunk_type="formula")
+    for question in (
+        "Don't show the solution; explain the formula.",
+        "Do not provide the official solution, explain the equation.",
+    ):
+        report = build_course_evidence_report(
+            course_id="course-a", searched_document_ids=["sheet"], chunks=[formula_chunk],
+            doc_names={"sheet": "Formelzettel.pdf"}, question=question,
+        )
+        assert report.required_evidence != ["official solution method"], question
+        assert report.sufficient, (question, report.missing_evidence)
+
+    lecture_chunk = Chunk("c-lecture", "lec", text="lecture giving a hint", chunk_type="text")
+    for question in (
+        "Keine Loesung, nur einen Hinweis.",
+        "Ich moechte keine Musterloesung, nur einen Tipp.",
+    ):
+        report = build_course_evidence_report(
+            course_id="course-a", searched_document_ids=["lec"], chunks=[lecture_chunk],
+            doc_names={"lec": "Professor Vorlesung.pdf"}, question=question,
+        )
+        assert report.required_evidence != ["official solution method"], question
+        assert report.sufficient, (question, report.missing_evidence)
+
+
 def test_cross_course_chunk_is_rejected_before_generation() -> None:
     with pytest.raises(ValueError, match="outside the authorised course"):
         assert_authorised_course_chunks([Chunk("bad", "course-b-doc")], {"course-a-doc"})

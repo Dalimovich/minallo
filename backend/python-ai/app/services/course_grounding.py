@@ -39,9 +39,28 @@ _EXAM_RE = re.compile(r"(?:exam|klausur|prüfung|pruefung)", re.I)
 # An explicit demand for the official/worked solution, independent of
 # whatever else the question also mentions (a formula, a definition-style
 # "what is"). Ported from fix/course-evidence-learning-objective@cc2ff0fa.
+# musterloesung/loesung (ASCII transliteration of ö) are listed as their own
+# literal alternatives rather than folded into a [öo] class, matching
+# infer_document_authority's own musterlösung|musterloesung convention a few
+# lines up -- that function already had to solve this exact ASCII-umlaut gap.
 _SOLUTION_REQUEST_RE = re.compile(
-    r"\b(?:solution|musterl[öo]sung|l[öo]sung(?:en)?|worked.?solution|answer.?key|"
-    r"official\s+answer)\b",
+    r"\b(?:solution|musterl[öo]sung|musterloesung|l[öo]sung(?:en)?|loesung(?:en)?|"
+    r"worked.?solution|answer.?key|official\s+answer)\b",
+    re.I,
+)
+# A negated solution request ("keine Lösung", "don't show the solution") is
+# an explanation/hint request, not a demand for an official answer -- it
+# must not be routed into the strict official-solution-authority
+# requirement. Mirrors the established negation-detection shape already used
+# for prohibited tasks elsewhere (answer_intent.NEGATED_SUMMARY_RE/
+# NEGATED_QUIZ_RE: a negation word within a short, punctuation-bounded
+# window of the target noun) rather than inventing a new convention --
+# scoped locally since those are specific to summary/quiz, not solutions,
+# and this module doesn't otherwise depend on answer_intent.py.
+_NEGATED_SOLUTION_RE = re.compile(
+    r"\b(?:do\s+not|don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:solution|"
+    r"musterl[öo]sung|musterloesung|l[öo]sung(?:en)?|loesung(?:en)?|worked.?solution|"
+    r"answer.?key|official\s+answer)\b",
     re.I,
 )
 # question_routing._FORMULA requires a word boundary right after "gleichung"/
@@ -146,7 +165,7 @@ def build_course_evidence_report(
     required = ["professor definition or course explanation"]
     if AcademicIntent.CALCULATION in intents or AcademicIntent.EXERCISE_SOLUTION in intents:
         required = ["question statement", "applicable formula", "official solution method"]
-    elif _SOLUTION_REQUEST_RE.search(question or ""):
+    elif _SOLUTION_REQUEST_RE.search(question or "") and not _NEGATED_SOLUTION_RE.search(question or ""):
         required = ["official solution method"]
     elif AcademicIntent.DEFINITION in intents:
         required = ["professor definition or convention"]

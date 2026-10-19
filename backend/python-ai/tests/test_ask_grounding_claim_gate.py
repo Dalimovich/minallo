@@ -317,6 +317,70 @@ def test_official_solution_request_not_hijacked_by_lecture_definition_chunk(monk
     assert response.sourceScope == "general_knowledge", response
 
 
+def test_ascii_umlaut_solution_request_not_hijacked_by_lecture_chunk(monkeypatch):
+    """ASCII-transliterated "Musterloesung"/"Loesung" (no umlaut keyboard,
+    some API encodings) must trigger the same official-solution-authority
+    requirement as the proper-umlaut spelling -- otherwise this recreates
+    the DEFINITION-branch authority bypass through a different spelling of
+    the same explicit solution request."""
+    document_id = "00000000-0000-4000-8000-000000000044"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture-ascii", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content defining the formula conceptually.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000013",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Was ist die Musterloesung dafuer?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
+def test_negated_solution_request_grounds_as_hint_from_relevant_lecture_chunk(monkeypatch):
+    """"Keine Musterloesung, nur einen Tipp" is an explicit hint request, not
+    a demand for an official answer -- the bare word "Loesung" must not force
+    the strict official-solution-authority requirement onto a request that
+    explicitly disclaims wanting one, when authorized lecture content
+    actually addresses the question."""
+    document_id = "00000000-0000-4000-8000-000000000045"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture-hint", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content giving a hint about the approach.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000014",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Ich moechte keine Musterloesung, nur einen Tipp.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope == "course_files", response
+    assert response.answer == "This is a real course-grounded answer."
+
+
 def test_explicit_file_selection_with_zero_matching_chunks_returns_honest_unavailable(monkeypatch):
     """A specifically-selected, fully-indexed document whose retrieval genuinely
     returns zero chunks for this question must produce an honest refusal tagged

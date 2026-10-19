@@ -603,6 +603,75 @@ def test_official_solution_request_not_hijacked_by_lecture_definition_chunk(monk
     assert done.get("usedGeneralKnowledge") is True, done
 
 
+def test_ascii_umlaut_solution_request_not_hijacked_by_lecture_chunk(monkeypatch):
+    """SSE-route counterpart of the ASCII-umlaut fix: "Musterloesung" (no
+    umlaut keyboard / some API encodings) must trigger the same official-
+    solution-authority requirement as "Musterlösung" -- otherwise this
+    recreates the DEFINITION-branch authority bypass through a different
+    spelling of the same explicit solution request."""
+    user_id = "00000000-0000-4000-8000-000000000046"
+    document_id = "00000000-0000-4000-8000-000000000047"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture-ascii", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content defining the formula conceptually.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="ascii-umlaut-solution-not-hijacked",
+        document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Was ist die Musterloesung dafuer?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="ascii-umlaut-solution-not-hijacked",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+    assert done.get("usedGeneralKnowledge") is True, done
+
+
+def test_negated_solution_request_grounds_as_hint_from_relevant_lecture_chunk(monkeypatch):
+    """SSE-route counterpart of the negation fix: "keine Musterloesung, nur
+    einen Tipp" is an explicit hint request, not a demand for an official
+    answer -- the bare word "Loesung" must not force the strict official-
+    solution-authority requirement onto a request that explicitly disclaims
+    wanting one, when authorized lecture content actually addresses it."""
+    user_id = "00000000-0000-4000-8000-000000000048"
+    document_id = "00000000-0000-4000-8000-000000000049"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture-hint", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content giving a hint about the approach.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="negated-solution-request",
+        document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Ich moechte keine Musterloesung, nur einen Tipp.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="negated-solution-request",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] == "course_files", done
+    assert done.get("usedGeneralKnowledge") is not True, done
+
+
 def test_long_wellformed_but_unrelated_open_file_page_does_not_ground(monkeypatch):
     """assess_text_quality measures legibility (printable ratio, length, word
     count) ONLY -- it has no relevance component. A long, well-formed PDF
