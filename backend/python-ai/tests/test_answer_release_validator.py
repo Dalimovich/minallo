@@ -7,6 +7,8 @@ the prompt. Also proves the converse: permitted content and off-topic
 numbers never false-positive, and no-restriction policies never
 interfere at all."""
 
+import pytest
+
 from app.services.answer_release_validator import (
     enforce_release_policy,
     enforce_release_policy_per_target,
@@ -246,10 +248,18 @@ def test_parse_rejects_text_with_no_markers_at_all():
 
 
 # ---------------------------------------------------------------------------
-# Priority 2 — enforce_release_policy_per_target. The central deliverable:
-# "give the full answer for 5a, but only a hint for 5b" must come out
-# with 5a's genuine content intact and 5b's replaced, never the whole
-# response blanked, and never 5b's content surviving anywhere.
+# Priority 2, REVISED — enforce_release_policy_per_target. A prior version
+# of this suite proved a "clean split" path: 5a's permitted content kept,
+# only 5b's replaced. That path trusted a model-written [[TARGET: ...]]
+# marker as proof of attribution and a clean regex scan as proof of no
+# cross-target leak -- both wrong (see test_maximally_evasive_smuggling_
+# is_withheld_by_the_disabled_path below, and the module docstring's
+# "REVISED after further review" note). The permissive partial-release
+# path is now DISABLED entirely: every mixed-permission policy with any
+# restricted target falls back to the SAME unconditional whole-response
+# guard as enforce_release_policy, regardless of how cleanly the text
+# sections, because section position was never independent evidence that
+# the content inside belongs to -- or is free of -- a restricted target.
 # ---------------------------------------------------------------------------
 
 def _mixed_5a_permitted_5b_prohibited() -> ExecutionPolicy:
@@ -261,7 +271,12 @@ def _mixed_5a_permitted_5b_prohibited() -> ExecutionPolicy:
     )
 
 
-def test_per_target_clean_split_keeps_permitted_and_withholds_prohibited():
+def test_per_target_clean_split_is_withheld_whole_since_partial_release_is_disabled():
+    """Former 'central deliverable' case ('give 5a the full answer, only a
+    hint for 5b') -- now proves the SAFE outcome: because independently
+    verifying that 5a's section is actually free of 5b's result isn't
+    possible from plain text, this is withheld whole, exactly like any
+    other restricted policy. Neither number reaches the final text."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
@@ -271,35 +286,32 @@ def test_per_target_clean_split_keeps_permitted_and_withholds_prohibited():
         "[[END]]\n"
     )
     decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
-    assert decision.structural is True
-    assert decision.withheld is False  # NOT a whole-response withhold
-    by_target = {s.target: s for s in decision.sections}
-    assert by_target["5a"].withheld is False
-    assert "42 N" in by_target["5a"].text
-    assert by_target["5b"].withheld is True
-    assert "17" not in decision.text  # the prohibited number never reaches the final text
-    assert "42 N" in decision.text  # the permitted content is preserved
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert decision.sections == ()
+    assert "17" not in decision.text
+    assert "42" not in decision.text  # 5a's content is withheld too -- the honest, safe degrade
 
 
-def test_per_target_withholds_restricted_section_even_without_a_leak_pattern_match():
+def test_per_target_withholds_whole_even_without_a_leak_pattern_match():
     """Mirrors enforce_release_policy's own core guarantee
-    (test_enforce_release_policy_withholds_even_without_a_pattern_match),
-    now scoped per-section: a restricted target's section must be
-    withheld UNCONDITIONALLY, never only when a known leak phrase
-    happens to match."""
+    (test_enforce_release_policy_withholds_even_without_a_pattern_match):
+    a restricted target's content must be withheld UNCONDITIONALLY, never
+    only when a known leak phrase happens to match -- now proven at the
+    whole-response level, since the per-section path is disabled."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
-        "The final answer is 42 N.\n"
+        "The beam carries 42 N at the support.\n"  # no recognizable leak SHAPE
         "[[TARGET: 5b]]\n"
         "The beam carries 17 N at the support.\n"  # no recognizable leak SHAPE
         "[[END]]\n"
     )
     decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
-    by_target = {s.target: s for s in decision.sections}
-    assert by_target["5b"].withheld is True
-    assert by_target["5b"].scan.reason == "no_match"  # confirms it wasn't pattern-triggered
+    assert decision.withheld is True
+    assert decision.scan.reason == "no_match"  # confirms it wasn't pattern-triggered
     assert "17" not in decision.text
+    assert "42" not in decision.text
 
 
 def test_per_target_falls_back_whole_on_structurally_invalid_text():
@@ -372,14 +384,15 @@ def test_per_target_delegates_exactly_with_no_policy_at_all():
 
 # ---------------------------------------------------------------------------
 # Cross-target leakage via section markers — adversarial cases (coordinator
-# review). A section marker is a structural fact about WHERE text sits,
-# never independent proof of WHAT it is about. These prove, concretely,
-# which laundered-leak shapes the heuristic in
-# _section_leaks_another_targets_result catches, and — just as
-# importantly — prove one it does NOT catch, so the residual limitation
-# is demonstrated, not just asserted in a docstring. A test where the
-# clean, well-behaved split passes (above) is NOT evidence that
-# cross-target isolation holds; these are.
+# review), now proving the SAFE outcome under the disabled permissive
+# path: a section marker is a structural fact about WHERE text sits,
+# never independent proof of WHAT it is about, so every one of these
+# laundered-leak shapes (and the one that used to slip through
+# completely untouched) is now caught the same way -- trivially, by the
+# unconditional whole-response guard, which never needed to understand
+# the laundering shape at all. That uniformity IS the point: safety no
+# longer depends on a growing, inherently incomplete list of regex
+# shapes catching every evasion.
 # ---------------------------------------------------------------------------
 
 def test_per_target_catches_unlabeled_cross_reference_smuggling():
@@ -387,7 +400,10 @@ def test_per_target_catches_unlabeled_cross_reference_smuggling():
     narrated inside 5a's (permitted) section via a generic 'the second
     part' reference, never naming '5b' and never matching the strict
     final_answer_phrase shape ('the value is 17 N', not 'the answer is
-    17 N') -- the specific gap the broadened heuristic exists to close."""
+    17 N'). Previously relied on a broadened regex heuristic to catch
+    this specifically; now caught unconditionally, with no heuristic
+    needed, because the whole response is withheld whenever ANY target
+    is restricted."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
@@ -406,7 +422,7 @@ def test_per_target_catches_unlabeled_cross_reference_smuggling():
 
 def test_per_target_catches_german_cross_reference_smuggling():
     """Same laundering pattern, German phrasing ('für den zweiten Teil')
-    and no target label at all."""
+    and no target label at all -- caught unconditionally, same as above."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
@@ -424,7 +440,8 @@ def test_per_target_catches_german_cross_reference_smuggling():
 
 def test_per_target_catches_result_table_naming_the_other_target():
     """A table row that DOES name the restricted target directly -- the
-    original (narrower) labeled-leak trigger, still covered."""
+    original (narrower) labeled-leak shape, still caught, now
+    unconditionally rather than via a label-matching heuristic."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
@@ -440,15 +457,17 @@ def test_per_target_catches_result_table_naming_the_other_target():
     assert "17" not in decision.text
 
 
-def test_maximally_evasive_smuggling_with_no_cross_reference_or_label_is_not_caught():
-    """HONEST, documented limitation (not a passing-safety claim): a
-    smuggled value with ZERO connecting language and ZERO mention of the
-    other target's label is textually indistinguishable from 5a's own
-    genuine content, and this heuristic does NOT catch it. This test
-    exists to prove and pin down the residual gap, per the module
-    docstring's own disclosure, not to hide it. Closing this for real
-    would need per-target independent generation or semantic/numeric
-    verification -- neither implemented here."""
+def test_maximally_evasive_smuggling_is_withheld_now_that_partial_release_is_disabled():
+    """THE regression this task exists to fix: a smuggled value with ZERO
+    connecting language and ZERO mention of the other target's label used
+    to be textually indistinguishable from 5a's own genuine content, and
+    the old cross-target-leak heuristic did NOT catch it -- the prohibited
+    '17 N' used to survive into the final text (see git history / the
+    module docstring's "REVISED after further review" note for the prior,
+    unsafe version of this exact test). With the permissive per-target
+    path disabled entirely, this input now gets the SAME safe,
+    unconditional whole-response withhold as every other restricted
+    policy -- there is no longer a heuristic to evade."""
     policy = _mixed_5a_permitted_5b_prohibited()
     text = (
         "[[TARGET: 5a]]\n"
@@ -458,8 +477,26 @@ def test_maximally_evasive_smuggling_with_no_cross_reference_or_label_is_not_cau
         "[[END]]\n"
     )
     decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
-    # Documenting the TRUE current behavior: this is NOT caught, so the
-    # structural split is (wrongly, from a safety standpoint) trusted
-    # and 5b's smuggled "17 N" survives into the final text.
-    assert decision.structural is True
-    assert "17 N" in decision.text
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert decision.sections == ()
+    assert "17 N" not in decision.text
+    assert "42 N" not in decision.text
+
+
+@pytest.mark.parametrize("evasive_text", [
+    # No connecting language, no label, the number simply appended.
+    "[[TARGET: 5a]]\nThe answer to 5a is 42 N. 17 N.\n[[TARGET: 5b]]\nThink about the forces.\n[[END]]\n",
+    # A parenthetical aside, still no label and no cross-reference phrase.
+    "[[TARGET: 5a]]\nThe answer to 5a is 42 N (also 17 N).\n[[TARGET: 5b]]\nThink about the forces.\n[[END]]\n",
+    # The smuggled number placed in 5b's own section but with 5a's label,
+    # inverted from the main case -- still must never survive.
+    "[[TARGET: 5a]]\nThink about the forces.\n[[TARGET: 5b]]\n17 N.\n[[END]]\n",
+])
+def test_equivalent_evasive_variants_never_leak_the_prohibited_number(evasive_text):
+    """Task-required coverage for 'equivalent evasive variants', not just
+    the one worked example above."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    decision = enforce_release_policy_per_target(evasive_text, policy=policy, response_language="en")
+    assert decision.withheld is True
+    assert "17" not in decision.text

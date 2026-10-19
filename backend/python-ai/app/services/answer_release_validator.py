@@ -39,35 +39,34 @@ attempt to surgically redact only the offending target's portion (doing
 that correctly would itself need per-target text attribution this
 plain-text scan does not have).
 
-Priority 2 addendum: ``enforce_release_policy_per_target`` (below)
-structurally VERIFIES which section of the model's reply corresponds to
-which target (``policy_prompt_rendering.render_target_sectioning_
-contract``'s literal ``[[TARGET: ...]]``/``[[END]]`` markers, strictly
-server-side parsed by ``parse_target_sections`` — never a trusted-by-
-default prose heading). What it does NOT and CANNOT verify, stated
-plainly rather than implied: that the CONTENT the model writes under a
-given marker actually belongs to that target. A section boundary is a
-structural fact about where text sits; it is not independent evidence
-about what the text is ABOUT. A model can still (carelessly or
-adversarially) narrate a different, restricted target's result inside
-a permitted target's section — ``_section_leaks_another_targets_
-result`` is a best-effort, deliberately widened heuristic against the
-most likely forms of this (naming the other target's own label, or a
-generic "for the other part..."-style cross-reference next to a bare
-number), and anything it catches falls back to the whole-response
-guard above rather than being trusted. It does NOT catch every form —
-a maximally terse, context-free smuggled value with no connecting
-language and no label mention at all is NOT detected (see this
-module's test file for the adversarial cases proven caught AND the one
-proven NOT caught). Cross-target attribution here is a substantial risk
-reduction over no structural split at all, not a verified guarantee —
-genuinely closing it would need either per-target independent
-generation (so a restricted target's model call never sees/produces
-content for a permitted one) or real semantic/numeric verification,
-neither of which this module implements. It is additive and parallel
-to everything above, not a replacement: it only engages for a genuinely
-mixed-permission policy, and falls straight back to the whole-response
-guard above for anything it cannot verify.
+Priority 2, REVISED after further review: ``enforce_release_policy_
+per_target`` (below) used to take a "clean split" path for a genuinely
+mixed-permission policy — trusting the model's own ``[[TARGET: ...]]``
+markers for WHERE a target's text sits, plus a regex heuristic
+(``_section_leaks_another_targets_result``, now removed) as supposed
+evidence that a permitted section didn't contain a different, restricted
+target's result. Both trust assumptions were wrong: a section marker is
+a structural fact about where text sits, never independent evidence
+about what the text is ABOUT, and a negative/clean regex scan is
+evidence of the ABSENCE of a KNOWN leak shape, never proof a section is
+safe. ``test_maximally_evasive_smuggling_with_no_cross_reference_or_
+label_is_not_caught`` proved a smuggled restricted result with no
+connecting language and no label mention survives that heuristic
+untouched — and nothing about plain-text section splitting can close
+that gap, since there is no independent signal left to check once both
+assumptions are rejected.
+
+Consequently, the permissive partial-release path is DISABLED.
+``enforce_release_policy_per_target`` now always delegates to
+``enforce_release_policy`` (the unconditional whole-response fail-closed
+guard) for every policy, mixed-permission or not. ``parse_target_
+sections`` is kept only as an independently-tested, honestly-scoped
+structural parser (it verifies marker well-formedness, nothing about
+content) — it is no longer wired into any release decision. Genuinely
+safe per-target release, if ever pursued, would need server-controlled
+per-target generation (each target's content independently scoped/
+requested, never self-reported by one model call) rather than more
+regex heuristics over free text; that is not implemented here.
 """
 
 from __future__ import annotations
@@ -75,8 +74,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .policy_compiler import ExecutionPolicy, is_mixed_permission_policy
-from .resolved_student_intent import Action
+from .policy_compiler import ExecutionPolicy
 
 _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("final_answer_phrase", re.compile(
@@ -114,10 +112,6 @@ class ReleaseValidationResult:
 
 def _any_action_prohibits(policy: ExecutionPolicy, field: str) -> bool:
     return any(getattr(action.release, field) == "prohibited" for action in policy.actions)
-
-
-def _action_prohibits_release(action: Action) -> bool:
-    return action.release.final_answer == "prohibited" or action.release.official_solution == "prohibited"
 
 
 def _scan_text(text: str, *, restricted: bool) -> ReleaseValidationResult:
@@ -191,22 +185,16 @@ def enforce_release_policy(
 
 
 # ---------------------------------------------------------------------------
-# Priority 2 — target-bound multi-section release (additive, parallel to
-# the whole-response guard above, never a replacement of it). Central
-# case: "give the full answer for 5a, but only a hint for 5b" — the
-# whole-response guard above is correct-but-incomplete here: it would
-# withhold 5a's permitted content too, just because 5b is restricted.
-#
-# The model is instructed (policy_prompt_rendering.render_target_
-# sectioning_contract) to structure its ENTIRE reply as one ``[[TARGET:
-# <label>]]`` ... ``[[END]]`` block per target. A model-written prose
-# heading is NEVER trusted for attribution on its own (the task's own
-# requirement) — only these literal, strictly-parsed markers are, and
-# ONLY when parsing is unambiguous. Anything structurally invalid to
-# verify — a missing/extra/duplicate section, stray text outside the
-# markers, a target that doesn't match the compiled policy exactly —
-# falls back to the EXISTING unconditional whole-response guard, never
-# to a half-trusted partial parse.
+# Priority 2 — ``parse_target_sections`` is a pure, strict structural
+# parser for the model's ``[[TARGET: <label>]]`` ... ``[[END]]`` markers
+# (``policy_prompt_rendering.render_target_sectioning_contract`` still
+# renders the prompt instruction for them). It verifies ONLY where text
+# sits — a missing/extra/duplicate section, stray text outside the
+# markers, or a target set that doesn't match the compiled policy EXACTLY
+# all return ``None`` rather than a partial/best-effort parse. It is NOT
+# wired into any release decision below (see the module docstring's
+# "REVISED after further review" note) — a clean parse is not, and never
+# was, proof that a section's CONTENT belongs to that target.
 # ---------------------------------------------------------------------------
 
 _TARGET_MARKER_RE = re.compile(r"^\[\[TARGET:\s*(.+?)\s*\]\]\s*$", re.MULTILINE)
@@ -244,86 +232,6 @@ def parse_target_sections(text: str, expected_targets: frozenset[str]) -> dict[s
     return sections
 
 
-# Generic "I'm actually talking about some OTHER part of this exercise"
-# phrasing — deliberately NOT tied to any specific target's literal
-# label, because a model can (adversarially or just carelessly) describe
-# a restricted target's result without ever naming it ("also, for the
-# second part, the value is 17 N"). Bilingual, covers ordinals, "part
-# <letter>", and same-ish/likewise framing in both languages.
-_CROSS_REFERENCE_RE = re.compile(
-    r"\b(?:"
-    r"(?:the\s+)?(?:second|next|other|another|previous|first)\s+part|"
-    r"part\s+[a-z]\b|"
-    r"teil\s+[a-z]\b|(?:zweiten?|n(?:ä|ae)chsten?|anderen?|vorherigen?|ersten?)\s+teil|"
-    r"(?:for\s+)?(?:the\s+)?other\s+exercise|die\s+andere\s+aufgabe|"
-    r"likewise|similarly|the\s+same\s+(?:goes|applies)\s+for|"
-    r"ebenso|genauso|das\s+gleiche\s+gilt"
-    r")\b",
-    re.IGNORECASE,
-)
-# Any bare numeric value with an optional unit — deliberately looser than
-# the strict _LEAK_PATTERNS shapes (which require a "the answer/result
-# is"-style frame): "the value is 17 N" or "17 N" alone would otherwise
-# sail through a permitted section untouched, since that section is
-# never scanned for a leak SHAPE at all (its own target permits release,
-# so _scan_text short-circuits). Combined with _CROSS_REFERENCE_RE below,
-# this is the only thing that can catch a smuggled result that never
-# names the restricted target's own label.
-_BARE_NUMBER_RE = re.compile(r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Z°%]{0,6}\b")
-
-
-def _section_leaks_another_targets_result(
-    section_text: str, *, own_target: str, policy: ExecutionPolicy,
-) -> bool:
-    """Heuristic safety net against the model putting a DIFFERENT,
-    restricted target's result inside this (permitted) section under the
-    wrong heading. Two independent triggers, either is enough:
-
-    1. The section's text matches a known leak SHAPE (``_LEAK_PATTERNS``)
-       AND explicitly names some other target's own label — the most
-       direct sign of a crossed-over/mislabeled answer.
-    2. The section's text mentions ANY generic "other part of this
-       exercise" phrasing (``_CROSS_REFERENCE_RE``, never tied to one
-       specific label) alongside a bare number — catching the laundered
-       case where the model never names the other target at all (e.g.
-       "also, for the second part, the value is 17 N").
-
-    IMPORTANT, stated plainly rather than implied: this is still a
-    text-pattern heuristic, not a verified guarantee. It cannot
-    distinguish "this section's own, genuinely permitted result happens
-    to use ordinary language" from "this section is narrating a
-    different target's restricted result with zero connecting phrase at
-    all" — a maximally terse, context-free smuggled number with no
-    cross-reference language and no mention of the other target's label
-    is NOT caught by either trigger (see test_maximally_evasive_... in
-    this module's test file, which exists specifically to prove and
-    document that residual gap rather than hide it). Both triggers are
-    deliberately widened in favor of MORE false positives (falling back
-    to the safe whole-response withhold) over fewer, per this module's
-    fail-closed philosophy — but neither is a semantic/numeric
-    verification of which result belongs to which target, which no
-    plain-text scan can provide."""
-    other_restricted = {
-        action.target for action in policy.actions
-        if action.target != own_target and _action_prohibits_release(action)
-    }
-    if not other_restricted:
-        return False
-    text = section_text or ""
-    labeled_leak = (
-        any(pattern.search(text) for _name, pattern in _LEAK_PATTERNS)
-        and any(re.search(rf"\b{re.escape(target)}\b", text, re.IGNORECASE) for target in other_restricted)
-    )
-    unlabeled_cross_reference = bool(_CROSS_REFERENCE_RE.search(text) and _BARE_NUMBER_RE.search(text))
-    return labeled_leak or unlabeled_cross_reference
-
-
-def _section_header(action: Action) -> str:
-    if action.target in {"unresolved", "current_request", ""}:
-        return ""
-    return f"**{action.target}:**\n"
-
-
 @dataclass(frozen=True)
 class PerTargetSection:
     target: str
@@ -335,14 +243,12 @@ class PerTargetSection:
 @dataclass(frozen=True)
 class PerTargetReleaseDecision:
     text: str
-    # True ONLY when the whole response was replaced by the safe
-    # fallback (either the structural contract wasn't needed/parseable,
-    # or parsing itself flagged an ambiguity) — exactly the existing
-    # ``ReleaseDecision.withheld`` meaning, so every existing consumer
-    # of that field keeps working unchanged. A per-target PARTIAL
-    # withhold (some sections kept, one redacted) reports ``False`` here
-    # — see ``sections`` for which target(s) were individually withheld.
     withheld: bool
+    # Both ``structural`` and ``sections`` are permanently ``False``/``()``
+    # now that the permissive partial-release path is disabled (see the
+    # module docstring's "REVISED after further review" note) -- kept on
+    # the dataclass only so existing callers (``app/routers/stream.py``'s
+    # SSE event fields) and tests don't need to change shape.
     structural: bool
     scan: ReleaseValidationResult
     sections: tuple[PerTargetSection, ...]
@@ -351,78 +257,21 @@ class PerTargetReleaseDecision:
 def enforce_release_policy_per_target(
     candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
 ) -> PerTargetReleaseDecision:
-    """The target-bound extension of ``enforce_release_policy``: when the
-    compiled policy genuinely needs per-target treatment (``policy_
-    compiler.is_mixed_permission_policy``) AND the model's own text
-    parses unambiguously into the required ``[[TARGET: ...]]`` sections
-    (``parse_target_sections``), each target gets its OWN independent
-    release decision — a prohibited target's section is replaced with
-    the safe withheld text while a permitted target's section is kept
-    verbatim, so one restricted exercise never blanks out an unrelated,
-    permitted one.
-
-    Falls straight through to the EXISTING ``enforce_release_policy``
-    (whole-response, unconditional) for every other case: a single- or
-    uniformly-permitted/prohibited target (nothing to split), a
-    structurally invalid/ambiguous parse, or the cross-target leak
-    heuristic firing — never a half-trusted partial result."""
-    if not is_mixed_permission_policy(policy):
-        decision = enforce_release_policy(candidate_text, policy=policy, response_language=response_language)
-        return PerTargetReleaseDecision(
-            text=decision.text, withheld=decision.withheld, structural=False,
-            scan=decision.scan, sections=(),
-        )
-    assert policy is not None  # is_mixed_permission_policy already guards this
-
-    expected = frozenset(action.target for action in policy.actions)
-    sections = parse_target_sections(candidate_text, expected)
-    if sections is None:
-        decision = enforce_release_policy(candidate_text, policy=policy, response_language=response_language)
-        return PerTargetReleaseDecision(
-            text=decision.text, withheld=decision.withheld, structural=False,
-            scan=decision.scan, sections=(),
-        )
-
-    rendered: list[str] = []
-    per_target: list[PerTargetSection] = []
-    any_withheld = False
-    for action in policy.actions:
-        section_text = sections[action.target]
-        if _section_leaks_another_targets_result(section_text, own_target=action.target, policy=policy):
-            # Ambiguous crossover between sections — never trust a
-            # partial split here, fall back whole.
-            decision = enforce_release_policy(candidate_text, policy=policy, response_language=response_language)
-            return PerTargetReleaseDecision(
-                text=decision.text, withheld=decision.withheld, structural=False,
-                scan=decision.scan, sections=(),
-            )
-        restricted = _action_prohibits_release(action)
-        scan = _scan_text(section_text, restricted=restricted)
-        # Same fail-closed philosophy as enforce_release_policy above,
-        # scoped to this one target: a restricted section is withheld
-        # UNCONDITIONALLY, never only when a known leak pattern happens
-        # to match -- "no_match" is evidence of absence, not proof of a
-        # safe answer (see the whole-response guard's own docstring).
-        # The scan is still attached for observability only.
-        if restricted:
-            any_withheld = True
-            final_text = safe_withheld_answer_text(response_language=response_language)
-            per_target.append(PerTargetSection(target=action.target, text=final_text, withheld=True, scan=scan))
-            rendered.append(_section_header(action) + final_text)
-            continue
-        per_target.append(PerTargetSection(target=action.target, text=section_text, withheld=False, scan=scan))
-        rendered.append(_section_header(action) + section_text)
-
-    aggregate_scan = ReleaseValidationResult(
-        allowed=not any_withheld,
-        reason="structural_partial_withheld" if any_withheld else "structural_clean_release",
-        matched_patterns=tuple(sorted({
-            name for section in per_target for name in section.scan.matched_patterns
-        })),
-    )
+    """DISABLED permissive path -- see the module docstring's "REVISED
+    after further review" note for why. This now always delegates to
+    ``enforce_release_policy`` (the unconditional whole-response
+    fail-closed guard), for every policy shape, mixed-permission or not.
+    No path through this function ever trusts a ``[[TARGET: ...]]``
+    marker, or a clean/negative regex scan, as proof that a section's
+    content actually belongs to -- or is free of another target's
+    restricted result. If independently verifiable per-target isolation
+    is ever built (server-controlled per-target generation, not
+    model-self-reported section markers), it belongs here; until then,
+    this function is a thin, deliberately inert wrapper."""
+    decision = enforce_release_policy(candidate_text, policy=policy, response_language=response_language)
     return PerTargetReleaseDecision(
-        text="\n\n".join(rendered), withheld=False, structural=True,
-        scan=aggregate_scan, sections=tuple(per_target),
+        text=decision.text, withheld=decision.withheld, structural=False,
+        scan=decision.scan, sections=(),
     )
 
 

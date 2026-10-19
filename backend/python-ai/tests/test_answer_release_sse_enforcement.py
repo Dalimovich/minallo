@@ -342,22 +342,29 @@ def test_visual_denial_repair_cannot_bypass_the_release_gate(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Priority 2 — real SSE-level proof for the target-bound, per-section
-# release contract (enforce_release_policy_per_target), reusing this same
-# route harness. The whole-withhold tests above remain untouched and
-# still pass unmodified (see test_restricted_final_answer_never_reaches_
-# the_sse_stream etc.) -- this is additive coverage for the NEW path,
-# satisfying the task's "dedicated SSE-level tests proving equivalent-
-# or-better safety" requirement before relying on it.
+# Priority 2, REVISED — real SSE-level proof that the permissive
+# per-section release path is DISABLED, not merely hardened. A prior
+# version of this suite proved a "clean split" path delivered 5a's
+# content while withholding 5b's. That path trusted a model-written
+# [[TARGET: ...]] marker as proof of attribution and a clean regex scan
+# as proof of no cross-target leak -- both wrong (see test_answer_
+# release_validator.py's test_maximally_evasive_smuggling_is_withheld_
+# now_that_partial_release_is_disabled and the validator module
+# docstring's "REVISED after further review" note). Every mixed-
+# permission + restricted-target case below, clean split or evasive
+# smuggling alike, now gets the SAME unconditional whole-response
+# withhold -- proven over the real SSE stream, not just the validator
+# function in isolation.
 # ---------------------------------------------------------------------------
 
-def test_mixed_permission_structural_split_delivers_5a_and_withholds_5b_over_sse(monkeypatch):
-    """'Give the full answer for 5a, but only a hint for 5b.' The model's
-    draft (mocked, following the sectioning contract it would have been
-    prompted for in real generation) must arrive at the student with 5a's
-    genuine content intact and 5b's final result nowhere in the SSE
-    stream, cache, or save path -- and crucially, NOT as a whole-response
-    withhold (5a's content must survive)."""
+def test_mixed_permission_clean_split_is_still_withheld_whole_over_sse(monkeypatch):
+    """'Give the full answer for 5a, but only a hint for 5b' -- even for
+    this cleanly-sectioned, non-adversarial draft, the permissive partial-
+    release path is disabled, so the WHOLE response is withheld. This is
+    the honest, safety-first outcome this task requires: a mixed-
+    permission request with no independently verifiable target isolation
+    gets the same conservative treatment as any other restricted policy,
+    never a trusted partial split."""
     draft_text = (
         "[[TARGET: 5a]]\n"
         "Working through the moment balance, the final answer is 42 N.\n"
@@ -376,18 +383,52 @@ def test_mixed_permission_structural_split_delivers_5a_and_withholds_5b_over_sse
         from app.config import get_settings
         get_settings.cache_clear()
 
-    assert b"42 N" in body  # 5a's permitted content survives
-    assert b"17 N" not in body and b"17, as derived above" not in body  # 5b's result never reaches the stream
+    assert b"42 N" not in body  # 5a's content is withheld too -- the safe degrade
+    assert b"17 N" not in body and b"17, as derived above" not in body
     assert b'"done": true' in body
-    assert b'"releaseStructural": true' in body
-    assert b'"releaseWithheld": false' in body  # NOT a whole-response withhold
-    assert b'"code": "answer_release_restricted"' not in body  # overall answer is usable, not flagged unsupported
-    # This payload's tutor_mode/open-context combination falls outside
-    # this route's unrelated `cacheable` gate (same documented caveat as
-    # test_permitted_final_answer_still_streams_normally above) -- so an
-    # empty save_calls here proves nothing about release-gate
-    # correctness either way. What it DOES prove, if anything was saved:
-    # 5b's withheld result never made it into the cached payload either.
+    assert b'"releaseStructural": false' in body
+    assert b'"releaseWithheld": true' in body
+    assert b'"code": "answer_release_restricted"' in body
+    assert not save_calls
+    assert b"17 N" not in json.dumps(save_calls).encode()
+    assert b"42 N" not in json.dumps(save_calls).encode()
+
+
+def test_mixed_permission_maximally_evasive_smuggling_is_withheld_over_sse(monkeypatch):
+    """THE specific regression this task fixes, proven at the real SSE
+    level: a smuggled restricted result with ZERO connecting language and
+    ZERO mention of the other target's label -- previously
+    indistinguishable from 5a's own genuine content to the old cross-
+    target-leak heuristic, and previously confirmed (via test_answer_
+    release_validator.py's now-replaced test) to survive into the final
+    text. With the permissive path disabled, this gets the same
+    unconditional whole-response withhold as every other case -- no
+    leaked '17 N' anywhere in the SSE stream, final text, or cache."""
+    draft_text = (
+        "[[TARGET: 5a]]\n"
+        "The answer to 5a is 42 N. 17 N.\n"
+        "[[TARGET: 5b]]\n"
+        "Think about the forces.\n"
+        "[[END]]\n"
+    )
+    conversation_id = "release-gate-mixed-maximally-evasive"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_mixed_5a_permitted_5b_prohibited_policy(),
+        draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"17 N" not in body
+    assert b"42 N" not in body
+    assert b'"done": true' in body
+    assert b'"releaseStructural": false' in body
+    assert b'"releaseWithheld": true' in body
+    assert b'"code": "answer_release_restricted"' in body
+    assert not save_calls
     assert b"17 N" not in json.dumps(save_calls).encode()
 
 
