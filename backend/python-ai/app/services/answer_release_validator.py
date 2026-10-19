@@ -105,6 +105,51 @@ def scan_generated_answer_for_prohibited_release(
     return ReleaseValidationResult(allowed=True, reason="no_match", matched_patterns=())
 
 
+@dataclass(frozen=True)
+class ReleaseDecision:
+    text: str
+    withheld: bool
+    scan: ReleaseValidationResult
+
+
+def enforce_release_policy(
+    candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
+) -> ReleaseDecision:
+    """The actual release gate a generation pipeline must call before ANY
+    candidate answer text (the initial draft, a repair/rewrite output, or
+    a buffered flush) reaches the student, is cached, or is persisted.
+
+    Deliberately conservative, for the reason this module's own docstring
+    explains at length: ``scan_generated_answer_for_prohibited_release``'s
+    "no_match" is evidence of the ABSENCE of a KNOWN leak shape, never
+    proof that a free-form answer is SAFE — a model can leak a prohibited
+    final result in a phrasing this (or any finite) pattern list has never
+    seen. So when ANY target's compiled policy prohibits final_answer or
+    official_solution, this withholds the candidate text UNCONDITIONALLY
+    and returns the same safe, honest fallback regardless of what the scan
+    finds — fail-closed, not "fail open unless a known pattern matches".
+    This is also deliberately whole-response, not per-target: this module
+    cannot reliably attribute a span of free text to one specific target
+    when a policy covers several (see the module docstring's "Missing
+    target attribution" note), so a restriction on ANY target withholds
+    the WHOLE candidate rather than risk leaking a different, unrestricted
+    target's content mixed in with it.
+
+    The scan result is still computed and returned (as ``.scan``) purely
+    for observability/diagnostics (did a KNOWN leak shape additionally
+    show up in the withheld draft) — it is NOT what this function's
+    ``withheld`` decision is conditioned on.
+    """
+    scan = scan_generated_answer_for_prohibited_release(candidate_text, policy=policy)
+    if scan.reason in ("no_policy", "no_restriction"):
+        return ReleaseDecision(text=candidate_text, withheld=False, scan=scan)
+    return ReleaseDecision(
+        text=safe_withheld_answer_text(response_language=response_language),
+        withheld=True,
+        scan=scan,
+    )
+
+
 def safe_withheld_answer_text(*, response_language: str) -> str:
     """What the student sees instead, when the scan withholds a response.
     Honest about WHY (their own request), never a generic error — this is
@@ -123,7 +168,9 @@ def safe_withheld_answer_text(*, response_language: str) -> str:
 
 
 __all__ = [
+    "ReleaseDecision",
     "ReleaseValidationResult",
+    "enforce_release_policy",
     "safe_withheld_answer_text",
     "scan_generated_answer_for_prohibited_release",
 ]

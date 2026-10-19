@@ -6540,7 +6540,13 @@ async def _prepare_ask_stream_response(
                     _await_decoration_results()
                     evt["learningRecommendations"] = decoration_results["learningRecommendations"]
                     evt["visualAids"] = decoration_results["visualAids"]
-                    if multi_item_result.evidence:
+                    # Gated off for a policy-restricted target: this step can
+                    # YIELD completed_text directly, before the centralized
+                    # release gate below ever runs — a multi-item coverage
+                    # "fallback_generator" call is a fresh, unchecked model
+                    # generation that must never reach the student ahead of
+                    # (or instead of) the release decision.
+                    if multi_item_result.evidence and not policy_has_release_restriction:
                         original_text = "".join(full_text_buf)
                         completed_text, coverage = ensure_complete_answer(
                             multi_item_result,
@@ -6633,7 +6639,20 @@ async def _prepare_ask_stream_response(
                         item.obligation_type for item in draft_contract.obligations
                         if not item.satisfied
                     ]
-                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
+                    # Semantic Student Intent Layer Phase D (completion): a
+                    # policy-restricted target is handled EXCLUSIVELY by the
+                    # centralized release gate below (search
+                    # "policy_has_release_restriction:" in this function) —
+                    # the grounded-repair attempt below produces fresh
+                    # free-form model text that has never been checked
+                    # against the release policy, so it must never run (and
+                    # therefore never get a chance to yield its output
+                    # directly, bypassing the gate) for a restricted target.
+                    if (
+                        (semantic_mismatches or obligation_failures)
+                        and high_risk_validation
+                        and not policy_has_release_restriction
+                    ):
                         from ..services.visual_repair import (  # noqa: WPS433
                             generate_grounded_repair_sync,
                         )
@@ -6691,7 +6710,49 @@ async def _prepare_ask_stream_response(
                         open_file_images=open_file_images,
                         open_file_context=payload.openFileContext,
                     )
-                    if (
+                    # Semantic Student Intent Layer Phase D (completion) —
+                    # the ONE centralized release-safety decision point.
+                    # Deliberately the FIRST branch in this chain: a
+                    # policy-restricted target must never reach any of the
+                    # repair/rewrite/verification branches below, because
+                    # every one of them can produce fresh free-form model
+                    # text (a regrounded draft, a repaired visual-denial
+                    # answer, a language rewrite) that has never itself
+                    # been checked against the release policy — "fixing"
+                    # a restricted draft is not the same as clearing it for
+                    # release. See answer_release_validator.enforce_
+                    # release_policy's docstring for why this withholds
+                    # unconditionally rather than trusting a clean regex
+                    # scan. This also protects the final buffer flush
+                    # ("elif buffer_answer_output" below): when this branch
+                    # is taken, buffer_answer_output is always true too
+                    # (policy_has_release_restriction is one of its ORs),
+                    # so the original, unvalidated streamed tokens in
+                    # pending_token_events are discarded here, never
+                    # flushed.
+                    if policy_has_release_restriction:
+                        from ..services.answer_release_validator import (  # noqa: WPS433
+                            enforce_release_policy,
+                        )
+                        release_decision = enforce_release_policy(
+                            "".join(full_text_buf),
+                            policy=execution_policy,
+                            response_language=language_context.requested_response_language,
+                        )
+                        full_text_buf.clear()
+                        full_text_buf.append(release_decision.text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": release_decision.text}, ensure_ascii=False))
+                        evt["releaseWithheld"] = release_decision.withheld
+                        evt["releaseWithheldReason"] = release_decision.scan.reason
+                        evt["answerMode"] = "release_withheld"
+                        evt["confidence"] = "low"
+                        evt["unsupported"] = True
+                        evt["recovery"] = {
+                            "code": "answer_release_restricted",
+                            "action": "ask_for_hint_or_permission",
+                        }
+                    elif (
                         (semantic_mismatches or obligation_failures)
                         and high_risk_validation
                         and not pending_index_with_page_evidence
@@ -7037,6 +7098,13 @@ async def _prepare_ask_stream_response(
                         and not wrong_language
                         and not critical_reject
                         and not unsafe_model_downgrade
+                        # A policy-restricted, withheld answer must never
+                        # feed its (possibly leaked) verifiedResults into
+                        # durable tutor_state either — that would persist
+                        # the exact numeric final answer this turn just
+                        # withheld from the student, via a different
+                        # channel than the SSE text.
+                        and not policy_has_release_restriction
                         and _verification_is_cacheable(
                             verification_payload,
                             task_type=task_type,

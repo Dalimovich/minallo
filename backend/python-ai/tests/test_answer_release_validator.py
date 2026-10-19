@@ -8,6 +8,7 @@ numbers never false-positive, and no-restriction policies never
 interfere at all."""
 
 from app.services.answer_release_validator import (
+    enforce_release_policy,
     scan_generated_answer_for_prohibited_release,
 )
 from app.services.policy_compiler import ExecutionPolicy
@@ -101,6 +102,69 @@ def test_unrelated_numbers_do_not_false_positive():
     text = "See equation 4.2 on page 12 for the general method; apply it to this exercise."
     result = scan_generated_answer_for_prohibited_release(text, policy=_policy())
     assert result.allowed is True
+
+
+# ---------------------------------------------------------------------------
+# enforce_release_policy — the actual fail-closed decision stream.py's
+# generation cascade calls. Critically different from the scan above: it
+# must withhold a restricted candidate even when NO known leak pattern
+# matches at all, because "no_match" is not proof of a safe answer (see
+# the module's own docstring).
+# ---------------------------------------------------------------------------
+
+def test_enforce_release_policy_withholds_even_without_a_pattern_match():
+    """The exact defect this function exists to close: a clean-looking
+    draft with no recognizable leak SHAPE (no "final answer is", no
+    boxed{}, no table, no verification framing) must still be withheld
+    when the policy prohibits it -- scan_generated_answer_for_prohibited_
+    release alone would wrongly call this 'allowed' (see
+    test_hint_only_response_with_no_leak_is_allowed above, which is
+    correct for the low-level scanner but must never be read as "safe to
+    release")."""
+    text = "The beam carries 42 N at the support."
+    decision = enforce_release_policy(text, policy=_policy(), response_language="en")
+    assert decision.withheld is True
+    assert decision.text != text
+    assert "withholding" in decision.text.lower()
+    # The underlying scan is still computed (for observability) and, as
+    # expected, found no known pattern -- proving the withholding here
+    # came from the restriction itself, not from a pattern match.
+    assert decision.scan.reason == "no_match"
+    assert decision.scan.allowed is True
+
+
+def test_enforce_release_policy_withholds_a_known_leak_pattern_too():
+    text = "The final answer is 42 N."
+    decision = enforce_release_policy(text, policy=_policy(), response_language="en")
+    assert decision.withheld is True
+    assert decision.text != text
+    assert decision.scan.allowed is False
+    assert decision.scan.reason == "matched_leak_pattern"
+
+
+def test_enforce_release_policy_passes_through_when_permitted():
+    text = "The final answer is 42 N."
+    decision = enforce_release_policy(
+        text, policy=_policy(final_answer="permitted"), response_language="en",
+    )
+    assert decision.withheld is False
+    assert decision.text == text
+    assert decision.scan.reason == "no_restriction"
+
+
+def test_enforce_release_policy_passes_through_with_no_policy_at_all():
+    text = "The final answer is 42 N."
+    decision = enforce_release_policy(text, policy=None, response_language="en")
+    assert decision.withheld is False
+    assert decision.text == text
+    assert decision.scan.reason == "no_policy"
+
+
+def test_enforce_release_policy_is_language_aware():
+    decision_de = enforce_release_policy(
+        "Das Ergebnis ist 42 N.", policy=_policy(), response_language="de",
+    )
+    assert "zurück" in decision_de.text.lower()
 
 
 def test_safe_withheld_answer_text_is_language_aware():
