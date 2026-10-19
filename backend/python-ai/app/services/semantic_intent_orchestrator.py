@@ -33,11 +33,11 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .dialogue_state import DialogueResolution, TurnRelation
-from .diagnostic_policy import adapt_deterministic_intent
+from .diagnostic_policy import adapt_deterministic_intent, resolve_target_identity
 from .grounding_contract import AccessResolutionReason, ResolvedDocumentAccess
 from .policy_compiler import ExecutionPolicy, compile_policy
 from .resolved_student_intent import ResolvedStudentIntent, TurnLedger
@@ -106,6 +106,40 @@ def build_authoritative_turn_ledger(
     return TurnLedger.build(conversation_id=conversation_id, turns=turns)
 
 
+def _apply_target_identity_gate(
+    intent: ResolvedStudentIntent,
+    *,
+    original_message: str,
+    verified_active_question: str | None,
+    authorized_exercise_labels: frozenset[str],
+) -> ResolvedStudentIntent:
+    """Closes the demonstrated-not-fixed gap: a unified-call action whose
+    `target` cannot be grounded in trusted context (the deterministic
+    layer's own resolved active_question, a caller-supplied authorized
+    label set, or a literal token in the student's own message — see
+    ``diagnostic_policy.resolve_target_identity``'s docstring for exactly
+    what counts) downgrades to ``state="unresolved"`` here, before
+    ``compile_policy`` ever runs. Reuses the SAME grounding check the
+    deterministic path (``adapt_deterministic_intent``) already applies
+    — this is the one place both paths were missing a shared gate, not a
+    second, divergent authorization system.
+
+    ``state="unresolved"`` is never a silent drop or a guess: ``compile_
+    policy`` already knows how to turn it into the most restrictive
+    per-field fallback for that specific target (prohibited/hint/etc.),
+    exactly the same degrade-safely contract every other untrusted claim
+    in this pipeline gets."""
+    gated_actions = tuple(
+        action if resolve_target_identity(
+            action.target, original_message=original_message,
+            verified_active_question=verified_active_question,
+            authorized_exercise_labels=authorized_exercise_labels,
+        ) else replace(action, state="unresolved")
+        for action in intent.actions
+    )
+    return replace(intent, actions=gated_actions)
+
+
 def interpret_turn_authoritatively(
     *,
     question: str,
@@ -144,7 +178,20 @@ def interpret_turn_authoritatively(
         )
         if unified is not None:
             dialogue = unified.dialogue
-            resolved_intent = unified.intent
+            # Milestone 3's named blocking gate, closed here: a unified-
+            # call action's claimed `target` is not itself proof of
+            # anything (see unified_semantic_call.validate_unified_call_
+            # output's own docstring and test_unified_semantic_call.py's
+            # test_unresolved_target_identity_claim_is_not_checked_here,
+            # which demonstrates — on purpose — that neither that
+            # validator nor validate_action_provenance checks it). This
+            # is the authority boundary where it must be closed, before
+            # compile_policy ever sees the claim.
+            resolved_intent = _apply_target_identity_gate(
+                unified.intent, original_message=question,
+                verified_active_question=dialogue.active_question,
+                authorized_exercise_labels=authorized_exercise_labels,
+            )
             unified_call_succeeded = True
 
     if resolved_intent is None:
