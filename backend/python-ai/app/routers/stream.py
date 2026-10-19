@@ -3164,6 +3164,7 @@ async def ask_stream_endpoint(
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
                         "turn_resolution": turn_resolution,
+                        "execution_policy": execution_policy,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -3250,6 +3251,7 @@ async def ask_stream_endpoint(
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
                         "turn_resolution": turn_resolution,
+                        "execution_policy": execution_policy,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -3341,6 +3343,7 @@ async def ask_stream_endpoint(
                             "documents": preflight_documents,
                             "execution_plan": execution_plan,
                             "turn_resolution": turn_resolution,
+                            "execution_policy": execution_policy,
                             "grounding_request": grounding_request,
                             "grounding_resolution": grounding_resolution,
                         },
@@ -3844,6 +3847,10 @@ async def _prepare_ask_stream_response(
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
+    # Semantic Student Intent Layer Phase C — the authoritative
+    # ExecutionPolicy computed in the preflight (ENABLED mode + both new
+    # flags only; None for every other request, byte-identical to today).
+    execution_policy = (preflight or {}).get("execution_policy")
     observer.event(
         "turn_resolved", taskFamily=dialogue.task_family.value,
         relation=dialogue.relation.value, speechAct=dialogue.speech_act.value,
@@ -4605,6 +4612,12 @@ async def _prepare_ask_stream_response(
             f"{get_settings().openai_generate_model}|"
             f"{get_settings().openai_generate_model_strong}"
         ),
+        # Semantic Student Intent Layer Phase C — two requests with the
+        # same question but different compiled per-target constraints
+        # (e.g. "hint only for 5b" vs no restriction) must never share a
+        # cached answer. None for every request without an active
+        # authoritative policy — byte-identical to today's key.
+        "policy_hash": execution_policy.policy_hash if execution_policy else None,
     }
     from ..services.question_routing import build_question_routing_plan  # noqa: WPS433
     cache_routing_plan = build_question_routing_plan(question)
@@ -6448,6 +6461,7 @@ async def _prepare_ask_stream_response(
                 + grounded_request_context.prompt_overlay()
                 + explanation_plan.prompt_overlay()
             ),
+            execution_policy=execution_policy,
         )
         for chunk_bytes in gen_iter:
             for ready_event in _poll_decoration_ready():

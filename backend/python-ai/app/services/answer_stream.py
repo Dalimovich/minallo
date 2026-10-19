@@ -1633,6 +1633,7 @@ def stream_answer(
     dialogue_overlay: str | None = None,
     grounding_policy: str = "strict_course",
     request_plan_overlay: str | None = None,
+    execution_policy: Any | None = None,
 ) -> Generator[bytes, None, None]:
     """Generator that yields SSE byte chunks. Pluggable into FastAPI's
     StreamingResponse with media_type='text/event-stream'.
@@ -1879,6 +1880,15 @@ def stream_answer(
     system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE + SHARED_ANSWER_INTEGRITY_RULES
     if request_plan_overlay:
         system_prompt += request_plan_overlay
+    if execution_policy is not None:
+        # Semantic Student Intent Layer Phase C — additive, same "+="
+        # overlay pattern as request_plan_overlay/dialogue_overlay above.
+        # Renders ""/no-op when the policy carries no actual restriction
+        # (render_execution_policy_overlay's own contract) — passing
+        # execution_policy=None (the default, every existing caller)
+        # produces byte-identical output to omitting this parameter.
+        from .policy_prompt_rendering import render_execution_policy_overlay  # noqa: WPS433
+        system_prompt += render_execution_policy_overlay(execution_policy)
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file (e.g. a chapter the student didn't select).
