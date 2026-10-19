@@ -797,3 +797,81 @@ def test_enabled_mode_diagnostic_still_scheduled_and_non_authoritative(monkeypat
         assert diagnostic_logs[0][1] == "enabled"
     finally:
         get_settings.cache_clear()
+
+
+def test_concurrency_cap_bounds_real_underlying_db_calls_not_just_tasks(monkeypatch):
+    """The essential invariant is a bound on REAL in-flight diagnostic
+    database operations, not merely on tracked asyncio.Task objects.
+    run_in_threadpool has no cooperative cancellation, so a naive
+    implementation that lets its own coroutine return at the timeout mark
+    frees its tracked capacity slot while the real underlying thread keeps
+    running -- successive waves of requests arriving faster than the
+    real work finishes can then push real concurrent DB calls well past
+    the intended cap even though tracked tasks never exceed it (caught by
+    this exact test against an earlier version of this fix: 3 waves of 4
+    requests each measured 12 real concurrent calls against a cap of 4).
+    Counts real concurrency via a counter incremented at the START of the
+    mocked synchronous call and decremented only when it ACTUALLY
+    returns -- independent of whether the diagnostic gave up waiting on
+    it already."""
+    from app.config import get_settings
+    from app.services import conversation_store
+
+    monkeypatch.setenv("SEMANTIC_INTENT_MODE", "shadow")
+    get_settings.cache_clear()
+    try:
+        router = _setup(monkeypatch)
+        monkeypatch.setattr(router, "_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS", 0.03)
+        monkeypatch.setattr(conversation_store, "validate_durable_conversation", lambda **_: True)
+
+        real_inflight = 0
+        peak_real_inflight = 0
+
+        def _slow_real_db_call(**_kwargs):
+            nonlocal real_inflight, peak_real_inflight
+            real_inflight += 1
+            peak_real_inflight = max(peak_real_inflight, real_inflight)
+            time.sleep(0.1)  # slower than the 0.03s timeout above
+            real_inflight -= 1
+            return []
+
+        monkeypatch.setattr(
+            conversation_store, "get_durable_conversation_messages_for_diagnostics", _slow_real_db_call,
+        )
+
+        peak_tracked = 0
+
+        async def _run():
+            nonlocal peak_tracked
+            # 3 waves, 0.04s apart (slower than the 0.03s timeout, faster
+            # than the 0.1s real underlying call) -- if the cap only
+            # bounded tracked coroutines, each wave would add MAX_CONCURRENT
+            # more real calls on top of still-running earlier ones.
+            for wave in range(3):
+                for i in range(router._SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT):
+                    router._schedule_semantic_intent_diagnostic_policy(
+                        question=QUESTION, dialogue=object(), computed_intent=None,
+                        user_id="00000000-0000-4000-8000-000000000099",
+                        conversation_id=f"00000000-0000-4000-8000-0000000{wave}{i:02d}",
+                        has_unverified_context=False, mode="shadow",
+                    )
+                peak_tracked = max(peak_tracked, len(router._semantic_intent_diagnostic_tasks))
+                await asyncio.sleep(0.04)
+
+            deadline = time.monotonic() + 2.0
+            while real_inflight > 0 and time.monotonic() < deadline:
+                await asyncio.sleep(0.01)
+            pending = list(router._semantic_intent_diagnostic_tasks)
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        asyncio.run(_run())
+
+        assert peak_tracked <= router._SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT
+        assert peak_real_inflight <= router._SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT, (
+            f"real concurrent underlying DB calls ({peak_real_inflight}) exceeded the "
+            f"intended cap ({router._SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT}) -- the cap "
+            "does not bound real underlying work, only how many coroutines are awaited"
+        )
+    finally:
+        get_settings.cache_clear()

@@ -531,13 +531,26 @@ async def _run_semantic_intent_diagnostic_policy(
     re-validates ownership (redundant: build_turn_ledger_from_durable_
     store already does so immediately before calling it) and joins
     ai_tutor_requests, whose fields nothing in the diagnostic path reads.
-    That cut the diagnostic from 4 sequential DB round trips to 2. The
-    remaining timeout still bounds how long a single diagnostic can
-    occupy one of the limited concurrent background slots; it can't
-    cancel the underlying thread's queries once started (run_in_
-    threadpool has no cooperative cancellation), so a timed-out lookup
-    still runs to completion in the background with its result discarded
-    — a real, accepted limitation, not a full fix.
+    That cut the diagnostic from 4 sequential DB round trips to 2.
+
+    run_in_threadpool has no cooperative cancellation: the real worker
+    thread keeps running past the timeout regardless. A review found
+    that the FIRST version of this background-task change only let the
+    timeout abandon the *await*, while this coroutine (and therefore its
+    tracked capacity slot in _schedule_semantic_intent_diagnostic_policy)
+    returned immediately — so _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT
+    bounded how many coroutines were being waited on, not how many real
+    underlying DB calls were actually in flight; a deterministic test
+    (3 waves of 4 requests, each slower than the timeout) measured 12
+    real concurrent underlying calls against a cap of 4. Fixed by
+    `asyncio.shield`-ing the real call so the timeout only stops US from
+    waiting on it, then awaiting it to completion anyway (result still
+    discarded, same timeout log) so this coroutine's own lifetime — and
+    so its capacity slot — lasts exactly as long as the real DB work
+    does. This is still a real, accepted limitation (the thread itself
+    can't be cooperatively cancelled), but the capacity bound this module
+    advertises now actually holds for real underlying operations, not
+    just for tracked coroutines.
     """
     from ..services.conversation_store import (  # noqa: WPS433
         get_durable_conversation_messages_for_diagnostics, validate_durable_conversation,
@@ -545,27 +558,36 @@ async def _run_semantic_intent_diagnostic_policy(
     from ..services.diagnostic_policy import compile_diagnostic_policy  # noqa: WPS433
 
     started = time.perf_counter()
+    db_call = asyncio.ensure_future(
+        run_in_threadpool(
+            lambda: compile_diagnostic_policy(
+                message=question,
+                dialogue=dialogue,
+                student_intent=computed_intent,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                has_unverified_context=has_unverified_context,
+                validate_ownership=validate_durable_conversation,
+                get_messages=get_durable_conversation_messages_for_diagnostics,
+            )
+        )
+    )
     try:
         _policy, record = await asyncio.wait_for(
-            run_in_threadpool(
-                lambda: compile_diagnostic_policy(
-                    message=question,
-                    dialogue=dialogue,
-                    student_intent=computed_intent,
-                    user_id=user_id,
-                    conversation_id=conversation_id,
-                    has_unverified_context=has_unverified_context,
-                    validate_ownership=validate_durable_conversation,
-                    get_messages=get_durable_conversation_messages_for_diagnostics,
-                )
-            ),
-            timeout=_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
+            asyncio.shield(db_call), timeout=_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         log.warning(
             "semantic_intent_diagnostic_policy_timeout mode=%s timeout_s=%.1f",
             mode, _SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
         )
+        # Discard the eventual result, but keep this coroutine (and its
+        # tracked capacity slot) alive until the real underlying call
+        # actually finishes -- see the docstring above.
+        try:
+            await db_call
+        except (Exception, asyncio.CancelledError):  # noqa: BLE001
+            pass
         return
     except Exception:  # noqa: BLE001 — diagnostic-only; must degrade silently
         log.warning("semantic_intent_diagnostic_policy_failed mode=%s", mode, exc_info=True)
