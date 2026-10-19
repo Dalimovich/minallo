@@ -18,13 +18,21 @@ step by step):
 
 1. Platform policy (hard filter, applied first) — ``PLATFORM_RULES`` below.
 2. Within one target: a later turn wins over an earlier one, but only for
-   the fields it actually touched. "Later" is decided by ``turn_ledger``
-   order when a ledger is supplied (the authoritative source — immune to
-   both a forged/mismatched ``changed_by_turn`` label and to actions being
-   handed in out of chronological order), falling back to the actions'
-   own position in ``intent.actions`` only when no ledger is supplied at
-   all (a real, documented trust assumption — see
-   ``compile_policy``'s docstring).
+   the fields it actually touched. "Later" is decided EXCLUSIVELY by a
+   verified ``TurnLedger`` (``resolved_student_intent.TurnLedger`` — the
+   authoritative source, immune to both a forged/mismatched
+   ``changed_by_turn`` label and to actions being handed in out of
+   chronological order). Decision 2 hardening: this module never falls
+   back to raw ``intent.actions`` list order to decide cross-turn
+   recency — "do not rely on the order in which model-produced actions
+   appear." When no ledger is supplied at all (or a labeled marker
+   doesn't resolve against one that IS supplied), the cross-turn claim
+   is treated as unverifiable and degrades to rule 3's restrictive
+   tie-break instead of an override — "preserve known constraints and
+   clarify safely" rather than guess. A genuinely single-turn request
+   that never references history at all is unaffected either way (see
+   ``compile_policy``'s ``history_mode="none"`` for the explicit
+   history-free case).
 3. Within one turn + one target: per field, prohibited beats permitted
    beats unspecified (more generally: the more restrictive value wins) —
    UNLESS ``intent.conversation`` is ``"correction"``/``"rejection"``, in
@@ -62,12 +70,13 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass, replace
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Literal, Sequence
 
 from .resolved_student_intent import (
     Action,
     ReleaseConstraints,
     ResolvedStudentIntent,
+    TurnLedger,
     validate_intent_provenance,
 )
 
@@ -193,34 +202,50 @@ def _turn_marker(action: Action) -> str:
     return _CURRENT_TURN_MARKER
 
 
-def _resolve_turn_rank(marker: str, turn_ledger: dict[str, Any] | None) -> tuple[Any, bool]:
+def _resolve_turn_rank(
+    marker: str, turn_ledger: TurnLedger | None, conversation_id: str | None,
+) -> tuple[Any, bool]:
     """Returns ``(rank, forged)``. ``rank`` is a comparable recency value
     (higher = later) or ``None`` when it can't be verified. ``forged`` is
-    True only when a ledger WAS supplied and this specific, non-default
-    marker could not be found in it — an active, checkable claim that
-    turned out to be false, not merely "we have no information". Without
-    any ledger, nothing gets a rank at all (not even the current-turn
-    sentinel) — callers fall back to raw input order uniformly instead of
-    mixing a "verified" sentinel with unverifiable labels."""
-    if not turn_ledger:
+    True only when a ledger WAS supplied (even an explicitly empty one —
+    see ``TurnLedger.empty``) and this specific, non-default marker could
+    not be resolved against it (including a cross-conversation mismatch —
+    see ``TurnLedger.resolve``) — an active, checkable claim that turned
+    out false, not merely "we have no information". Without ANY ledger
+    (``turn_ledger is None`` — "history was never consulted", distinct
+    from an explicitly empty one), nothing gets a rank at all, not even
+    the current-turn sentinel."""
+    if turn_ledger is None:
         return None, False
     if marker == _CURRENT_TURN_MARKER:
         return float("inf"), False
-    if marker in turn_ledger:
-        return list(turn_ledger.keys()).index(marker), False
+    turn = turn_ledger.resolve(marker, conversation_id=conversation_id)
+    if turn is not None:
+        return turn.sequence, False
     return None, True
 
 
 def _decide_field_override(
     *, old_marker: str, old_index: int, new_marker: str, new_index: int,
-    turn_ledger: dict[str, Any] | None, correction_mode: bool,
+    turn_ledger: TurnLedger | None, conversation_id: str | None, correction_mode: bool,
 ) -> str:
     """Returns ``"override"`` (new value replaces old), ``"keep"`` (old
-    value stands), or ``"tie_break"`` (more-restrictive of the two wins).
-    Recency is never taken from the markers' raw string content or from
-    blind input order when a ledger can settle it — see module docstring
-    for why (forged/mismatched ``changed_by_turn``, historical actions
-    handed in out of chronological order)."""
+    value stands), ``"tie_break"`` (same-turn, no correction signal —
+    more-restrictive wins), ``"tie_break_forged"`` (a ledger WAS supplied
+    but this marker doesn't resolve against it — an active, checkable
+    claim that turned out false), or ``"tie_break_missing_history"`` (no
+    ledger was supplied at all, so a real cross-turn claim can't be
+    verified either way).
+
+    Decision 2 hardening: recency is NEVER taken from the markers' raw
+    string content, and NEVER from blind input-list order, in any branch
+    — "do not rely on the order in which model-produced actions appear."
+    A verified ``turn_ledger`` is the only source of true recency; without
+    one, an unresolvable cross-turn claim degrades to the SAME
+    restrictive tie-break a forged one would get (never an override, never
+    a position-based guess) — "preserve known constraints and clarify
+    safely instead" rather than silently trusting whichever action
+    happened to come later in the list."""
     if old_marker == new_marker:
         # Same turn. An explicit correction/rejection turn means the LATER
         # clause in the message is the student overriding themselves
@@ -229,19 +254,20 @@ def _decide_field_override(
         # genuinely ambiguous same-turn conflict with no "which one is the
         # correction" signal, so the safe default (rule 3) applies.
         return "override" if correction_mode else "tie_break"
-    old_rank, old_forged = _resolve_turn_rank(old_marker, turn_ledger)
-    new_rank, new_forged = _resolve_turn_rank(new_marker, turn_ledger)
+    old_rank, old_forged = _resolve_turn_rank(old_marker, turn_ledger, conversation_id)
+    new_rank, new_forged = _resolve_turn_rank(new_marker, turn_ledger, conversation_id)
     if new_forged:
-        return "tie_break"
+        return "tie_break_forged"
     if old_forged:
-        return "override"
+        return "override"  # what we're up against turned out to be forged; the new, unforged claim stands on its own
     if old_rank is not None and new_rank is not None:
         return "override" if new_rank > old_rank else "keep"
-    # No ledger (or neither marker resolves in it): fall back to the
-    # caller's own ordering of intent.actions as the chronology signal.
-    # This is a real trust assumption — documented on compile_policy — a
-    # supplied, verified turn_ledger is what removes it.
-    return "override" if new_index > old_index else "keep"
+    # Neither side has a verifiable rank: this only happens when no ledger
+    # was supplied at all (a supplied ledger — even empty — always gives
+    # the current-turn sentinel a rank, so one of old_rank/new_rank would
+    # already be set above). History was required to settle this
+    # cross-turn claim and is unavailable — never fall back to list order.
+    return "tie_break_missing_history"
 
 
 def _state_rank(state: str) -> int:
@@ -256,10 +282,13 @@ class _MergedTarget:
     primary: Action | None
     prohibited_objectives: frozenset[str]
     contested_fields: frozenset[str]
+    missing_history_fields: frozenset[str]
+    forged_turn_fields: frozenset[str]
 
 
 def _merge_group(
-    target: str, group: list[Action], turn_ledger: dict[str, Any] | None, correction_mode: bool,
+    target: str, group: list[Action], turn_ledger: TurnLedger | None,
+    conversation_id: str | None, correction_mode: bool,
 ) -> _MergedTarget:
     """Merge every action targeting ``target`` into one working dict of
     field values, applying rules 2 and 3.
@@ -279,6 +308,8 @@ def _merge_group(
     provenance: list = []
     trusted: list[Action] = []
     untrusted: list[Action] = []
+    missing_history_fields: set[str] = set()
+    forged_turn_fields: set[str] = set()
 
     for action in group:
         provenance.extend(action.provenance)
@@ -300,14 +331,18 @@ def _merge_group(
             decision = _decide_field_override(
                 old_marker=touched_turn[field], old_index=touched_index[field],
                 new_marker=turn, new_index=idx,
-                turn_ledger=turn_ledger, correction_mode=correction_mode,
+                turn_ledger=turn_ledger, conversation_id=conversation_id, correction_mode=correction_mode,
             )
             if decision == "override":
                 working[field] = new_val
                 touched_turn[field] = turn
                 touched_index[field] = idx
-            elif decision == "tie_break":
+            elif decision in ("tie_break", "tie_break_forged", "tie_break_missing_history"):
                 working[field] = more_restrictive(field, working[field], new_val)
+                if decision == "tie_break_forged":
+                    forged_turn_fields.add(field)
+                elif decision == "tie_break_missing_history":
+                    missing_history_fields.add(field)
             # "keep": old value stands, nothing to do.
 
     # Untrusted attempts are surfaced, never silently merged: which fields
@@ -342,6 +377,7 @@ def _merge_group(
     return _MergedTarget(
         working=working, final_state=final_state, provenance=tuple(provenance),
         primary=primary, prohibited_objectives=all_prohibited, contested_fields=frozenset(contested_fields),
+        missing_history_fields=frozenset(missing_history_fields), forged_turn_fields=frozenset(forged_turn_fields),
     )
 
 
@@ -394,25 +430,69 @@ def _is_broader(candidate: str, target: str) -> bool:
 def compile_policy(
     intent: ResolvedStudentIntent,
     *,
-    turn_ledger: dict[str, Any] | None = None,
+    turn_ledger: TurnLedger | None = None,
+    conversation_id: str | None = None,
+    history_mode: Literal["ledger", "none"] = "ledger",
     viewer_context: dict[str, Any] | None = None,
     platform_rules: Sequence[PlatformRule] = PLATFORM_RULES,
 ) -> ExecutionPolicy:
     """Compile one ``ResolvedStudentIntent`` into one ``ExecutionPolicy``.
 
-    Trust assumption when no ``turn_ledger`` is supplied: ``intent.
-    actions`` is assumed to already be in chronological order, and that
-    ordering (not the actions' ``changed_by_turn``/provenance labels) is
-    what decides "later turn wins" for rule 2. Supplying a real
-    ``turn_ledger`` removes this assumption entirely (recency then comes
-    from the ledger, immune to both a forged label and to actions being
-    handed in out of order) — Milestone 3 should decide whether a ledger
-    is made mandatory at the real call site rather than optional here.
+    ``turn_ledger`` (Decision 2 hardening) must be a
+    ``resolved_student_intent.TurnLedger`` — the one trusted constructor,
+    built by the application boundary from ITS OWN persistence, never
+    accepted blindly from model output or client-supplied turn metadata.
+    A plain dict/mapping is no longer accepted here at all.
+
+    Three distinct states, all meaningfully different:
+
+    - ``turn_ledger=None`` (default, ``history_mode="ledger"``): history
+      was never consulted. If the intent turns out to reference a
+      cross-turn claim anyway (a ``changed_by_turn``/``conversation_turn``
+      marker competing against another for the same field), that claim
+      is UNVERIFIABLE — it degrades to the restrictive tie-break (rule 3),
+      never an override, never a position-based guess, and the affected
+      target is flagged ``needs_clarification`` ("preserve known
+      constraints and clarify safely instead" rather than silently
+      trusting whichever action happened to come later in the list).
+    - ``turn_ledger=TurnLedger.empty(conversation_id)``: history WAS
+      checked and there genuinely isn't any (e.g. this really is turn 1).
+      A labeled marker still won't resolve against it (nothing to find),
+      but this is the ordinary "turn doesn't exist" outcome, not a
+      "we never checked" one — see the forged-vs-missing-history audit
+      tags below for how a caller can tell them apart after the fact.
+    - ``turn_ledger=TurnLedger.build(...)`` with real turns: recency comes
+      from the ledger's own verified chronology, immune to both a
+      forged/mismatched ``changed_by_turn`` label and to actions being
+      handed to this function out of chronological order.
+
+    ``history_mode="none"`` is the explicit history-free mode for a truly
+    single-turn request: it forces ``turn_ledger`` to ``None`` regardless
+    of what was passed, so a caller who already knows there is no prior
+    conversation doesn't need to construct an empty ledger just to say so.
+
+    ``conversation_id``, when supplied, must match the ledger's own
+    stamped ``conversation_id`` for any turn to resolve — a turn_id that
+    is real in a DIFFERENT conversation's ledger never resolves here
+    (cross-conversation turn forgery).
+
+    Known, intentionally out-of-scope limitation (see
+    docs/semantic-intent-milestone-3-plan.md): a verified turn_id proves
+    the ACTION's claim to reference that turn, not that every individual
+    ``ReleaseConstraints`` field it carries was truly instructed at that
+    turn — the schema has one ``provenance``/``changed_by_turn`` per
+    action, not per field. Full field-level provenance would need a
+    schema change, not a compiler change; this module does not attempt
+    one and does not pretend otherwise.
     """
+    if history_mode == "none":
+        turn_ledger = None
     # Provenance validation happens first: an action whose provenance
     # fails to resolve against the trusted ledger/context downgrades to
     # state="unresolved" right here, before any merging.
-    intent = validate_intent_provenance(intent, turn_ledger=turn_ledger, viewer_context=viewer_context)
+    intent = validate_intent_provenance(
+        intent, turn_ledger=turn_ledger, conversation_id=conversation_id, viewer_context=viewer_context,
+    )
     correction_mode = intent.conversation in {"correction", "rejection"}
 
     audit: list[str] = []
@@ -421,7 +501,7 @@ def compile_policy(
         groups.setdefault(action.target, []).append(action)
 
     merged_by_target: dict[str, _MergedTarget] = {
-        target: _merge_group(target, group, turn_ledger, correction_mode)
+        target: _merge_group(target, group, turn_ledger, conversation_id, correction_mode)
         for target, group in groups.items()
     }
 
@@ -467,8 +547,12 @@ def compile_policy(
     for target, merged in merged_by_target.items():
         working = merged.working
         state = merged.final_state
-        if state == "unresolved" or merged.contested_fields:
+        if state == "unresolved" or merged.contested_fields or merged.missing_history_fields or merged.forged_turn_fields:
             needs_clarification = True
+        for field in merged.missing_history_fields:
+            audit.append(f"missing_required_history:{target}:{field}")
+        for field in merged.forged_turn_fields:
+            audit.append(f"forged_turn_marker:{target}:{field}")
         for field in FIELD_NAMES:
             if not is_unset_field(field, working[field]):
                 continue
@@ -498,7 +582,7 @@ def compile_policy(
         if a.objective in {"official_solution", "exam_practice", "review_student_solution"}
     }))
 
-    response_language, response_language_reason = _resolve_response_language(intent, turn_ledger)
+    response_language, response_language_reason = _resolve_response_language(intent, turn_ledger, conversation_id)
 
     platform_policy_applied = tuple(applied_platform + audit)
     policy_hash = compute_policy_hash(
@@ -525,21 +609,21 @@ def compile_policy(
 
 
 def _resolve_response_language(
-    intent: ResolvedStudentIntent, turn_ledger: dict[str, Any] | None,
+    intent: ResolvedStudentIntent, turn_ledger: TurnLedger | None, conversation_id: str | None,
 ) -> tuple[str, str]:
     """``response_language`` is carried verbatim from the resolved intent
     (Milestone 3's interpreter is what actually decides it); the compiler
     only explains WHY, for the audit trail — distinguishing an explicit
     instruction persisted from an earlier turn (via a validated
-    ``conversation_turn`` origin) from one set on the current turn."""
-    if turn_ledger:
+    ``conversation_turn`` origin, resolved against the trusted
+    ``TurnLedger``) from one set on the current turn."""
+    if turn_ledger is not None:
         for action in intent.actions:
             for origin in action.provenance:
-                if (
-                    origin.kind == "conversation_turn"
-                    and origin.turn_id in turn_ledger
-                    and turn_ledger[origin.turn_id].get("response_language") == intent.response_language
-                ):
+                if origin.kind != "conversation_turn" or not origin.turn_id:
+                    continue
+                turn = turn_ledger.resolve(origin.turn_id, conversation_id=conversation_id)
+                if turn is not None and turn.data.get("response_language") == intent.response_language:
                     return intent.response_language, f"persisted_explicit_instruction:turn={origin.turn_id}"
     if intent.response_language:
         return intent.response_language, "explicit_current_turn"

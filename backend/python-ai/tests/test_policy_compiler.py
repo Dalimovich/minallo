@@ -24,7 +24,12 @@ from app.services.resolved_student_intent import (
     Origin,
     ReleaseConstraints,
     ResolvedStudentIntent,
+    TurnLedger,
 )
+
+
+def _ledger(turns, conversation_id="conv-1"):
+    return TurnLedger.build(conversation_id=conversation_id, turns=turns)
 
 
 def _intent(actions, *, conversation="new", message="x", response_language="en",
@@ -117,9 +122,15 @@ def test_case_d_target_scoped_prohibition_not_global():
 # ---------------------------------------------------------------------------
 
 def test_case_e_later_turn_lifts_earlier_turns_prohibition():
+    """Decision 2 hardening: a cross-turn correction now REQUIRES a
+    verified turn_ledger — recency is never taken from raw list order.
+    Both actions carry an explicit, ledger-verifiable changed_by_turn
+    (turn 1's own action included — "no label" is reserved for the
+    literal live/current turn, never for a historical one, exactly to
+    avoid the ambiguity a bare sentinel would create here)."""
     turn1_action = Action(
         objective="explain", target="F", state="requested",
-        release=ReleaseConstraints(final_answer="prohibited"),
+        release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1"),
     )
     turn2_actions = [
         Action(objective="solve", target="F", state="requested",
@@ -130,11 +141,33 @@ def test_case_e_later_turn_lifts_earlier_turns_prohibition():
     assert turn2_actions[0].release.changed_by_turn == "turn-2"  # fixture sanity
     intent = _intent([turn1_action, *turn2_actions], conversation="correction",
                       message="Now calculate F and M")
-    policy = compile_policy(intent)
+    ledger = _ledger({"turn-1": {}, "turn-2": {}})
+    policy = compile_policy(intent, turn_ledger=ledger)
     by_target = {a.target: a.release for a in policy.actions}
     assert by_target["F"].final_answer == "permitted"  # prohibition lifted
     assert by_target["M"].final_answer == "permitted"  # new, separate quantity action
     assert len(policy.actions) == 2
+    assert policy.needs_clarification is False  # a verified correction needs no clarification
+
+
+def test_case_e_without_a_verified_ledger_the_correction_is_not_trusted():
+    """Same scenario, but with NO turn_ledger supplied at all: Decision 2
+    forbids falling back to list order for a cross-turn claim, so the
+    earlier, already-established prohibition must be preserved instead of
+    silently lifted — and the target flagged for clarification."""
+    turn1_action = Action(
+        objective="explain", target="F", state="requested",
+        release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1"),
+    )
+    turn2_action = Action(
+        objective="solve", target="F", state="requested",
+        release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-2"),
+    )
+    intent = _intent([turn1_action, turn2_action], conversation="correction")
+    policy = compile_policy(intent)  # no turn_ledger
+    assert policy.actions[0].release.final_answer == "prohibited"  # preserved, not lifted
+    assert policy.needs_clarification is True
+    assert any(e.startswith("missing_required_history:F:final_answer") for e in policy.platform_policy_applied)
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +239,7 @@ def test_case_i_explicit_language_instruction_current_turn():
 
 
 def test_case_i_language_instruction_persists_via_conversation_turn_provenance():
-    turn_ledger = {"turn-1": {"response_language": "en"}}
+    turn_ledger = _ledger({"turn-1": {"response_language": "en"}})
     intent = _intent([
         Action(
             objective="answer_subquestion", target="2", state="requested",
@@ -256,7 +289,7 @@ def test_case_k_unresolved_fallback_is_per_field_not_a_global_safe_mode():
 # ---------------------------------------------------------------------------
 
 def test_case_l_valid_turn_id_inherits_the_real_constraint():
-    turn_ledger = {"turn-1": {"text": "no final result for 5a"}}
+    turn_ledger = _ledger({"turn-1": {"text": "no final result for 5a"}})
     intent = _intent([
         Action(
             objective="solve", target="5b", state="requested",
@@ -279,7 +312,7 @@ def test_case_l_forged_turn_id_never_produces_a_guess():
             provenance=(Origin(kind="conversation_turn", turn_id="turn-FORGED"),),
         ),
     ], conversation="follow_up", message="and the next one?")
-    policy = compile_policy(intent, turn_ledger={"turn-1": {"text": "no final result for 5a"}})
+    policy = compile_policy(intent, turn_ledger=_ledger({"turn-1": {"text": "no final result for 5a"}}))
     action = policy.actions[0]
     assert action.state == "unresolved"
     assert action.state not in {"requested", "prohibited"}
@@ -533,7 +566,7 @@ def test_provenance_all_valid_required_not_any_valid(monkeypatch=None):
             ),
         ),
     ], message="x")
-    policy = compile_policy(intent, turn_ledger={"turn-1": {}})
+    policy = compile_policy(intent, turn_ledger=_ledger({"turn-1": {}}))
     assert policy.actions[0].state == "unresolved"
     assert policy.actions[0].release.final_answer == "prohibited"
 
@@ -589,7 +622,7 @@ def test_compatible_same_turn_restrictions_on_different_fields_both_survive():
 
 
 def test_earlier_turn_prohibition_then_verified_later_turn_permission():
-    ledger = {"turn-1": {}, "turn-2": {}}
+    ledger = _ledger({"turn-1": {}, "turn-2": {}})
     intent = _intent([
         Action(objective="solve", target="5", state="requested",
                release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1")),
@@ -605,7 +638,7 @@ def test_historical_actions_out_of_chronological_order_use_ledger_not_list_posit
     chronologically EARLIER action (turn-1) is listed SECOND. A compiler
     that trusted raw list position would let the earlier one win just
     because it came last in the list. The ledger must override that."""
-    ledger = {"turn-1": {}, "turn-2": {}}
+    ledger = _ledger({"turn-1": {}, "turn-2": {}})
     intent = _intent([
         Action(objective="solve", target="5", state="requested",
                release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-2")),
@@ -618,7 +651,7 @@ def test_historical_actions_out_of_chronological_order_use_ledger_not_list_posit
 
 
 def test_forged_changed_by_turn_cannot_override_a_verified_trusted_value():
-    ledger = {"turn-1": {}}
+    ledger = _ledger({"turn-1": {}})
     intent = _intent([
         Action(objective="solve", target="5", state="requested",
                release=ReleaseConstraints(final_answer="prohibited")),
@@ -629,13 +662,19 @@ def test_forged_changed_by_turn_cannot_override_a_verified_trusted_value():
     # The forged marker can't prove it's later, so the tie-break applies —
     # prohibited (more restrictive) wins over the forged override attempt.
     assert policy.actions[0].release.final_answer == "prohibited"
+    assert any(e.startswith("forged_turn_marker:5:final_answer") for e in policy.platform_policy_applied)
+    assert policy.needs_clarification is True
 
 
-def test_mismatched_changed_by_turn_does_not_silently_override_without_a_ledger_fallback_still_safe():
-    """When NO ledger is supplied at all, the compiler falls back to list
-    order (a documented trust assumption) rather than trusting the label's
-    content — a mismatched/unverifiable label does not get special
-    treatment over a correctly-ordered list."""
+def test_mismatched_changed_by_turn_without_any_ledger_preserves_the_known_constraint():
+    """Decision 2 hardening (this REPLACES the old, incorrect expectation
+    that a no-ledger call falls back to list order): when NO ledger is
+    supplied at all, an unverifiable label claiming to be "later" must
+    NOT override — the compiler preserves the already-established,
+    trusted value instead of granting the labeled action's permission,
+    and flags the target for clarification. List position is never
+    consulted for this decision, regardless of which action is listed
+    first."""
     intent = _intent([
         Action(objective="solve", target="5", state="requested",
                release=ReleaseConstraints(final_answer="prohibited")),
@@ -643,9 +682,90 @@ def test_mismatched_changed_by_turn_does_not_silently_override_without_a_ledger_
                release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-claims-to-be-later")),
     ])
     policy = compile_policy(intent)  # no turn_ledger supplied
-    # No ledger to verify against: falls back to list order, and the
-    # labeled action IS later in the list, so it legitimately overrides.
-    assert policy.actions[0].release.final_answer == "permitted"
+    assert policy.actions[0].release.final_answer == "prohibited"  # preserved, not granted
+    assert policy.needs_clarification is True
+    assert any(e.startswith("missing_required_history:5:final_answer") for e in policy.platform_policy_applied)
+
+
+def test_missing_required_history_case_is_order_independent():
+    """Same scenario with the labeled action listed FIRST instead of
+    second — must behave identically (never position-dependent)."""
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-claims-to-be-later")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+    ])
+    policy = compile_policy(intent)
+    assert policy.actions[0].release.final_answer == "prohibited"
+    assert policy.needs_clarification is True
+
+
+# ===========================================================================
+# Decision 2: explicit history-free mode, empty-vs-None ledger, and
+# cross-conversation turn forgery, exercised at the compile_policy level.
+# ===========================================================================
+
+def test_history_mode_none_forces_history_free_even_if_a_ledger_is_passed():
+    """A truly single-turn request can explicitly opt out of history
+    entirely — history_mode="none" ignores any turn_ledger passed in,
+    rather than silently trusting it."""
+    ledger = _ledger({"turn-1": {}, "turn-99-forged": {}})
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-99-forged")),
+    ])
+    policy = compile_policy(intent, turn_ledger=ledger, history_mode="none")
+    # Even though "turn-99-forged" really is in the supplied ledger,
+    # history_mode="none" means it is never consulted at all.
+    assert policy.actions[0].release.final_answer == "prohibited"
+    assert policy.needs_clarification is True
+
+
+def test_explicitly_empty_ledger_differs_from_no_ledger_in_the_audit_trail():
+    """An explicitly empty TurnLedger ("checked, found nothing") and
+    turn_ledger=None ("never checked") produce the SAME safe outcome for
+    an unresolvable label, but a DIFFERENT audit tag — forged (ledger
+    present, not found) vs. missing-required-history (no ledger at all)."""
+    action_pair = [
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-99")),
+    ]
+    policy_no_ledger = compile_policy(_intent(action_pair))
+    policy_empty_ledger = compile_policy(_intent(action_pair), turn_ledger=TurnLedger.empty("conv-1"))
+
+    assert policy_no_ledger.actions[0].release.final_answer == "prohibited"
+    assert policy_empty_ledger.actions[0].release.final_answer == "prohibited"
+    assert any(e.startswith("missing_required_history:5:final_answer") for e in policy_no_ledger.platform_policy_applied)
+    assert any(e.startswith("forged_turn_marker:5:final_answer") for e in policy_empty_ledger.platform_policy_applied)
+    assert not any(e.startswith("forged_turn_marker:") for e in policy_no_ledger.platform_policy_applied)
+    assert not any(e.startswith("missing_required_history:") for e in policy_empty_ledger.platform_policy_applied)
+
+
+def test_cross_conversation_turn_forgery_is_rejected_even_with_a_real_ledger():
+    """A turn_id that is REAL in the supplied ledger still must not
+    authorize anything when the ledger's own conversation_id doesn't
+    match the request's authenticated conversation_id."""
+    ledger = _ledger({"turn-1": {}, "turn-2": {}}, conversation_id="conv-A")
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-2")),
+    ])
+    # Correct conversation_id: the ledger verifies normally, turn-2 wins.
+    policy_same_conv = compile_policy(intent, turn_ledger=ledger, conversation_id="conv-A")
+    assert policy_same_conv.actions[0].release.final_answer == "permitted"
+
+    # Wrong conversation_id: neither turn_id resolves against this ledger
+    # at all — both markers degrade to unverifiable, never an override.
+    policy_cross_conv = compile_policy(intent, turn_ledger=ledger, conversation_id="conv-B")
+    assert policy_cross_conv.actions[0].release.final_answer == "prohibited"
+    assert policy_cross_conv.needs_clarification is True
 
 
 # ===========================================================================

@@ -15,6 +15,7 @@ from app.services.resolved_student_intent import (
     Origin,
     ReleaseConstraints,
     ResolvedStudentIntent,
+    TurnLedger,
     derive_primary_task,
     derive_prohibited_tasks,
     validate_action_provenance,
@@ -64,13 +65,13 @@ def test_current_message_origin_missing_span_is_invalid():
 
 
 def test_conversation_turn_origin_resolves_against_ledger():
-    ledger = {"turn-1": {"text": "no final result for 5a"}}
+    ledger = TurnLedger.build(conversation_id="conv-1", turns={"turn-1": {"text": "no final result for 5a"}})
     origin = Origin(kind="conversation_turn", turn_id="turn-1")
     assert validate_origin(origin, original_message="x", turn_ledger=ledger) is True
 
 
 def test_conversation_turn_origin_forged_turn_id_is_invalid():
-    ledger = {"turn-1": {"text": "no final result for 5a"}}
+    ledger = TurnLedger.build(conversation_id="conv-1", turns={"turn-1": {"text": "no final result for 5a"}})
     origin = Origin(kind="conversation_turn", turn_id="turn-forged-does-not-exist")
     assert validate_origin(origin, original_message="x", turn_ledger=ledger) is False
 
@@ -78,6 +79,33 @@ def test_conversation_turn_origin_forged_turn_id_is_invalid():
 def test_conversation_turn_origin_without_ledger_is_invalid():
     origin = Origin(kind="conversation_turn", turn_id="turn-1")
     assert validate_origin(origin, original_message="x", turn_ledger=None) is False
+
+
+def test_conversation_turn_origin_cross_conversation_is_invalid():
+    """A turn_id that is REAL in a different conversation's ledger must
+    never resolve just because the string matches — the ledger is stamped
+    conv-A, but the request is authenticated as conv-B."""
+    ledger = TurnLedger.build(conversation_id="conv-A", turns={"turn-1": {}})
+    origin = Origin(kind="conversation_turn", turn_id="turn-1")
+    assert validate_origin(
+        origin, original_message="x", turn_ledger=ledger, conversation_id="conv-B",
+    ) is False
+    # Same ledger, correct conversation_id: resolves fine.
+    assert validate_origin(
+        origin, original_message="x", turn_ledger=ledger, conversation_id="conv-A",
+    ) is True
+
+
+def test_conversation_turn_origin_explicitly_empty_ledger_is_invalid_but_distinct_from_none():
+    """Checked, found nothing (empty TurnLedger) still fails to resolve —
+    same boolean outcome as turn_ledger=None at THIS layer. The behavioral
+    distinction between "never checked" and "checked, empty" is made by
+    policy_compiler's missing-required-history handling, not here."""
+    empty_ledger = TurnLedger.empty("conv-1")
+    origin = Origin(kind="conversation_turn", turn_id="turn-1")
+    assert validate_origin(origin, original_message="x", turn_ledger=empty_ledger) is False
+    assert empty_ledger.turns == ()
+    assert empty_ledger is not None  # distinguishable object, not a sentinel None
 
 
 def test_viewer_metadata_origin_resolves_against_trusted_context():
@@ -94,7 +122,9 @@ def test_viewer_metadata_origin_unresolvable_ref_is_invalid():
 
 def test_unresolved_origin_is_never_valid():
     origin = Origin(kind="unresolved")
-    assert validate_origin(origin, original_message="x", turn_ledger={}, viewer_context={}) is False
+    assert validate_origin(
+        origin, original_message="x", turn_ledger=TurnLedger.empty("conv-1"), viewer_context={},
+    ) is False
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +139,7 @@ def test_action_with_forged_turn_id_downgrades_to_unresolved():
         provenance=(Origin(kind="conversation_turn", turn_id="turn-forged"),),
     )
     validated = validate_action_provenance(
-        action, original_message="x", turn_ledger={"turn-1": {}},
+        action, original_message="x", turn_ledger=TurnLedger.build(conversation_id="conv-1", turns={"turn-1": {}}),
     )
     assert validated.state == "unresolved"
 
@@ -121,7 +151,7 @@ def test_action_with_valid_turn_id_keeps_its_state():
         provenance=(Origin(kind="conversation_turn", turn_id="turn-1"),),
     )
     validated = validate_action_provenance(
-        action, original_message="x", turn_ledger={"turn-1": {}},
+        action, original_message="x", turn_ledger=TurnLedger.build(conversation_id="conv-1", turns={"turn-1": {}}),
     )
     assert validated.state == "requested"
 
@@ -147,7 +177,7 @@ def test_action_with_one_valid_and_one_invalid_origin_downgrades_to_unresolved()
             Origin(kind="current_message", span=(0, 3)),
         ),
     )
-    validated = validate_action_provenance(action, original_message="abcdef", turn_ledger={})
+    validated = validate_action_provenance(action, original_message="abcdef", turn_ledger=TurnLedger.empty("conv-1"))
     assert validated.state == "unresolved"
 
 
@@ -160,7 +190,8 @@ def test_action_with_all_valid_origins_keeps_its_state():
         ),
     )
     validated = validate_action_provenance(
-        action, original_message="abcdef", turn_ledger={"turn-1": {}},
+        action, original_message="abcdef",
+        turn_ledger=TurnLedger.build(conversation_id="conv-1", turns={"turn-1": {}}),
     )
     assert validated.state == "requested"
 
@@ -176,7 +207,7 @@ def test_validate_intent_provenance_applies_to_every_action():
         conversation="new", references=None, response_language="en",
         teaching=None, trust=None,
     )
-    validated = validate_intent_provenance(intent, turn_ledger={})
+    validated = validate_intent_provenance(intent, turn_ledger=TurnLedger.empty("conv-1"))
     assert validated.actions[0].state == "unresolved"
     assert validated.actions[1].state == "requested"
 
