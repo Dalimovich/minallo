@@ -2,7 +2,9 @@
 (Milestone 4 Phase C)."""
 
 from app.services.policy_compiler import ExecutionPolicy
-from app.services.policy_prompt_rendering import render_execution_policy_overlay
+from app.services.policy_prompt_rendering import (
+    render_execution_policy_overlay, render_target_sectioning_contract,
+)
 from app.services.resolved_student_intent import Action, ReleaseConstraints
 
 
@@ -101,3 +103,52 @@ def test_wait_for_student_rendered():
     )])
     overlay = render_execution_policy_overlay(policy)
     assert "wait for the student" in overlay
+
+
+# ---------------------------------------------------------------------------
+# Priority 2 — the target-sectioning structural contract. Only needed
+# (policy_compiler.is_mixed_permission_policy) when the policy has 2+
+# targets AND they genuinely disagree on final_answer/official_solution.
+# ---------------------------------------------------------------------------
+
+def test_sectioning_contract_absent_for_single_target():
+    policy = _policy([Action(objective="solve", target="5a", release=ReleaseConstraints(final_answer="prohibited"))])
+    assert render_target_sectioning_contract(policy) == ""
+    assert "[[TARGET" not in render_execution_policy_overlay(policy)
+
+
+def test_sectioning_contract_absent_when_uniformly_permitted():
+    policy = _policy([
+        Action(objective="solve", target="5a", release=ReleaseConstraints(final_answer="permitted")),
+        Action(objective="solve", target="5b", release=ReleaseConstraints(final_answer="permitted")),
+    ])
+    assert render_target_sectioning_contract(policy) == ""
+
+
+def test_sectioning_contract_absent_when_uniformly_prohibited():
+    policy = _policy([
+        Action(objective="solve", target="5a", release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5b", release=ReleaseConstraints(final_answer="prohibited")),
+    ])
+    assert render_target_sectioning_contract(policy) == ""
+
+
+def test_sectioning_contract_present_and_names_both_targets_when_mixed():
+    """The central Priority 2 case: 5a permitted, 5b prohibited."""
+    policy = _policy([
+        Action(objective="solve", target="5a", release=ReleaseConstraints(final_answer="permitted")),
+        Action(objective="hint", target="5b", release=ReleaseConstraints(final_answer="prohibited", form="hint")),
+    ])
+    contract = render_target_sectioning_contract(policy)
+    assert "[[TARGET: 5a]]" in contract
+    assert "[[TARGET: 5b]]" in contract
+    assert "[[END]]" in contract
+    # The header prose itself mentions "[[END]]" by name (describing the
+    # contract), so compare against its LAST occurrence -- the actual
+    # terminator -- not whichever mention comes first.
+    assert contract.index("[[TARGET: 5a]]") < contract.index("[[TARGET: 5b]]") < contract.rindex("[[END]]")
+    # render_execution_policy_overlay includes it automatically, after the
+    # per-target instruction lines (existing tests already pin that those
+    # lines are matched by next(...), i.e. found first).
+    overlay = render_execution_policy_overlay(policy)
+    assert "[[TARGET: 5a]]" in overlay and "[[TARGET: 5b]]" in overlay

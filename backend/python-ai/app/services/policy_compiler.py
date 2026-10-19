@@ -697,9 +697,28 @@ def extract_persistable_restrictions(policy: ExecutionPolicy) -> dict[str, dict[
     return out
 
 
+def is_mixed_permission_policy(policy: ExecutionPolicy | None) -> bool:
+    """True only when a genuinely per-target split is both POSSIBLE (2+
+    targets) and NECESSARY (some target's ``final_answer``/``official_
+    solution`` is prohibited while at least one OTHER target's is not) --
+    the exact shape a target-bound, multi-section answer contract exists
+    for (see ``answer_release_validator.enforce_release_policy_per_
+    target`` and ``policy_prompt_rendering.render_target_sectioning_
+    contract``). A uniformly-permitted or uniformly-prohibited policy,
+    or a single-target one, is left entirely to the existing whole-
+    response guard -- there is nothing to usefully split."""
+    if policy is None or len(policy.actions) < 2:
+        return False
+    restricted = {
+        action.target for action in policy.actions
+        if action.release.final_answer == "prohibited" or action.release.official_solution == "prohibited"
+    }
+    return bool(restricted) and len(restricted) < len(policy.actions)
+
+
 __all__ = [
     "COMPILER_VERSION", "FIELD_NAMES", "POLICY_VERSION", "RESTRICTIVENESS_RANK",
     "ExecutionPolicy", "PLATFORM_RULES", "PlatformRule", "UNSET_SENTINELS",
     "compile_policy", "compute_policy_hash", "extract_persistable_restrictions",
-    "is_unset_field", "more_restrictive",
+    "is_mixed_permission_policy", "is_unset_field", "more_restrictive",
 ]

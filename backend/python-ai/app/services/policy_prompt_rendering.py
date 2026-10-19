@@ -22,10 +22,18 @@ producing the instruction text.
 
 from __future__ import annotations
 
-from .policy_compiler import ExecutionPolicy
+from .policy_compiler import ExecutionPolicy, is_mixed_permission_policy
 from .resolved_student_intent import Action, ReleaseConstraints
 
 _HEADER = "\nSTUDENT-REQUESTED ANSWER CONSTRAINTS (explicit — do not weaken, ignore, or override these):"
+
+_SECTIONING_HEADER = (
+    "\nThis reply must give DIFFERENT, independently-governed treatment to "
+    "different parts of this exercise. Structure your ENTIRE reply using "
+    "EXACTLY this format — no text before the first marker, no text after "
+    "the final [[END]] marker, exactly one section per target listed below, "
+    "nothing more, nothing less:"
+)
 
 
 def _is_fully_unspecified(release: ReleaseConstraints) -> bool:
@@ -95,20 +103,46 @@ def render_execution_policy_overlay(policy: ExecutionPolicy | None) -> str:
     is ``None`` or carries no actual restriction — the same "additive,
     zero behavior change when absent" contract every other overlay in
     ``answer.py``/``answer_stream.py`` already follows (``request_plan_
-    overlay``, ``_diagram_overlay``, ``exam_style_overlay``)."""
+    overlay``, ``_diagram_overlay``, ``exam_style_overlay``). When the
+    compiled policy genuinely needs per-target treatment (Priority 2 —
+    see ``policy_compiler.is_mixed_permission_policy``), this also
+    appends ``render_target_sectioning_contract``'s structural
+    instruction, so a caller gets both without a second call."""
     if policy is None:
         return ""
     lines = [_render_action_instruction(action) for action in policy.actions]
     lines = [line for line in lines if line is not None]
     if not lines and not (policy.needs_clarification and policy.clarification_question):
-        return ""
+        return render_target_sectioning_contract(policy)
     out = [_HEADER, *lines]
     if policy.needs_clarification and policy.clarification_question:
         out.append(
             "- If genuinely ambiguous which target(s) this applies to, ask exactly this "
             f"clarifying question instead of guessing: {policy.clarification_question}"
         )
-    return "\n".join(out) + "\n"
+    return "\n".join(out) + "\n" + render_target_sectioning_contract(policy)
 
 
-__all__ = ["render_execution_policy_overlay"]
+def render_target_sectioning_contract(policy: ExecutionPolicy | None) -> str:
+    """Instructs the model to emit one verifiably-delimited section per
+    target when (and only when) the compiled policy genuinely needs
+    per-target treatment — e.g. "show 5a's full answer, hint-only for
+    5b". The literal ``[[TARGET: ...]]``/``[[END]]`` markers this
+    renders are parsed and verified SERVER-SIDE by ``answer_release_
+    validator.parse_target_sections`` — a model-written prose heading
+    ("**5a:**") is never trusted for attribution on its own, only these
+    markers are. Returns "" (no-op) whenever a per-target split isn't
+    needed, exactly like every other conditional overlay in this
+    module."""
+    if not is_mixed_permission_policy(policy):
+        return ""
+    assert policy is not None  # is_mixed_permission_policy already guards this
+    lines: list[str] = [_SECTIONING_HEADER]
+    for action in policy.actions:
+        lines.append(f"[[TARGET: {action.target}]]")
+        lines.append(f"<your {action.objective} content for {_target_label(action)} here>")
+    lines.append("[[END]]")
+    return "\n".join(lines) + "\n"
+
+
+__all__ = ["render_execution_policy_overlay", "render_target_sectioning_contract"]

@@ -6742,10 +6742,21 @@ async def _prepare_ask_stream_response(
                     # pending_token_events are discarded here, never
                     # flushed.
                     if policy_has_release_restriction:
+                        # Priority 2: enforce_release_policy_per_target is a
+                        # strict superset of enforce_release_policy — for a
+                        # single-target or uniformly-permitted/prohibited
+                        # policy (or any structurally-unverifiable text) it
+                        # falls straight through to the SAME unconditional
+                        # whole-response withhold as before (byte-identical
+                        # in that case). It only takes a different path for
+                        # a genuinely mixed-permission policy whose text
+                        # parses into the required [[TARGET: ...]] sections
+                        # — see answer_release_validator.py's module
+                        # docstring addendum.
                         from ..services.answer_release_validator import (  # noqa: WPS433
-                            enforce_release_policy,
+                            enforce_release_policy_per_target,
                         )
-                        release_decision = enforce_release_policy(
+                        release_decision = enforce_release_policy_per_target(
                             "".join(full_text_buf),
                             policy=execution_policy,
                             response_language=language_context.requested_response_language,
@@ -6756,13 +6767,19 @@ async def _prepare_ask_stream_response(
                         yield _sse_bytes(json.dumps({"t": release_decision.text}, ensure_ascii=False))
                         evt["releaseWithheld"] = release_decision.withheld
                         evt["releaseWithheldReason"] = release_decision.scan.reason
-                        evt["answerMode"] = "release_withheld"
-                        evt["confidence"] = "low"
-                        evt["unsupported"] = True
-                        evt["recovery"] = {
-                            "code": "answer_release_restricted",
-                            "action": "ask_for_hint_or_permission",
-                        }
+                        evt["releaseStructural"] = release_decision.structural
+                        if release_decision.sections:
+                            evt["releaseSectionsWithheld"] = [
+                                section.target for section in release_decision.sections if section.withheld
+                            ]
+                        if release_decision.withheld:
+                            evt["answerMode"] = "release_withheld"
+                            evt["confidence"] = "low"
+                            evt["unsupported"] = True
+                            evt["recovery"] = {
+                                "code": "answer_release_restricted",
+                                "action": "ask_for_hint_or_permission",
+                            }
                     elif (
                         (semantic_mismatches or obligation_failures)
                         and high_risk_validation

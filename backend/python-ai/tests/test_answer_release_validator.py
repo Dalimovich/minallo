@@ -9,6 +9,8 @@ interfere at all."""
 
 from app.services.answer_release_validator import (
     enforce_release_policy,
+    enforce_release_policy_per_target,
+    parse_target_sections,
     scan_generated_answer_for_prohibited_release,
 )
 from app.services.policy_compiler import ExecutionPolicy
@@ -22,6 +24,14 @@ def _policy(final_answer="prohibited", official_solution="unspecified", target="
             release=ReleaseConstraints(final_answer=final_answer, official_solution=official_solution),
         ),),
         evidence_requirements=(), needs_clarification=False, clarification_question=None,
+        response_language="en", response_language_reason="default", platform_policy_applied=(),
+        policy_version="1.0.0", compiler_version="1.0.0", policy_hash="deadbeef",
+    )
+
+
+def _mixed_policy(*actions: Action) -> ExecutionPolicy:
+    return ExecutionPolicy(
+        actions=actions, evidence_requirements=(), needs_clarification=False, clarification_question=None,
         response_language="en", response_language_reason="default", platform_policy_applied=(),
         policy_version="1.0.0", compiler_version="1.0.0", policy_hash="deadbeef",
     )
@@ -174,3 +184,187 @@ def test_safe_withheld_answer_text_is_language_aware():
     de = safe_withheld_answer_text(response_language="de")
     assert "withholding" in en.lower()
     assert "zurück" in de.lower()
+
+
+# ---------------------------------------------------------------------------
+# Priority 2 — parse_target_sections. Strict: ANY structural ambiguity
+# returns None, never a partial/best-effort parse.
+# ---------------------------------------------------------------------------
+
+_WELL_FORMED = (
+    "[[TARGET: 5a]]\n"
+    "The final answer is 42 N.\n"
+    "[[TARGET: 5b]]\n"
+    "Think about which forces balance here.\n"
+    "[[END]]\n"
+)
+
+
+def test_parse_well_formed_two_section_text():
+    sections = parse_target_sections(_WELL_FORMED, frozenset({"5a", "5b"}))
+    assert sections == {
+        "5a": "The final answer is 42 N.",
+        "5b": "Think about which forces balance here.",
+    }
+
+
+def test_parse_rejects_text_before_first_marker():
+    text = "Sure, here goes.\n" + _WELL_FORMED
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_text_after_end_marker():
+    text = _WELL_FORMED + "Hope that helps!"
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_missing_end_marker():
+    text = _WELL_FORMED.replace("[[END]]\n", "")
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_duplicate_target_marker():
+    text = (
+        "[[TARGET: 5a]]\nFirst.\n[[TARGET: 5a]]\nSecond.\n[[TARGET: 5b]]\nThird.\n[[END]]\n"
+    )
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_missing_expected_target():
+    """Only 5a is sectioned even though the policy also covers 5b."""
+    text = "[[TARGET: 5a]]\nOnly this.\n[[END]]\n"
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_unexpected_extra_target():
+    text = _WELL_FORMED.replace("[[END]]\n", "[[TARGET: 5c]]\nExtra.\n[[END]]\n")
+    assert parse_target_sections(text, frozenset({"5a", "5b"})) is None
+
+
+def test_parse_rejects_text_with_no_markers_at_all():
+    assert parse_target_sections("Just a normal answer, no markers.", frozenset({"5a", "5b"})) is None
+
+
+# ---------------------------------------------------------------------------
+# Priority 2 — enforce_release_policy_per_target. The central deliverable:
+# "give the full answer for 5a, but only a hint for 5b" must come out
+# with 5a's genuine content intact and 5b's replaced, never the whole
+# response blanked, and never 5b's content surviving anywhere.
+# ---------------------------------------------------------------------------
+
+def _mixed_5a_permitted_5b_prohibited() -> ExecutionPolicy:
+    return _mixed_policy(
+        Action(objective="solve", target="5a", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+        Action(objective="hint", target="5b", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited", form="hint")),
+    )
+
+
+def test_per_target_clean_split_keeps_permitted_and_withholds_prohibited():
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "Working through the moment balance, the final answer is 42 N.\n"
+        "[[TARGET: 5b]]\n"
+        "The final answer is 17 N, as derived above.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is True
+    assert decision.withheld is False  # NOT a whole-response withhold
+    by_target = {s.target: s for s in decision.sections}
+    assert by_target["5a"].withheld is False
+    assert "42 N" in by_target["5a"].text
+    assert by_target["5b"].withheld is True
+    assert "17" not in decision.text  # the prohibited number never reaches the final text
+    assert "42 N" in decision.text  # the permitted content is preserved
+
+
+def test_per_target_withholds_restricted_section_even_without_a_leak_pattern_match():
+    """Mirrors enforce_release_policy's own core guarantee
+    (test_enforce_release_policy_withholds_even_without_a_pattern_match),
+    now scoped per-section: a restricted target's section must be
+    withheld UNCONDITIONALLY, never only when a known leak phrase
+    happens to match."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "The final answer is 42 N.\n"
+        "[[TARGET: 5b]]\n"
+        "The beam carries 17 N at the support.\n"  # no recognizable leak SHAPE
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    by_target = {s.target: s for s in decision.sections}
+    assert by_target["5b"].withheld is True
+    assert by_target["5b"].scan.reason == "no_match"  # confirms it wasn't pattern-triggered
+    assert "17" not in decision.text
+
+
+def test_per_target_falls_back_whole_on_structurally_invalid_text():
+    """The model ignored the sectioning contract (or malformed it) --
+    this must fall back to the EXISTING whole-response guard, never a
+    half-trusted partial split."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = "5a: the answer is 42 N. 5b: here's a hint about moments."
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert decision.sections == ()
+    whole = enforce_release_policy(text, policy=policy, response_language="en")
+    assert decision.text == whole.text
+
+
+def test_per_target_falls_back_whole_on_cross_target_leak_crossover():
+    """5a's own section mentions 5b's label alongside a leak-shaped
+    phrase -- the concrete sign of a crossed-over/mislabeled answer.
+    Must never be trusted as a clean split."""
+    policy = _mixed_5a_permitted_5b_prohibited()
+    text = (
+        "[[TARGET: 5a]]\n"
+        "The final answer is 42 N. By the way, for 5b the final answer is 17 N too.\n"
+        "[[TARGET: 5b]]\n"
+        "Think about the forces.\n"
+        "[[END]]\n"
+    )
+    decision = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    assert decision.structural is False
+    assert decision.withheld is True
+    assert "17" not in decision.text
+    assert "42" not in decision.text  # whole response withheld, not just 5b's leak
+
+
+def test_per_target_delegates_exactly_for_single_target_policy():
+    """Not a mixed-permission policy (only one target) -- must behave
+    byte-identically to enforce_release_policy, the legacy/non-mixed
+    parity guarantee."""
+    policy = _policy()
+    text = "The beam carries 42 N at the support."
+    per_target = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    whole = enforce_release_policy(text, policy=policy, response_language="en")
+    assert per_target.text == whole.text
+    assert per_target.withheld == whole.withheld
+    assert per_target.structural is False
+    assert per_target.sections == ()
+
+
+def test_per_target_delegates_exactly_for_uniformly_permitted_policy():
+    policy = _mixed_policy(
+        Action(objective="solve", target="5a", release=ReleaseConstraints(final_answer="permitted")),
+        Action(objective="solve", target="5b", release=ReleaseConstraints(final_answer="permitted")),
+    )
+    text = "5a is 42 N and 5b is 17 N."
+    per_target = enforce_release_policy_per_target(text, policy=policy, response_language="en")
+    whole = enforce_release_policy(text, policy=policy, response_language="en")
+    assert per_target.text == whole.text == text
+    assert per_target.withheld is False
+    assert per_target.structural is False
+
+
+def test_per_target_delegates_exactly_with_no_policy_at_all():
+    text = "The final answer is 42 N."
+    per_target = enforce_release_policy_per_target(text, policy=None, response_language="en")
+    assert per_target.text == text
+    assert per_target.withheld is False
+    assert per_target.structural is False
