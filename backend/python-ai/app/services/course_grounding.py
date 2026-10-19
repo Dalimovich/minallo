@@ -36,6 +36,22 @@ class CourseEvidenceReport:
 _MATH_RE = re.compile(r"(?:\d|=|calculate|solve|berechne|bestimme|aufgabe|formula|formel)", re.I)
 _DEFINITION_RE = re.compile(r"(?:definition|definiere|was ist|what is|begriff)", re.I)
 _EXAM_RE = re.compile(r"(?:exam|klausur|prüfung|pruefung)", re.I)
+# An explicit demand for the official/worked solution, independent of
+# whatever else the question also mentions (a formula, a definition-style
+# "what is"). Ported from fix/course-evidence-learning-objective@cc2ff0fa.
+_SOLUTION_REQUEST_RE = re.compile(
+    r"\b(?:solution|musterl[öo]sung|l[öo]sung(?:en)?|worked.?solution|answer.?key|"
+    r"official\s+answer)\b",
+    re.I,
+)
+# question_routing._FORMULA requires a word boundary right after "gleichung"/
+# "formel", so it misses the plural "Gleichungen"/"formulas" (the "en"/"s"
+# suffix is still a word char, so \b fails mid-word) -- a gap in that shared
+# regex, which also drives retrieval staging elsewhere, so it isn't widened
+# in place. Scoped locally instead, as a narrow plural-tolerant fallback
+# solely for this evidence check -- the same gap cc2ff0fa found and
+# scoped the same way for reliability._FORMULA_RE.
+_FORMULA_TOPIC_RE = re.compile(r"\b(?:formulas?|equations?|formeln?|gleichung(?:en)?)\b", re.I)
 
 
 def infer_document_authority(file_name: str, document_type: str | None = None) -> DocumentAuthority:
@@ -44,7 +60,7 @@ def infer_document_authority(file_name: str, document_type: str | None = None) -
         return DocumentAuthority.PROFESSOR_LECTURE
     if re.search(r"(?:official.solution|musterlösung|musterloesung|lösung|solution)", value):
         return DocumentAuthority.OFFICIAL_SOLUTION
-    if re.search(r"(?:formula.sheet|formelsammlung|formelblatt)", value):
+    if re.search(r"(?:formula.sheet|formelsammlung|formelblatt|formelzettel)", value):
         return DocumentAuthority.OFFICIAL_FORMULA_SHEET
     if re.search(r"(?:exam|klausur|prüfung|pruefung)", value):
         return DocumentAuthority.OFFICIAL_EXAM
@@ -111,17 +127,36 @@ def build_course_evidence_report(
     # the formulas on this sheet") does not need a *second* document proving
     # how to solve anything -- the formula/lecture content itself is both the
     # thing being explained and the evidence for it.
+    #
+    # detect_intents() returns a TUPLE of co-occurring intents, not a single
+    # classification -- "what is the official solution for this formula?"
+    # sets BOTH formula_lookup and definition (via its "what is" wording), so
+    # an if/elif cascade keyed only on those intents would pick whichever
+    # branch happens to come first and silently let a plain lecture/formula
+    # chunk satisfy an explicit demand for the official worked solution. An
+    # explicit solution request is therefore checked as its own independent,
+    # highest-priority branch (below CALCULATION/EXERCISE_SOLUTION only,
+    # whose bundle already requires official solution method as a superset)
+    # -- ported from fix/course-evidence-learning-objective@cc2ff0fa's
+    # _SOLUTION_REQUEST_RE, which hit the same precedence bug from the
+    # classify_task_traits() side.
     from .question_routing import AcademicIntent, detect_intents
 
     intents = set(detect_intents(question or ""))
     required = ["professor definition or course explanation"]
     if AcademicIntent.CALCULATION in intents or AcademicIntent.EXERCISE_SOLUTION in intents:
         required = ["question statement", "applicable formula", "official solution method"]
+    elif _SOLUTION_REQUEST_RE.search(question or ""):
+        required = ["official solution method"]
     elif AcademicIntent.DEFINITION in intents:
         required = ["professor definition or convention"]
     elif AcademicIntent.EXAM_PREPARATION in intents:
         required = ["exact exam question", "official solution method", "lecture explanation"]
-    elif AcademicIntent.EXPLANATION in intents or AcademicIntent.FORMULA_LOOKUP in intents:
+    elif (
+        AcademicIntent.EXPLANATION in intents
+        or AcademicIntent.FORMULA_LOOKUP in intents
+        or _FORMULA_TOPIC_RE.search(question or "")
+    ):
         required = ["applicable formula or course explanation"]
 
     authorities = {

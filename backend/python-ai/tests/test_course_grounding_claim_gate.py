@@ -558,6 +558,51 @@ def test_explain_formula_sheet_content_grounds_without_requiring_solution_method
     assert done.get("usedGeneralKnowledge") is not True, done
 
 
+def test_official_solution_request_not_hijacked_by_lecture_definition_chunk(monkeypatch):
+    """SSE-route counterpart of the precedence fix: question_routing.
+    detect_intents returns a tuple of co-occurring intents, not one
+    classification -- an explicit solution request can also match DEFINITION
+    (e.g. "what is ..." wording). A plain PROFESSOR_LECTURE-authority chunk
+    trivially satisfies the DEFINITION branch's requirement, so without an
+    independent, higher-priority check for an explicit solution request,
+    this would falsely ground as course_files from lecture content alone
+    instead of requiring an actual OFFICIAL_SOLUTION-authority document."""
+    user_id = "00000000-0000-4000-8000-000000000038"
+    document_id = "00000000-0000-4000-8000-000000000039"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content defining the formula conceptually.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    stream_mod = _patch_common(
+        monkeypatch, user_id=user_id, conversation_id="official-solution-not-hijacked",
+        document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+
+    # "...for this formula" classifies as reliability.VisualTaskKind.
+    # FORMULA_EXPLANATION, which is image_preferred and would 404 with
+    # visible_page_capture_failed with no page image supplied -- a pre-
+    # grounding gate unrelated to the authority bug this test targets, and
+    # owned by reliability.py. "worked solution" with no formula mention
+    # classifies as text_explanation/text_sufficient instead, reaching the
+    # course-grounding evidence gate directly.
+    payload = stream_mod.AskStreamRequest(
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Can you show the official worked solution?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+        conversationId="official-solution-not-hijacked",
+        conversationGeneration=1,
+    )
+    _events, done = _run(stream_mod, payload, user_id)
+
+    assert done["sourceScope"] != "course_files", done
+    assert done["sourceScope"] == "general_knowledge", done
+    assert done.get("usedGeneralKnowledge") is True, done
+
+
 def test_long_wellformed_but_unrelated_open_file_page_does_not_ground(monkeypatch):
     """assess_text_quality measures legibility (printable ratio, length, word
     count) ONLY -- it has no relevance component. A long, well-formed PDF

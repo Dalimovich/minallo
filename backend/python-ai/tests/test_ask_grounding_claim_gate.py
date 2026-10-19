@@ -191,6 +191,132 @@ def test_sufficient_authority_evidence_but_low_relevance_does_not_ground(monkeyp
     assert response.sourceScope == "general_knowledge", response
 
 
+def test_relevant_formula_sheet_grounds_formula_explanation(monkeypatch):
+    """Positive counterpart: a genuinely relevant formula-sheet chunk must
+    ground a pure "explain the formulas" request -- the fix must not make
+    Course Files mode strictly *more* restrictive than warranted."""
+    document_id = "00000000-0000-4000-8000-000000000043"
+    formula_chunk = RetrievedChunk(
+        chunk_id="c-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Explain the formulas on this sheet: F = m * a and E = m * c^2.",
+        score=1.0, similarity=1.0, chunk_type="formula", section_title="Formelzettel",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[formula_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000012",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope == "course_files", response
+    assert response.answer == "This is a real course-grounded answer."
+
+
+def test_irrelevant_formula_sheet_does_not_ground_on_filename_alone(monkeypatch):
+    """A document named/typed as a formula sheet (and even a chunk_type==
+    'formula' chunk) is not proof of relevance by itself -- if its actual
+    content has nothing to do with the question, the relevance gate must
+    still block it from grounding Course Files mode, regardless of the
+    'formelzettel' filename now recognized as OFFICIAL_FORMULA_SHEET
+    authority."""
+    document_id = "00000000-0000-4000-8000-000000000040"
+    unrelated_formula_chunk = RetrievedChunk(
+        chunk_id="c-unrelated-formula", document_id=document_id, page_start=1, page_end=1,
+        text="Completely unrelated marketing strategy notes about pricing tiers.",
+        score=0.2, similarity=0.05, chunk_type="formula", section_title="Random notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Formelzettel.pdf",
+        chunks=[unrelated_formula_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000009",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="Explain the formulas on this sheet.",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
+def test_official_solution_request_rejects_unrelated_student_notes_end_to_end(monkeypatch):
+    """An explicit ask for the official solution must be backed by an
+    OFFICIAL_SOLUTION-authority document -- a topically relevant
+    student-notes chunk is not a substitute, however relevant its text (the
+    chunk text below literally echoes the question, maximizing relevance, to
+    prove authority -- not relevance -- is what's missing)."""
+    document_id = "00000000-0000-4000-8000-000000000041"
+    notes_chunk = RetrievedChunk(
+        chunk_id="c-notes", document_id=document_id, page_start=1, page_end=1,
+        text="What is the official solution for this problem? My own notes say F = 12.5 N.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="My notes",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Mitschrift_Thermodynamik.pdf",
+        chunks=[notes_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000010",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the official solution for this problem?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
+def test_official_solution_request_not_hijacked_by_lecture_definition_chunk(monkeypatch):
+    """The sharpest form of the precedence bug: a PROFESSOR_LECTURE-authority
+    chunk satisfies the DEFINITION branch's requirement trivially, but "what
+    is the official solution for this formula" is an explicit solution
+    request and must not ground from a lecture chunk alone."""
+    document_id = "00000000-0000-4000-8000-000000000042"
+    lecture_chunk = RetrievedChunk(
+        chunk_id="c-lecture", document_id=document_id, page_start=1, page_end=1,
+        text="Lecture content defining the formula conceptually.",
+        score=1.0, similarity=1.0, chunk_type="text", section_title="Lecture",
+    )
+    ask = _patch_common(
+        monkeypatch, document_id=document_id, file_name="Professor Vorlesung.pdf",
+        chunks=[lecture_chunk],
+    )
+    from app.routers.ask import AskRequest
+
+    payload = AskRequest(
+        userId="00000000-0000-4000-8000-000000000011",
+        courseId="course-1",
+        activeDocumentId=document_id,
+        question="What is the official solution for this formula?",
+        sourceMode="course_files",
+        courseFileScope="all_course_files",
+    )
+    response = ask.ask_endpoint(payload)
+
+    assert response.sourceScope != "course_files", response
+    assert response.sourceScope == "general_knowledge", response
+
+
 def test_explicit_file_selection_with_zero_matching_chunks_returns_honest_unavailable(monkeypatch):
     """A specifically-selected, fully-indexed document whose retrieval genuinely
     returns zero chunks for this question must produce an honest refusal tagged

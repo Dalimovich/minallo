@@ -133,6 +133,89 @@ def test_numerical_evidence_report_requires_statement_formula_and_solution() -> 
     assert set(report.supporting_document_ids) == {"exercise", "formula", "solution"}
 
 
+def test_formula_explanation_is_sufficient_with_only_a_formula_sheet_chunk() -> None:
+    """Explaining/defining formulas is a different learning objective from
+    solving a numbered exercise: it only ever needs the formula itself, not
+    an exercise statement or an official solution a formula sheet was never
+    going to supply."""
+    chunks = [Chunk("f", "sheet", chunk_type="formula")]
+    report = build_course_evidence_report(
+        course_id="course-a", searched_document_ids=["sheet"], chunks=chunks,
+        doc_names={"sheet": "Formelzettel.pdf"},
+        question="Explain the formulas on this sheet.",
+    )
+    assert report.sufficient, report.missing_evidence
+
+
+def test_formula_explanation_german_paraphrases_are_sufficient() -> None:
+    chunks = [Chunk("f", "sheet", chunk_type="formula")]
+    for question in ("Erkläre die Formeln auf diesem Blatt.", "Was bedeuten diese Gleichungen?"):
+        report = build_course_evidence_report(
+            course_id="course-a", searched_document_ids=["sheet"], chunks=chunks,
+            doc_names={"sheet": "Formelzettel.pdf"}, question=question,
+        )
+        assert report.sufficient, (question, report.missing_evidence)
+
+
+def test_formula_sheet_alone_cannot_satisfy_a_numerical_exercise() -> None:
+    """A formula sheet is complete evidence for "explain the formula" but
+    incomplete evidence for "calculate this exercise": solving a specific
+    numbered problem needs its own statement and an official worked
+    solution, neither of which a formula sheet supplies."""
+    chunks = [Chunk("f", "sheet", chunk_type="formula")]
+    report = build_course_evidence_report(
+        course_id="course-a", searched_document_ids=["sheet"], chunks=chunks,
+        doc_names={"sheet": "Formelzettel.pdf"},
+        question="Calculate the force F using the formula from Aufgabe 5.",
+    )
+    assert not report.sufficient
+    assert "question statement" in report.missing_evidence
+    assert "official solution method" in report.missing_evidence
+
+
+def test_official_solution_request_rejects_unrelated_student_notes() -> None:
+    """An explicit ask for the official solution/Musterlösung must be backed
+    by an OFFICIAL_SOLUTION-authority document -- a topically relevant
+    student-notes chunk is not a substitute, however relevant its text."""
+    chunks = [Chunk("n", "notes", chunk_type="text")]
+    for question in (
+        "What is the official solution for this problem?",
+        "Was ist die Musterlösung dafür?",
+    ):
+        report = build_course_evidence_report(
+            course_id="course-a", searched_document_ids=["notes"], chunks=chunks,
+            doc_names={"notes": "Mitschrift_Thermodynamik.pdf"}, question=question,
+        )
+        assert not report.sufficient, question
+        assert "official solution method" in report.missing_evidence, question
+
+
+def test_official_solution_request_is_satisfied_by_a_solution_document() -> None:
+    chunks = [Chunk("s", "sol", chunk_type="text")]
+    report = build_course_evidence_report(
+        course_id="course-a", searched_document_ids=["sol"], chunks=chunks,
+        doc_names={"sol": "Musterloesung.pdf"},
+        question="What is the official solution for this problem?",
+    )
+    assert report.sufficient, report.missing_evidence
+
+
+def test_official_solution_request_is_not_hijacked_by_definition_wording() -> None:
+    """The precedence bug this guards: "what is the official solution for
+    this formula" matches BOTH question_routing's FORMULA_LOOKUP and
+    DEFINITION intents (via its "what is" wording) -- a plain
+    PROFESSOR_LECTURE chunk must not satisfy that just because the
+    DEFINITION branch would otherwise be checked first."""
+    chunks = [Chunk("lec", "lecture", chunk_type="text")]
+    report = build_course_evidence_report(
+        course_id="course-a", searched_document_ids=["lec"], chunks=chunks,
+        doc_names={"lec": "Professor Vorlesung.pdf"},
+        question="What is the official solution for this formula?",
+    )
+    assert not report.sufficient
+    assert report.required_evidence == ["official solution method"]
+
+
 def test_cross_course_chunk_is_rejected_before_generation() -> None:
     with pytest.raises(ValueError, match="outside the authorised course"):
         assert_authorised_course_chunks([Chunk("bad", "course-b-doc")], {"course-a-doc"})
