@@ -297,17 +297,25 @@ def test_diagnostic_policy_never_reaches_a_live_consumer(consumer_file):
 
 def test_stream_router_diagnostic_call_result_is_always_discarded():
     """The one approved consumer (app/routers/stream.py) may call into this
-    module, but only through _record_semantic_intent_diagnostic_policy,
-    whose return type is None and whose own call site is a bare,
-    unassigned `await` — structurally, nothing it computes can reach
-    resolve_execution_plan, generation, grounding, verification, repair,
-    or cache. This greps the real source rather than just asserting the
-    convention, so a future edit that starts assigning/forwarding the
-    result breaks this test immediately."""
+    module, but only through _run_semantic_intent_diagnostic_policy, whose
+    return type is None and which is only ever reached via
+    _schedule_semantic_intent_diagnostic_policy's bare, unawaited
+    `asyncio.create_task(...)` call site in ask_stream_endpoint —
+    structurally, nothing it computes can reach resolve_execution_plan,
+    generation, grounding, verification, repair, or cache, and it cannot
+    delay the response either, since the route never awaits it. This
+    greps the real source rather than just asserting the convention, so a
+    future edit that starts assigning/forwarding the result, or awaiting
+    it inline again, breaks this test immediately."""
     source = (_BACKEND_ROOT / "app/routers/stream.py").read_text(encoding="utf-8")
     assert "from ..services.diagnostic_policy import compile_diagnostic_policy" in source
-    assert "await _record_semantic_intent_diagnostic_policy(\n" in source
+    assert "_schedule_semantic_intent_diagnostic_policy(\n" in source
+    assert "await _schedule_semantic_intent_diagnostic_policy" not in source
+    assert "await _run_semantic_intent_diagnostic_policy" not in source
     for line in source.splitlines():
         stripped = line.strip()
-        if "_record_semantic_intent_diagnostic_policy" in stripped and stripped.startswith(("=", "return")):
+        if (
+            "_schedule_semantic_intent_diagnostic_policy" in stripped
+            or "_run_semantic_intent_diagnostic_policy" in stripped
+        ) and stripped.startswith(("=", "return")):
             raise AssertionError(f"diagnostic result must never be assigned/returned: {stripped!r}")

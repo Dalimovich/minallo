@@ -136,10 +136,20 @@ from ..supabase_client import get_supabase
 _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
-# Bounds _record_semantic_intent_diagnostic_policy's durable-history lookup
-# (up to 4 sequential DB round trips — see that function's docstring) so a
-# slow transcript can never meaningfully delay the student's SSE response.
+# _run_semantic_intent_diagnostic_policy runs as a bounded background task
+# (never awaited on the student's response path — see
+# _schedule_semantic_intent_diagnostic_policy), so this no longer protects
+# response latency directly. It still matters: it bounds how long a single
+# diagnostic can occupy one of the limited concurrent background slots, so
+# one slow durable-history lookup can't pin a slot indefinitely (production
+# Hetzner measurement: 1 of 3 idle-host lookups already exceeded 1.0s, so
+# this is a real, not theoretical, bound).
 _SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS = 1.0
+# Caps concurrent background diagnostics per worker process. Capacity
+# exhausted -> the new request's diagnostic is skipped (logged), never
+# queued -- this stays a bounded fire-and-forget, not a task queue.
+_SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT = 4
+_semantic_intent_diagnostic_tasks: "set[asyncio.Task[None]]" = set()
 _INNER_STREAM_HEARTBEAT_SECONDS = 10.0
 # A heartbeat proves the coroutine is alive, not that useful work is advancing.
 # Focused (non-leased) responses therefore get an absolute per-stage deadline;
@@ -480,7 +490,7 @@ def _previous_turn_to_dict(turn: "PreviousTurn") -> dict[str, str]:
     return out
 
 
-async def _record_semantic_intent_diagnostic_policy(
+async def _run_semantic_intent_diagnostic_policy(
     *,
     question: str,
     dialogue: Any,
@@ -498,6 +508,13 @@ async def _record_semantic_intent_diagnostic_policy(
     resolve_execution_plan, generation, grounding, verification, repair,
     or cache; any failure here must never affect the real answer.
 
+    Runs as a bounded background task (see
+    _schedule_semantic_intent_diagnostic_policy) — never awaited on the
+    student's response path. A production Hetzner measurement found the
+    real durable-history lookup exceeded the then-inline-awaited 1.0s
+    bound in 1 of 3 idle-host samples, so this was moved off the critical
+    path entirely rather than widening the timeout.
+
     `conversation_id` must already be gated by the caller to a verified
     durable conversation (never a course-rail synthetic id — see
     docs/semantic-intent-milestone-3-plan.md S4). Passing None does NOT
@@ -509,18 +526,21 @@ async def _record_semantic_intent_diagnostic_policy(
     diagnostic_policy.build_turn_ledger_from_durable_store). Either way,
     payload.previousTurns itself is never read into the ledger.
 
-    `get_durable_conversation_messages` is NOT one bounded read — it
-    internally re-validates ownership and then queries two more tables
-    (ai_chat_messages, ai_tutor_requests), so a durable-conversation
-    diagnostic can be up to 4 sequential DB round trips. Bounding it with
-    a timeout keeps a slow transcript from delaying the student's SSE
-    response; it can't cancel the underlying thread's queries once
-    started (run_in_threadpool has no cooperative cancellation), so a
-    timed-out lookup still runs to completion in the background with its
-    result discarded — a real, accepted limitation, not a full fix.
+    Uses get_durable_conversation_messages_for_diagnostics, not the full
+    get_durable_conversation_messages — the full function internally
+    re-validates ownership (redundant: build_turn_ledger_from_durable_
+    store already does so immediately before calling it) and joins
+    ai_tutor_requests, whose fields nothing in the diagnostic path reads.
+    That cut the diagnostic from 4 sequential DB round trips to 2. The
+    remaining timeout still bounds how long a single diagnostic can
+    occupy one of the limited concurrent background slots; it can't
+    cancel the underlying thread's queries once started (run_in_
+    threadpool has no cooperative cancellation), so a timed-out lookup
+    still runs to completion in the background with its result discarded
+    — a real, accepted limitation, not a full fix.
     """
     from ..services.conversation_store import (  # noqa: WPS433
-        get_durable_conversation_messages, validate_durable_conversation,
+        get_durable_conversation_messages_for_diagnostics, validate_durable_conversation,
     )
     from ..services.diagnostic_policy import compile_diagnostic_policy  # noqa: WPS433
 
@@ -536,7 +556,7 @@ async def _record_semantic_intent_diagnostic_policy(
                     conversation_id=conversation_id,
                     has_unverified_context=has_unverified_context,
                     validate_ownership=validate_durable_conversation,
-                    get_messages=get_durable_conversation_messages,
+                    get_messages=get_durable_conversation_messages_for_diagnostics,
                 )
             ),
             timeout=_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
@@ -558,6 +578,54 @@ async def _record_semantic_intent_diagnostic_policy(
         record.needs_clarification, record.response_language,
         record.policy_hash, (time.perf_counter() - started) * 1000,
     )
+
+
+def _on_semantic_intent_diagnostic_task_done(task: "asyncio.Task[None]") -> None:
+    _semantic_intent_diagnostic_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:  # pragma: no cover — _run_semantic_intent_diagnostic_policy
+        # already catches every exception it can raise; this is a defensive
+        # backstop so an unforeseen failure is logged, never silently lost.
+        log.warning("semantic_intent_diagnostic_policy_task_unhandled_exception", exc_info=exc)
+
+
+def _schedule_semantic_intent_diagnostic_policy(
+    *,
+    question: str,
+    dialogue: Any,
+    computed_intent: Any,
+    user_id: str,
+    conversation_id: str | None,
+    has_unverified_context: bool,
+    mode: str,
+) -> None:
+    """Fire-and-forget scheduling for _run_semantic_intent_diagnostic_policy
+    — deliberately NOT awaited, so the diagnostic can never add latency to
+    the student's response regardless of how slow the real durable-history
+    lookup turns out to be. Strictly bounded to
+    _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT in-flight tasks per worker
+    process; a request past that bound has its diagnostic skipped
+    (logged, never queued) rather than piling up unbounded background
+    work."""
+    if len(_semantic_intent_diagnostic_tasks) >= _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT:
+        log.warning(
+            "semantic_intent_diagnostic_policy_skipped_capacity mode=%s inflight=%d",
+            mode, len(_semantic_intent_diagnostic_tasks),
+        )
+        return
+    task = asyncio.create_task(_run_semantic_intent_diagnostic_policy(
+        question=question,
+        dialogue=dialogue,
+        computed_intent=computed_intent,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        has_unverified_context=has_unverified_context,
+        mode=mode,
+    ))
+    _semantic_intent_diagnostic_tasks.add(task)
+    task.add_done_callback(_on_semantic_intent_diagnostic_task_done)
 
 
 class ProblemSolverPayload(BaseModel):
@@ -1838,15 +1906,19 @@ async def ask_stream_endpoint(
         student_intent = intent_for_router(semantic_intent_mode, computed_intent)
         # Milestone 3 observational wiring (behavior-inert — see
         # diagnostic_policy.py): its return value is discarded, it never
-        # gates anything below, and it's timeout-bounded (see the function's
-        # own docstring). Only a verified durable conversationId is ever
-        # passed as real history (never the course-rail surface's synthetic
-        # id — docs/semantic-intent-milestone-3-plan.md S4); a non-durable
-        # request with its own conversationId or client-supplied
-        # previousTurns is diagnosed as "unavailable" (unverified, not
-        # trusted), not "history_free" — that's reserved for a request that
-        # genuinely has neither.
-        await _record_semantic_intent_diagnostic_policy(
+        # gates anything below, and it runs as a bounded background task —
+        # never awaited here, so it can never add latency to this response
+        # (see _schedule_semantic_intent_diagnostic_policy's own docstring
+        # for why: a production measurement found the real durable-history
+        # lookup exceeds 1.0s often enough that awaiting it inline was
+        # itself the problem, not just the timeout value). Only a verified
+        # durable conversationId is ever passed as real history (never the
+        # course-rail surface's synthetic id — docs/semantic-intent-
+        # milestone-3-plan.md S4); a non-durable request with its own
+        # conversationId or client-supplied previousTurns is diagnosed as
+        # "unavailable" (unverified, not trusted), not "history_free" —
+        # that's reserved for a request that genuinely has neither.
+        _schedule_semantic_intent_diagnostic_policy(
             question=question,
             dialogue=turn_resolution,
             computed_intent=computed_intent,
