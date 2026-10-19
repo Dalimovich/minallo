@@ -141,14 +141,24 @@ def validate_action_provenance(
     turn_ledger: Mapping[str, Any] | None = None,
     viewer_context: Mapping[str, Any] | None = None,
 ) -> Action:
-    """An action whose only provenance fails validation downgrades to
+    """An action whose provenance fails validation downgrades to
     ``state="unresolved"`` for that action — never a guess. An action with
     no provenance at all is left alone (provenance is optional; plenty of
     deterministic parses have none and are still trustworthy, e.g. an
-    unambiguous explicit instruction the interpreter resolved directly)."""
+    unambiguous explicit instruction the interpreter resolved directly).
+
+    Requires EVERY origin to validate, not just one. The schema gives one
+    action exactly one ``provenance`` tuple covering ALL of its fields —
+    there is no per-field origin to point at — so a single valid origin
+    (e.g. a real span justifying the target) must not be allowed to vouch
+    for a DIFFERENT, unrelated claim riding along in the same tuple (e.g. a
+    forged ``conversation_turn`` trying to justify an inherited
+    prohibition). Requiring all-valid is the conservative reading that
+    closes that gap without inventing per-field provenance the contract
+    doesn't have."""
     if not action.provenance:
         return action
-    if any(
+    if all(
         validate_origin(
             origin, original_message=original_message,
             turn_ledger=turn_ledger, viewer_context=viewer_context,

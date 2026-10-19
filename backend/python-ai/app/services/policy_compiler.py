@@ -18,16 +18,36 @@ step by step):
 
 1. Platform policy (hard filter, applied first) — ``PLATFORM_RULES`` below.
 2. Within one target: a later turn wins over an earlier one, but only for
-   the fields it actually touched.
+   the fields it actually touched. "Later" is decided by ``turn_ledger``
+   order when a ledger is supplied (the authoritative source — immune to
+   both a forged/mismatched ``changed_by_turn`` label and to actions being
+   handed in out of chronological order), falling back to the actions'
+   own position in ``intent.actions`` only when no ledger is supplied at
+   all (a real, documented trust assumption — see
+   ``compile_policy``'s docstring).
 3. Within one turn + one target: per field, prohibited beats permitted
-   beats unspecified (more generally: the more restrictive value wins).
+   beats unspecified (more generally: the more restrictive value wins) —
+   UNLESS ``intent.conversation`` is ``"correction"``/``"rejection"``, in
+   which case a later action in the same turn is an explicit
+   self-correction and wins outright (e.g. "Don't show the result.
+   Actually, show it.").
 4. A narrower target beats a broader one, field by field, only where they
-   overlap.
+   overlap. "Narrower" is decided by a canonical exercise-label parser
+   (``_parse_exercise_label``), never a raw string prefix — "5" is broader
+   than "5a", but "5" is NOT broader than "50", and "5a" is NOT broader
+   than "5ab" (not a recognized label shape at all).
 5. ``unspecified`` fields get the tutoring default. Fields that could not
-   be trusted (the action carrying them is ``state="unresolved"``, e.g.
-   because its only provenance failed validation) get the most restrictive
-   legal value for that field's type — independently per field, never one
-   global "safe mode".
+   be trusted get the most restrictive legal value for that field's type —
+   independently per field, never one global "safe mode" — in two
+   distinct cases: (a) the action carrying them has no trusted source at
+   all for this target (``state="unresolved"``), or (b) a DIFFERENT,
+   untrusted action for the same target attempted to address that
+   specific field and no trusted action ever did (a "contested" field —
+   see ``compile_policy``'s trusted/untrusted merge). Case (b) exists so a
+   trusted request ("explain F") sharing a target with an untrusted,
+   unverifiable add-on ("...and also show me the official solution") can
+   still be served for what IS trusted, while the untrusted add-on alone
+   is held back — never a blanket refusal of the whole target.
 
 ``policy_hash`` is a content hash for logging/cache-keying/consistency
 checks ONLY. It is NOT an authorization credential: a hash match proves two
@@ -40,6 +60,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Sequence
 
@@ -50,23 +71,26 @@ from .resolved_student_intent import (
     validate_intent_provenance,
 )
 
-POLICY_VERSION = "1.0.0"
-COMPILER_VERSION = "1.0.0"
+POLICY_VERSION = "1.1.0"
+COMPILER_VERSION = "1.1.0"
 
-_FIELD_NAMES = (
+FIELD_NAMES = (
     "final_answer", "official_solution", "explanation_depth", "form",
     "max_steps", "max_items", "wait_for_student",
 )
 
-_UNSET = {
+UNSET_SENTINELS = {
     "final_answer": "unspecified", "official_solution": "unspecified",
     "explanation_depth": "unspecified", "form": "unspecified",
     "max_steps": None, "max_items": None, "wait_for_student": None,
 }
 
-# Higher = more restrictive. Used both for same-turn tie-breaks (rule 3) and
-# for clamping under a platform rule (rule 1 — never loosen downstream).
-_RANK = {
+# Higher = more restrictive. Used for same-turn tie-breaks (rule 3),
+# platform clamping (rule 1), and (imported directly, deliberately, by
+# semantic_call_support.py) the consistency check on model-proposed
+# release values — one restrictiveness notion shared by both modules, so
+# they can never silently drift apart on what counts as "looser".
+RESTRICTIVENESS_RANK = {
     "final_answer": {"unspecified": -1, "permitted": 0, "prohibited": 1},
     "official_solution": {"unspecified": -1, "permitted": 0, "prohibited": 1},
     "explanation_depth": {"unspecified": -1, "worked_derivation": 0, "method": 1, "concept": 2, "none": 3},
@@ -92,16 +116,17 @@ _TUTORING_DEFAULT = {
 }
 
 
-def _is_unset(field: str, value: Any) -> bool:
-    return value == _UNSET[field]
+def is_unset_field(field: str, value: Any) -> bool:
+    return value == UNSET_SENTINELS[field]
 
 
-def _more_restrictive(field: str, a: Any, b: Any) -> Any:
+def more_restrictive(field: str, a: Any, b: Any) -> Any:
     """Of two SET (non-unspecified) values for ``field``, return the more
-    restrictive one. Used for same-turn conflicts (rule 3) and for platform
-    clamping (rule 1)."""
-    if field in _RANK:
-        return a if _RANK[field][a] >= _RANK[field][b] else b
+    restrictive one. Used for same-turn conflicts (rule 3), platform
+    clamping (rule 1), and (by ``semantic_call_support.py``) the
+    never-loosen-a-trusted-prohibition consistency check."""
+    if field in RESTRICTIVENESS_RANK:
+        return a if RESTRICTIVENESS_RANK[field][a] >= RESTRICTIVENESS_RANK[field][b] else b
     if field in ("max_steps", "max_items"):
         if a is None:
             return b
@@ -151,71 +176,219 @@ class ExecutionPolicy:
     policy_hash: str
 
 
+# ---------------------------------------------------------------------------
+# Turn recency — see module docstring, rule 2. Deliberately NOT based on
+# comparing marker strings' content or trusting raw list order by default.
+# ---------------------------------------------------------------------------
+
+_CURRENT_TURN_MARKER = "__current_turn__"
+
+
 def _turn_marker(action: Action) -> str:
     if action.release.changed_by_turn:
         return action.release.changed_by_turn
     for origin in action.provenance:
         if origin.kind == "conversation_turn" and origin.turn_id:
             return origin.turn_id
-    return "__current_turn__"
+    return _CURRENT_TURN_MARKER
+
+
+def _resolve_turn_rank(marker: str, turn_ledger: dict[str, Any] | None) -> tuple[Any, bool]:
+    """Returns ``(rank, forged)``. ``rank`` is a comparable recency value
+    (higher = later) or ``None`` when it can't be verified. ``forged`` is
+    True only when a ledger WAS supplied and this specific, non-default
+    marker could not be found in it — an active, checkable claim that
+    turned out to be false, not merely "we have no information". Without
+    any ledger, nothing gets a rank at all (not even the current-turn
+    sentinel) — callers fall back to raw input order uniformly instead of
+    mixing a "verified" sentinel with unverifiable labels."""
+    if not turn_ledger:
+        return None, False
+    if marker == _CURRENT_TURN_MARKER:
+        return float("inf"), False
+    if marker in turn_ledger:
+        return list(turn_ledger.keys()).index(marker), False
+    return None, True
+
+
+def _decide_field_override(
+    *, old_marker: str, old_index: int, new_marker: str, new_index: int,
+    turn_ledger: dict[str, Any] | None, correction_mode: bool,
+) -> str:
+    """Returns ``"override"`` (new value replaces old), ``"keep"`` (old
+    value stands), or ``"tie_break"`` (more-restrictive of the two wins).
+    Recency is never taken from the markers' raw string content or from
+    blind input order when a ledger can settle it — see module docstring
+    for why (forged/mismatched ``changed_by_turn``, historical actions
+    handed in out of chronological order)."""
+    if old_marker == new_marker:
+        # Same turn. An explicit correction/rejection turn means the LATER
+        # clause in the message is the student overriding themselves
+        # ("don't show the result. Actually, show it.") — it wins outright,
+        # the same way a later separate turn would. Otherwise this is a
+        # genuinely ambiguous same-turn conflict with no "which one is the
+        # correction" signal, so the safe default (rule 3) applies.
+        return "override" if correction_mode else "tie_break"
+    old_rank, old_forged = _resolve_turn_rank(old_marker, turn_ledger)
+    new_rank, new_forged = _resolve_turn_rank(new_marker, turn_ledger)
+    if new_forged:
+        return "tie_break"
+    if old_forged:
+        return "override"
+    if old_rank is not None and new_rank is not None:
+        return "override" if new_rank > old_rank else "keep"
+    # No ledger (or neither marker resolves in it): fall back to the
+    # caller's own ordering of intent.actions as the chronology signal.
+    # This is a real trust assumption — documented on compile_policy — a
+    # supplied, verified turn_ledger is what removes it.
+    return "override" if new_index > old_index else "keep"
 
 
 def _state_rank(state: str) -> int:
     return {"unspecified": 0, "unresolved": 1, "requested": 2, "prohibited": 3}.get(state, 0)
 
 
+@dataclass
+class _MergedTarget:
+    working: dict[str, Any]
+    final_state: str
+    provenance: tuple
+    primary: Action | None
+    prohibited_objectives: frozenset[str]
+    contested_fields: frozenset[str]
+
+
 def _merge_group(
-    target: str, group: list[Action], audit: list[str],
-) -> tuple[dict[str, Any], str, tuple]:
+    target: str, group: list[Action], turn_ledger: dict[str, Any] | None, correction_mode: bool,
+) -> _MergedTarget:
     """Merge every action targeting ``target`` into one working dict of
-    field values, applying rules 2 and 3. Only TRUSTED actions
-    (``state != "unresolved"``) ever contribute a field value — an
-    untrusted action's own guess must never leak into the merged result
-    (that is exactly what being untrusted means)."""
-    working: dict[str, Any] = dict(_UNSET)
+    field values, applying rules 2 and 3.
+
+    Trust boundary (hardening fix): only TRUSTED actions
+    (``state != "unresolved"``) ever contribute a field value, determine
+    the compiled ``objective``/``state``, or stand in for the whole
+    target. An untrusted action can still make itself KNOWN — its
+    objective is recorded in ``prohibited_objectives`` and the specific
+    fields it tried to touch are recorded in ``contested_fields`` (so the
+    caller can fall back those particular fields to the restrictive
+    default instead of the tutoring default) — but it can never leak a
+    value, an objective, or a state into the compiled result."""
+    working: dict[str, Any] = dict(UNSET_SENTINELS)
     touched_turn: dict[str, str] = {}
-    any_untrusted = False
-    final_state = "unspecified"
+    touched_index: dict[str, int] = {}
     provenance: list = []
+    trusted: list[Action] = []
+    untrusted: list[Action] = []
+
     for action in group:
         provenance.extend(action.provenance)
+        (untrusted if action.state == "unresolved" else trusted).append(action)
+
+    for idx, action in enumerate(group):
         if action.state == "unresolved":
-            any_untrusted = True
             continue
         turn = _turn_marker(action)
-        for field in _FIELD_NAMES:
+        for field in FIELD_NAMES:
             new_val = getattr(action.release, field)
-            if _is_unset(field, new_val):
+            if is_unset_field(field, new_val):
                 continue
-            if _is_unset(field, working[field]):
+            if is_unset_field(field, working[field]):
                 working[field] = new_val
                 touched_turn[field] = turn
+                touched_index[field] = idx
                 continue
-            if touched_turn.get(field) == turn:
-                working[field] = _more_restrictive(field, working[field], new_val)
-            else:
-                # Different (later) turn touching the same field: the newer
-                # instruction wins outright (rule 2), even if that LOOSENS
-                # an earlier prohibition — e.g. case E lifting a prior
-                # "don't calculate" once the student explicitly asks for it.
+            decision = _decide_field_override(
+                old_marker=touched_turn[field], old_index=touched_index[field],
+                new_marker=turn, new_index=idx,
+                turn_ledger=turn_ledger, correction_mode=correction_mode,
+            )
+            if decision == "override":
                 working[field] = new_val
                 touched_turn[field] = turn
-        if _state_rank(action.state) >= _state_rank(final_state):
-            final_state = action.state
-    if any_untrusted and final_state == "unspecified":
+                touched_index[field] = idx
+            elif decision == "tie_break":
+                working[field] = more_restrictive(field, working[field], new_val)
+            # "keep": old value stands, nothing to do.
+
+    # Untrusted attempts are surfaced, never silently merged: which fields
+    # they tried to touch (that no trusted action also set — a trusted
+    # field always wins, per "preserve independently established trusted
+    # fields"), and which objective they were for.
+    contested_fields = {
+        field for action in untrusted for field in FIELD_NAMES
+        if not is_unset_field(field, getattr(action.release, field)) and is_unset_field(field, working[field])
+    }
+    untrusted_objectives = {action.objective for action in untrusted}
+
+    if trusted:
+        requested = [a for a in trusted if a.state != "prohibited"]
+        primary = requested[-1] if requested else trusted[-1]
+        final_state = primary.state
+        prohibited_objectives = {a.objective for a in trusted if a.state == "prohibited"}
+        for a in trusted:
+            prohibited_objectives.update(a.prohibited)
+        prohibited_objectives.discard(primary.objective)
+    else:
+        primary = group[-1] if group else None
         final_state = "unresolved"
-    return working, final_state, tuple(provenance)
+        prohibited_objectives = set()
+
+    # Untrusted objectives are not confirmed prohibitions (the student
+    # never said no) — but they are not authorized either, so they are
+    # surfaced the same way: "not currently permitted", distinct from a
+    # target-wide refusal.
+    all_prohibited = frozenset(prohibited_objectives | untrusted_objectives) - ({primary.objective} if primary else set())
+
+    return _MergedTarget(
+        working=working, final_state=final_state, provenance=tuple(provenance),
+        primary=primary, prohibited_objectives=all_prohibited, contested_fields=frozenset(contested_fields),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Exercise-label hierarchy (rule 4) — a real canonical parser, not a raw
+# string prefix. Covers "<number>[<letter>[<number>]]" (e.g. "5", "5a",
+# "5a1") — the shape actually seen in the fixtures. A label that doesn't
+# match this grammar (e.g. "F", "task", "quoted_instruction") is an opaque
+# identifier with NO inferred relationship to anything else.
+# ponytail: one grammar, not a general label DSL — extend
+# _EXERCISE_LABEL_RE the day a real label family (e.g. "Teil B", roman
+# numerals) actually needs it.
+# ---------------------------------------------------------------------------
+
+_EXERCISE_LABEL_RE = re.compile(r"^(\d+)([a-zA-Z]?)(\d*)$")
+
+
+def _parse_exercise_label(label: str) -> tuple | None:
+    match = _EXERCISE_LABEL_RE.match(label.strip())
+    if not match:
+        return None
+    number, letter, sub_number = match.groups()
+    segments: list[tuple[str, Any]] = [("num", int(number))]
+    if letter:
+        segments.append(("alpha", letter.lower()))
+    if sub_number:
+        segments.append(("num", int(sub_number)))
+    return tuple(segments)
 
 
 def _is_broader(candidate: str, target: str) -> bool:
-    """Minimal hierarchical-label heuristic (e.g. "5" is broader than
-    "5a"/"5b"): a prefix match, nothing fancier. Siblings ("5a" vs "5b")
-    never match each other this way, which is exactly what keeps an
-    exercise-switch from accidentally inheriting a sibling's constraints.
-    ponytail: prefix check, not a real exercise-label grammar — upgrade if
-    non-prefix label families (e.g. "Teil B") need this too."""
-    candidate = candidate.strip()
-    return bool(candidate) and candidate != target and target.lower().startswith(candidate.lower())
+    """True only if ``target``'s canonical label segments are a strict,
+    well-formed extension of ``candidate``'s (e.g. "5" vs "5a", "5a" vs
+    "5a1"). Never true for labels that don't both parse as the recognized
+    exercise-label grammar ("F" vs "Fx"), and never true for same-length
+    labels that merely share a prefix ("5" vs "50", "5a" vs "5ab" — "5ab"
+    doesn't even parse, since it has two letters)."""
+    if candidate == target:
+        return False
+    candidate_segments = _parse_exercise_label(candidate)
+    target_segments = _parse_exercise_label(target)
+    if candidate_segments is None or target_segments is None:
+        return False
+    return (
+        len(target_segments) > len(candidate_segments)
+        and target_segments[: len(candidate_segments)] == candidate_segments
+    )
 
 
 def compile_policy(
@@ -225,40 +398,48 @@ def compile_policy(
     viewer_context: dict[str, Any] | None = None,
     platform_rules: Sequence[PlatformRule] = PLATFORM_RULES,
 ) -> ExecutionPolicy:
-    # Provenance validation happens first: an action whose only provenance
+    """Compile one ``ResolvedStudentIntent`` into one ``ExecutionPolicy``.
+
+    Trust assumption when no ``turn_ledger`` is supplied: ``intent.
+    actions`` is assumed to already be in chronological order, and that
+    ordering (not the actions' ``changed_by_turn``/provenance labels) is
+    what decides "later turn wins" for rule 2. Supplying a real
+    ``turn_ledger`` removes this assumption entirely (recency then comes
+    from the ledger, immune to both a forged label and to actions being
+    handed in out of order) — Milestone 3 should decide whether a ledger
+    is made mandatory at the real call site rather than optional here.
+    """
+    # Provenance validation happens first: an action whose provenance
     # fails to resolve against the trusted ledger/context downgrades to
     # state="unresolved" right here, before any merging.
     intent = validate_intent_provenance(intent, turn_ledger=turn_ledger, viewer_context=viewer_context)
+    correction_mode = intent.conversation in {"correction", "rejection"}
 
     audit: list[str] = []
     groups: dict[str, list[Action]] = {}
     for action in intent.actions:
         groups.setdefault(action.target, []).append(action)
 
-    working_by_target: dict[str, dict[str, Any]] = {}
-    state_by_target: dict[str, str] = {}
-    provenance_by_target: dict[str, tuple] = {}
-    for target, group in groups.items():
-        working, state, provenance = _merge_group(target, group, audit)
-        working_by_target[target] = working
-        state_by_target[target] = state
-        provenance_by_target[target] = provenance
+    merged_by_target: dict[str, _MergedTarget] = {
+        target: _merge_group(target, group, turn_ledger, correction_mode)
+        for target, group in groups.items()
+    }
 
     # Rule 4: narrower target inherits untouched fields from its closest
     # broader parent, field by field. Skipped entirely for exercise_switch
     # turns — a switch means "treat the new target fresh", not "carry the
     # old label's constraints under a new name" (case F).
     if intent.conversation != "exercise_switch":
-        for target, working in working_by_target.items():
+        for target, merged in merged_by_target.items():
             parents = sorted(
-                (t for t in working_by_target if _is_broader(t, target)),
+                (t for t in merged_by_target if _is_broader(t, target)),
                 key=len, reverse=True,
             )
             for parent in parents:
-                parent_working = working_by_target[parent]
-                for field in _FIELD_NAMES:
-                    if _is_unset(field, working[field]) and not _is_unset(field, parent_working[field]):
-                        working[field] = parent_working[field]
+                parent_working = merged_by_target[parent].working
+                for field in FIELD_NAMES:
+                    if is_unset_field(field, merged.working[field]) and not is_unset_field(field, parent_working[field]):
+                        merged.working[field] = parent_working[field]
                         audit.append(f"narrow_target_inherits:{target}<-{parent}:{field}")
 
     # Rule 1: platform policy, applied as a hard clamp so a prohibited
@@ -266,42 +447,45 @@ def compile_policy(
     # merge order.
     applied_platform: list[str] = []
     for target, group in groups.items():
-        working = working_by_target[target]
+        working = merged_by_target[target].working
         for rule in platform_rules:
             if any(rule.predicate(target, action, intent) for action in group):
                 current = working[rule.field]
-                if _is_unset(rule.field, current):
+                if is_unset_field(rule.field, current):
                     working[rule.field] = rule.forced_value
                 else:
-                    working[rule.field] = _more_restrictive(rule.field, current, rule.forced_value)
+                    working[rule.field] = more_restrictive(rule.field, current, rule.forced_value)
                 applied_platform.append(f"platform_rule:{rule.rule_id}@{rule.version}:{target}:{rule.field}")
 
-    # Rule 5: fallback. A field left unset after all of the above gets
-    # either the tutoring default (nothing untrustworthy happened — it was
-    # simply never addressed) or the most restrictive legal value for its
-    # type (this target had an untrusted/unresolved action and nothing
-    # trusted ever set this field) — strictly per field, never a single
-    # global "safe mode".
+    # Rule 5: fallback. A field left unset after all of the above gets the
+    # tutoring default, UNLESS it was either (a) never trusted for this
+    # target at all (state="unresolved") or (b) specifically contested by
+    # an untrusted action with no trusted action ever addressing it — both
+    # get the most restrictive legal value, strictly per field.
     compiled_actions: list[Action] = []
-    for target, group in groups.items():
-        working = working_by_target[target]
-        state = state_by_target[target]
-        for field in _FIELD_NAMES:
-            if not _is_unset(field, working[field]):
+    needs_clarification = False
+    for target, merged in merged_by_target.items():
+        working = merged.working
+        state = merged.final_state
+        if state == "unresolved" or merged.contested_fields:
+            needs_clarification = True
+        for field in FIELD_NAMES:
+            if not is_unset_field(field, working[field]):
                 continue
-            if state == "unresolved":
+            if state == "unresolved" or field in merged.contested_fields:
                 working[field] = _MOST_RESTRICTIVE[field]
-                audit.append(f"unresolved_fallback:{target}:{field}={working[field]!r}")
+                tag = "unresolved_fallback" if state == "unresolved" else "contested_fallback"
+                audit.append(f"{tag}:{target}:{field}={working[field]!r}")
             else:
                 working[field] = _TUTORING_DEFAULT[field]
                 audit.append(f"tutoring_default:{target}:{field}={working[field]!r}")
-        release = ReleaseConstraints(**{f: working[f] for f in _FIELD_NAMES})
-        last = group[-1]
+        release = ReleaseConstraints(**{f: working[f] for f in FIELD_NAMES})
+        base_action = merged.primary if merged.primary is not None else Action(objective="other", target=target)
         compiled_actions.append(replace(
-            last, release=release, state=state, provenance=provenance_by_target[target],
+            base_action, release=release, state=state, provenance=merged.provenance,
+            prohibited=tuple(sorted(merged.prohibited_objectives)),
         ))
 
-    needs_clarification = any(a.state == "unresolved" for a in compiled_actions)
     clarification_question = (
         "Could you confirm exactly what you'd like for this exercise — I want to "
         "make sure I don't show you something you asked me not to."
@@ -320,6 +504,7 @@ def compile_policy(
     policy_hash = compute_policy_hash(
         actions=tuple(compiled_actions),
         response_language=response_language,
+        evidence_requirements=evidence_requirements,
         platform_policy_applied=platform_policy_applied,
         policy_version=POLICY_VERSION,
         compiler_version=COMPILER_VERSION,
@@ -363,13 +548,36 @@ def _resolve_response_language(
 
 def compute_policy_hash(
     *, actions: tuple[Action, ...], response_language: str,
+    evidence_requirements: tuple[str, ...] = (),
     platform_policy_applied: tuple[str, ...], policy_version: str, compiler_version: str,
 ) -> str:
     """Deterministic content hash — logging/cache-keying/consistency only,
-    NEVER an authorization credential (see module docstring)."""
+    NEVER an authorization credential (see module docstring).
+
+    Covers every field that is both materially behavior-relevant AND
+    independently re-derivable from ``ExecutionPolicy`` alone (so a
+    "second consumer" with only the serialized policy in hand can always
+    recompute it — see test_policy_compiler.py's integration tests):
+    ``actions`` (constraints + target/objective/prohibited identities),
+    ``response_language``, ``evidence_requirements`` (added by this
+    hardening pass — two policies that differ only in whether course
+    grounding is required must never collide on one cache key),
+    ``platform_policy_applied`` (which rule ids/versions fired and why),
+    ``policy_version``, ``compiler_version``.
+
+    Deliberately EXCLUDES ``ResolvedStudentIntent.schema_version`` (the
+    *input* contract's version): ``ExecutionPolicy`` does not carry that
+    value forward as a field, so including it in the hash would make the
+    hash depend on something no downstream consumer could ever
+    independently recompute from the policy object alone — breaking the
+    exact "safe hand-off" property this hash exists for. An input schema
+    change is expected to show up as a ``compiler_version``/
+    ``policy_version`` bump instead, both of which ARE in the hash.
+    """
     payload = {
         "actions": [asdict(a) for a in actions],
         "response_language": response_language,
+        "evidence_requirements": list(evidence_requirements),
         "platform_policy_applied": list(platform_policy_applied),
         "policy_version": policy_version,
         "compiler_version": compiler_version,
@@ -379,6 +587,7 @@ def compute_policy_hash(
 
 
 __all__ = [
-    "COMPILER_VERSION", "POLICY_VERSION", "ExecutionPolicy", "PLATFORM_RULES",
-    "PlatformRule", "compile_policy", "compute_policy_hash",
+    "COMPILER_VERSION", "FIELD_NAMES", "POLICY_VERSION", "RESTRICTIVENESS_RANK",
+    "ExecutionPolicy", "PLATFORM_RULES", "PlatformRule", "UNSET_SENTINELS",
+    "compile_policy", "compute_policy_hash", "is_unset_field", "more_restrictive",
 ]

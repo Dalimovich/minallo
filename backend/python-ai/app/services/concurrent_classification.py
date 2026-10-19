@@ -30,6 +30,52 @@ an explicitly out-of-scope consumer here (Milestone 2 is "isolated
 foundations"; the actual call-site change is Milestone 3). This module
 exists so the concurrency + failure-isolation mechanism can be proven with
 mocked tests ahead of that wiring landing.
+
+Hardening-pass addendum (code review, not yet resolved — a real open
+product decision, not a code bug):
+
+A passing ``asyncio.gather`` test proves the TWO CALLS don't corrupt each
+other's results. It does NOT prove the concurrent path's classification is
+SEMANTICALLY EQUIVALENT to the sequential path's — see
+``test_concurrent_classification.py::
+test_concurrent_path_produces_a_measurably_less_resolved_student_goal``
+for a concrete, reproduced case where it is not: "go ahead" after an
+assistant turn offering to extend a flashcard set to a new topic resolves,
+sequentially, to a goal mentioning that topic and classifies as
+``FLASHCARD_GENERATION``; run concurrently against the deterministic
+``base`` instead, it stays the literal "go ahead" and classifies as the
+generic ``GENERAL_COURSE_QA``. That is a real accuracy cost, not a
+theoretical one.
+
+Four shapes this could legitimately take, per the Milestone 1 report
+(``docs/semantic-intent-milestone-1-report.md``, §8/S12.6):
+
+1. One combined structured semantic call (both classifications from one
+   prompt) — explicitly rejected by Milestone 1: call #2's prompt needs
+   call #1's resolved output as an input, so merging loses that boundary.
+2. Two dependent sequential calls (today's deployed behavior) — correct,
+   but pays both calls' latency serially every time either gate fires.
+3. A deterministic dialogue stage (no model call) followed by ONE
+   semantic call covering what's left — would need call #2's own prompt
+   broadened to also resolve what call #1 currently resolves semantically,
+   collapsing two triggers into one call. Not designed or evaluated here.
+4. Two concurrent calls with an explicitly accepted accuracy trade-off —
+   what THIS module implements.
+
+Milestone 1's own S12.6 line item is "model budget — ≤1 classification
+call/turn, don't assume merge", and its answer was "run both concurrently,
+don't merge" — which satisfies "don't assume merge" but does NOT satisfy
+"≤1 classification call/turn" on any reading where call #1 and call #2
+both count against that budget: concurrency changes LATENCY, not CALL
+COUNT. Whether that budget line was meant to cap TOTAL classification
+calls (in which case today's sequential dual-call behavior already
+exceeds it, independent of anything in this module) or only the NEW
+call #2 beyond an already-accepted call #1, is not resolved anywhere in
+this repository that this hardening pass could find. This module does not
+resolve it either — it only proves option 4 is mechanically safe
+(failure-isolated) IF option 4 is the one chosen. That choice, and the
+budget-counting question, need an explicit product decision before any
+Milestone 3 wiring, not just a passing test.
 """
 
 from __future__ import annotations

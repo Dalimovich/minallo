@@ -393,6 +393,7 @@ def test_integration_serialized_policy_round_trips_with_identical_hash():
     )
     recomputed_hash = compute_policy_hash(
         actions=reconstructed_actions, response_language=deserialized["response_language"],
+        evidence_requirements=tuple(deserialized["evidence_requirements"]),
         platform_policy_applied=tuple(deserialized["platform_policy_applied"]),
         policy_version=deserialized["policy_version"], compiler_version=deserialized["compiler_version"],
     )
@@ -424,3 +425,297 @@ def test_recompiling_the_same_intent_is_pure_and_deterministic():
     policy2 = compile_policy(intent)
     assert policy1 == policy2
     assert policy1.policy_hash == policy2.policy_hash
+
+
+# ===========================================================================
+# Hardening pass (code review): trusted/untrusted action merging.
+# ===========================================================================
+
+def _trusted_explain(target="5"):
+    return Action(objective="explain", target=target, state="requested")
+
+
+def _untrusted_official_solution_attempt(target="5"):
+    return Action(
+        objective="official_solution", target=target, state="unresolved",
+        release=ReleaseConstraints(final_answer="permitted"),
+    )
+
+
+def test_untrusted_action_never_determines_objective_or_state_trusted_first():
+    intent = _intent([_trusted_explain(), _untrusted_official_solution_attempt()])
+    policy = compile_policy(intent)
+    action = policy.actions[0]
+    assert action.objective == "explain"  # never "official_solution"
+    assert action.state == "requested"  # the trusted explain stands, not blanket "unresolved"
+    assert action.target == "5"
+
+
+def test_untrusted_action_never_determines_objective_or_state_untrusted_first():
+    """Same as above with insertion order reversed — the fix must not be
+    order-dependent."""
+    intent = _intent([_untrusted_official_solution_attempt(), _trusted_explain()])
+    policy = compile_policy(intent)
+    action = policy.actions[0]
+    assert action.objective == "explain"
+    assert action.state == "requested"
+
+
+def test_untrusted_contested_field_never_gets_the_permissive_tutoring_default():
+    """The untrusted action's own proposed value (final_answer=permitted)
+    must not leak in, AND the field must not silently fall back to the
+    ordinary tutoring default (also "permitted") either — both would look
+    identical and wrongly permissive. It must land on the restrictive
+    fallback specifically because an untrusted attempt touched it."""
+    intent = _intent([_trusted_explain(), _untrusted_official_solution_attempt()])
+    policy = compile_policy(intent)
+    action = policy.actions[0]
+    assert action.release.final_answer == "prohibited"
+    assert any(
+        entry.startswith("contested_fallback:5:final_answer=") for entry in policy.platform_policy_applied
+    )
+    assert policy.needs_clarification is True
+
+
+def test_untrusted_attempted_objective_is_surfaced_not_silently_dropped():
+    intent = _intent([_trusted_explain(), _untrusted_official_solution_attempt()])
+    policy = compile_policy(intent)
+    assert "official_solution" in policy.actions[0].prohibited
+
+
+def test_trusted_fields_independently_established_survive_alongside_contested_ones():
+    """A field a DIFFERENT trusted action legitimately set must not be
+    swept into the restrictive fallback just because another, untrusted
+    action also showed up for the same target."""
+    intent = _intent([
+        Action(objective="explain", target="5", state="requested",
+               release=ReleaseConstraints(explanation_depth="method")),
+        _untrusted_official_solution_attempt(),
+    ])
+    policy = compile_policy(intent)
+    assert policy.actions[0].release.explanation_depth == "method"  # trusted, preserved
+    assert policy.actions[0].release.final_answer == "prohibited"  # contested, restrictive
+
+
+def test_distinguish_prohibiting_one_action_from_prohibiting_the_entire_target():
+    """Two TRUSTED actions, same target, same turn: one objective
+    explicitly prohibited, a different objective explicitly requested.
+    The compiled target must reflect the requested objective as primary
+    (not collapse the whole target to "prohibited"), while still
+    recording the prohibited objective explicitly."""
+    intent = _intent([
+        Action(objective="official_solution", target="5", state="prohibited",
+               release=ReleaseConstraints(official_solution="prohibited")),
+        Action(objective="hint", target="5", state="requested",
+               release=ReleaseConstraints(form="hint")),
+    ])
+    policy = compile_policy(intent)
+    action = policy.actions[0]
+    assert action.objective == "hint"
+    assert action.state == "requested"
+    assert "official_solution" in action.prohibited
+    assert action.release.official_solution == "prohibited"  # the prohibition's own field still holds
+    assert action.release.form == "hint"
+
+
+def test_provenance_all_valid_required_not_any_valid(monkeypatch=None):
+    """Regression for the provenance fix in resolved_student_intent.py: an
+    action with ONE valid origin and ONE forged origin must downgrade to
+    unresolved at compile time too (exercised through compile_policy, not
+    just the unit-level validator)."""
+    intent = _intent([
+        Action(
+            objective="solve", target="5b", state="requested",
+            release=ReleaseConstraints(final_answer="permitted"),
+            provenance=(
+                Origin(kind="current_message", span=(0, 1)),
+                Origin(kind="conversation_turn", turn_id="turn-forged"),
+            ),
+        ),
+    ], message="x")
+    policy = compile_policy(intent, turn_ledger={"turn-1": {}})
+    assert policy.actions[0].state == "unresolved"
+    assert policy.actions[0].release.final_answer == "prohibited"
+
+
+# ===========================================================================
+# Hardening pass: reliable conflict resolution (turn recency, same-turn
+# correction vs. genuine ambiguity, forged/out-of-order turn metadata).
+# ===========================================================================
+
+def test_same_turn_explicit_correction_lets_the_later_clause_win():
+    """"Don't show the result. Actually, show it." — both clauses are the
+    SAME turn (no distinguishing marker), but conversation="correction"
+    signals this is the student overriding themselves, so the later
+    clause wins outright rather than the restrictive tie-break."""
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ], conversation="correction", message="Don't show the result. Actually, show it.")
+    policy = compile_policy(intent)
+    assert policy.actions[0].release.final_answer == "permitted"
+
+
+def test_same_turn_genuine_ambiguity_without_correction_signal_stays_restrictive():
+    """The same two conflicting actions WITHOUT conversation="correction"
+    have no "which one is the correction" signal, so the safe restrictive
+    tie-break applies instead."""
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ], conversation="new")
+    policy = compile_policy(intent)
+    assert policy.actions[0].release.final_answer == "prohibited"
+
+
+def test_compatible_same_turn_restrictions_on_different_fields_both_survive():
+    """"Show the method but don't show the result." — two trusted actions,
+    same turn, but they touch DIFFERENT fields, so there is no real
+    conflict at all; both must independently survive."""
+    intent = _intent([
+        Action(objective="explain", target="5", state="requested",
+               release=ReleaseConstraints(explanation_depth="worked_derivation")),
+        Action(objective="solve", target="5", state="prohibited",
+               release=ReleaseConstraints(final_answer="prohibited")),
+    ])
+    policy = compile_policy(intent)
+    release = policy.actions[0].release
+    assert release.explanation_depth == "worked_derivation"
+    assert release.final_answer == "prohibited"
+
+
+def test_earlier_turn_prohibition_then_verified_later_turn_permission():
+    ledger = {"turn-1": {}, "turn-2": {}}
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-2")),
+    ], conversation="correction")
+    policy = compile_policy(intent, turn_ledger=ledger)
+    assert policy.actions[0].release.final_answer == "permitted"
+
+
+def test_historical_actions_out_of_chronological_order_use_ledger_not_list_position():
+    """The chronologically LATER action (turn-2) is listed FIRST; the
+    chronologically EARLIER action (turn-1) is listed SECOND. A compiler
+    that trusted raw list position would let the earlier one win just
+    because it came last in the list. The ledger must override that."""
+    ledger = {"turn-1": {}, "turn-2": {}}
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-2")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited", changed_by_turn="turn-1")),
+    ])
+    policy = compile_policy(intent, turn_ledger=ledger)
+    # turn-2 is chronologically later than turn-1, regardless of list order.
+    assert policy.actions[0].release.final_answer == "permitted"
+
+
+def test_forged_changed_by_turn_cannot_override_a_verified_trusted_value():
+    ledger = {"turn-1": {}}
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-99-forged")),
+    ])
+    policy = compile_policy(intent, turn_ledger=ledger)
+    # The forged marker can't prove it's later, so the tie-break applies —
+    # prohibited (more restrictive) wins over the forged override attempt.
+    assert policy.actions[0].release.final_answer == "prohibited"
+
+
+def test_mismatched_changed_by_turn_does_not_silently_override_without_a_ledger_fallback_still_safe():
+    """When NO ledger is supplied at all, the compiler falls back to list
+    order (a documented trust assumption) rather than trusting the label's
+    content — a mismatched/unverifiable label does not get special
+    treatment over a correctly-ordered list."""
+    intent = _intent([
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="prohibited")),
+        Action(objective="solve", target="5", state="requested",
+               release=ReleaseConstraints(final_answer="permitted", changed_by_turn="turn-claims-to-be-later")),
+    ])
+    policy = compile_policy(intent)  # no turn_ledger supplied
+    # No ledger to verify against: falls back to list order, and the
+    # labeled action IS later in the list, so it legitimately overrides.
+    assert policy.actions[0].release.final_answer == "permitted"
+
+
+# ===========================================================================
+# Hardening pass: exercise target hierarchy (canonical parser, not prefix).
+# ===========================================================================
+
+def test_unrelated_numeric_labels_5_and_50_do_not_inherit():
+    intent = _intent([
+        Action(objective="explain", target="5", state="requested",
+               release=ReleaseConstraints(explanation_depth="worked_derivation")),
+        Action(objective="solve", target="50", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ])
+    policy = compile_policy(intent)
+    by_target = {a.target: a.release for a in policy.actions}
+    assert by_target["50"].explanation_depth != "worked_derivation"
+    assert not any("narrow_target_inherits:50<-5:" in e for e in policy.platform_policy_applied)
+
+
+def test_5a_and_5ab_are_not_a_recognized_label_relationship():
+    intent = _intent([
+        Action(objective="explain", target="5a", state="requested",
+               release=ReleaseConstraints(explanation_depth="worked_derivation")),
+        Action(objective="solve", target="5ab", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ])
+    policy = compile_policy(intent)
+    by_target = {a.target: a.release for a in policy.actions}
+    assert by_target["5ab"].explanation_depth != "worked_derivation"
+    assert not any("narrow_target_inherits:5ab<-5a:" in e for e in policy.platform_policy_applied)
+
+
+def test_nested_exercise_label_5a_and_5a1_inherit_correctly():
+    intent = _intent([
+        Action(objective="explain", target="5a", state="requested",
+               release=ReleaseConstraints(explanation_depth="worked_derivation")),
+        Action(objective="solve", target="5a1", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ])
+    policy = compile_policy(intent)
+    by_target = {a.target: a.release for a in policy.actions}
+    assert by_target["5a1"].explanation_depth == "worked_derivation"
+    assert any("narrow_target_inherits:5a1<-5a:" in e for e in policy.platform_policy_applied)
+
+
+def test_unrelated_quantity_identifiers_f_and_fx_do_not_inherit():
+    intent = _intent([
+        Action(objective="explain", target="F", state="requested",
+               release=ReleaseConstraints(explanation_depth="worked_derivation")),
+        Action(objective="solve", target="Fx", state="requested",
+               release=ReleaseConstraints(final_answer="permitted")),
+    ])
+    policy = compile_policy(intent)
+    by_target = {a.target: a.release for a in policy.actions}
+    assert by_target["Fx"].explanation_depth != "worked_derivation"
+    assert not any("narrow_target_inherits:Fx<-F:" in e for e in policy.platform_policy_applied)
+
+
+# ===========================================================================
+# Hardening pass: policy hashing includes evidence_requirements.
+# ===========================================================================
+
+def test_policy_hash_changes_when_evidence_requirements_differ_but_actions_do_not():
+    same_actions = (Action(objective="explain", target="5", state="requested"),)
+    hash_without_evidence = compute_policy_hash(
+        actions=same_actions, response_language="en", evidence_requirements=(),
+        platform_policy_applied=(), policy_version="1.1.0", compiler_version="1.1.0",
+    )
+    hash_with_evidence = compute_policy_hash(
+        actions=same_actions, response_language="en", evidence_requirements=("course_grounding_required",),
+        platform_policy_applied=(), policy_version="1.1.0", compiler_version="1.1.0",
+    )
+    assert hash_without_evidence != hash_with_evidence

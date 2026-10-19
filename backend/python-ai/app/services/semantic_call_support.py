@@ -20,13 +20,35 @@ Two concerns, both pure / no network:
 2. ``validate_semantic_action`` — strict schema + consistency validation
    for one model-proposed action, mirroring ``student_intent._semantic_
    model_call``'s existing validation style (reject unknown enum values,
-   missing fields, out-of-range confidence) plus the consistency
-   invariant: the model may ADD prohibitions but may never REMOVE one the
-   caller already trusts at high confidence (``base_action``), and may
-   never grant anything platform policy forbids (``forbidden_fields``,
-   e.g. a field a platform rule already clamped). Any failure returns
-   ``None`` — fail-closed, never a propagated exception, never an expanded
-   permission.
+   missing/malformed fields, out-of-range confidence, UNKNOWN fields too —
+   a model payload with an extra/misspelled key is rejected, not silently
+   ignored) plus two consistency invariants, now checked across EVERY
+   ``ReleaseConstraints`` field (final answer, official solution,
+   explanation depth, form, and the pacing fields), not just the two
+   release-state ones:
+
+   - the model may ADD a restriction but may never REMOVE/loosen one the
+     caller already trusts at high confidence (``base_action``);
+   - the model may never grant anything a platform rule has already
+     clamped (``platform_forbidden`` — a ``{field: forced_value}`` mapping
+     the caller builds from whichever ``PlatformRule``s matched BEFORE
+     calling this; see ``policy_compiler.PLATFORM_RULES``).
+
+   Any failure returns ``None`` — fail-closed, never a propagated
+   exception (including a malformed, non-dict ``release`` payload), never
+   an expanded permission.
+
+   Field-level provenance note: this function validates the PAYLOAD'S
+   content only. Whether the caller should trust the resulting ``Action``
+   AT ALL is a separate, mandatory question answered by
+   ``resolved_student_intent.validate_action_provenance`` — which now
+   requires EVERY origin in an action's ``provenance`` tuple to validate,
+   not just one (see that module for why: the schema gives one action a
+   single provenance tuple covering all of its fields, so a single valid
+   origin must never be allowed to vouch for a different, unrelated claim
+   riding along with it). Callers MUST run every ``Action`` this function
+   returns through that provenance check before treating it as trusted —
+   this function has no visibility into provenance at all.
 """
 
 from __future__ import annotations
@@ -34,7 +56,8 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, get_args
 
-from .resolved_student_intent import Action, ExplanationDepth, Objective, ReleaseConstraints, ReleaseForm, ReleaseState
+from .policy_compiler import FIELD_NAMES, is_unset_field, more_restrictive
+from .resolved_student_intent import Action, ActionState, ExplanationDepth, Objective, ReleaseConstraints, ReleaseForm, ReleaseState
 
 _NEGATION_RE = re.compile(
     r"\b(?:not|don't|do\s+not|without|never|no\b|nicht|kein\w*|ohne|لا|ما)\b", re.IGNORECASE,
@@ -67,14 +90,29 @@ def needs_semantic_escalation(message: str, *, has_unresolved_reference: bool = 
     return False
 
 
-_RELEASE_STATE_FIELDS = ("final_answer", "official_solution")
+_RELEASE_STATE_VALUES = set(get_args(ReleaseState))
 _EXPLANATION_DEPTH_VALUES = set(get_args(ExplanationDepth))
 _RELEASE_FORM_VALUES = set(get_args(ReleaseForm))
-_RELEASE_STATE_VALUES = set(get_args(ReleaseState))
 _OBJECTIVE_VALUES = set(get_args(Objective))
+_ACTION_STATE_VALUES = set(get_args(ActionState))
+
+# changed_by_turn is deliberately NOT in this whitelist: it names which
+# TRUSTED, deterministic turn a correction took effect at, which is a
+# claim the model-sourced payload is never in a position to make on its
+# own (see policy_compiler.py's turn-recency hardening) — a payload that
+# includes it is rejected as an unknown field, not silently accepted.
+_ALLOWED_RELEASE_KEYS = frozenset(FIELD_NAMES) - {"changed_by_turn"}
+_ALLOWED_TOP_LEVEL_KEYS = frozenset({"objective", "target", "confidence", "release", "state", "prohibited"})
+_MAX_REASONABLE_COUNT = 50  # max_steps/max_items ceiling — generous, not unlimited.
 
 
 def _validated_release(raw: Mapping[str, Any]) -> ReleaseConstraints:
+    if not isinstance(raw, Mapping):
+        raise ValueError("release must be an object")
+    unknown = set(raw.keys()) - _ALLOWED_RELEASE_KEYS
+    if unknown:
+        raise ValueError(f"release has unknown field(s): {sorted(unknown)}")
+
     final_answer = raw.get("final_answer", "unspecified")
     official_solution = raw.get("official_solution", "unspecified")
     explanation_depth = raw.get("explanation_depth", "unspecified")
@@ -90,10 +128,13 @@ def _validated_release(raw: Mapping[str, Any]) -> ReleaseConstraints:
         raise ValueError("explanation_depth must be a known value")
     if form not in _RELEASE_FORM_VALUES:
         raise ValueError("form must be a known value")
-    if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, int)):
-        raise ValueError("max_steps must be an int or null")
-    if max_items is not None and (isinstance(max_items, bool) or not isinstance(max_items, int)):
-        raise ValueError("max_items must be an int or null")
+    for count_field, value in (("max_steps", max_steps), ("max_items", max_items)):
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{count_field} must be an int or null")
+        if not 1 <= value <= _MAX_REASONABLE_COUNT:
+            raise ValueError(f"{count_field} must be between 1 and {_MAX_REASONABLE_COUNT}")
     if wait_for_student is not None and not isinstance(wait_for_student, bool):
         raise ValueError("wait_for_student must be a bool or null")
     return ReleaseConstraints(
@@ -103,42 +144,84 @@ def _validated_release(raw: Mapping[str, Any]) -> ReleaseConstraints:
     )
 
 
+def _violates_restrictiveness_floor(field: str, floor_value: Any, proposed_value: Any) -> bool:
+    """True if ``proposed_value`` is strictly LESS restrictive than
+    ``floor_value`` for ``field`` — i.e. the proposal would loosen past a
+    value the caller is holding as a floor (a trusted base action's own
+    value, or a platform-forced value)."""
+    if is_unset_field(field, floor_value):
+        return False  # no floor to violate
+    if is_unset_field(field, proposed_value):
+        return False  # the model didn't address this field at all
+    more = more_restrictive(field, floor_value, proposed_value)
+    return more == floor_value and floor_value != proposed_value
+
+
 def validate_semantic_action(
     raw: Mapping[str, Any],
     *,
     base_action: Action | None = None,
+    platform_forbidden: Mapping[str, Any] | None = None,
     confidence_floor: float = 0.65,
 ) -> Action | None:
     """Validate one model-proposed action. Returns ``None`` (fail-closed,
-    never an exception) on any schema violation, sub-floor confidence, or a
-    consistency violation against ``base_action`` (the caller's own
-    trusted, already-known action for this same target, if any)."""
+    never an exception — including on a malformed, non-dict ``release``
+    payload) on any schema violation, sub-floor confidence, or a
+    consistency violation against ``base_action``/``platform_forbidden``.
+    See the module docstring for the full contract, including the
+    mandatory separate provenance check this function does NOT perform."""
     try:
+        if not isinstance(raw, Mapping):
+            raise ValueError("payload must be an object")
+        unknown = set(raw.keys()) - _ALLOWED_TOP_LEVEL_KEYS
+        if unknown:
+            raise ValueError(f"payload has unknown field(s): {sorted(unknown)}")
+
         objective = raw["objective"]
         if objective not in _OBJECTIVE_VALUES:
             raise ValueError("unknown objective")
-        target = str(raw["target"])
+
+        target = raw["target"]
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError("target must be a non-empty string")
+
+        state = raw.get("state", "requested")
+        if state not in _ACTION_STATE_VALUES:
+            raise ValueError("unknown action state")
+
+        prohibited_raw = raw.get("prohibited", ())
+        if not isinstance(prohibited_raw, (list, tuple)) or any(p not in _OBJECTIVE_VALUES for p in prohibited_raw):
+            raise ValueError("prohibited must be a list of known objectives")
+        prohibited = tuple(dict.fromkeys(prohibited_raw))
+
         confidence = raw.get("confidence")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
             raise ValueError("confidence must be a number")
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("confidence out of range")
+
         release = _validated_release(raw.get("release") or {})
-    except (KeyError, ValueError, TypeError):
+    except Exception:  # noqa: BLE001 — deliberate fail-closed boundary, matches
+        # student_intent._semantic_model_call's house style: ANY malformed
+        # input (including a non-dict `release`, which would otherwise
+        # raise an uncaught AttributeError) must degrade to None, never
+        # propagate.
         return None
+
     if confidence < confidence_floor:
         return None
-    if base_action is not None:
-        for field in _RELEASE_STATE_FIELDS:
-            if (
-                getattr(base_action.release, field) == "prohibited"
-                and getattr(release, field) == "permitted"
-            ):
-                # The model may ADD prohibitions but may never REMOVE one
-                # already trusted at high confidence — fail closed instead
-                # of silently expanding what's permitted.
-                return None
-    return Action(objective=objective, target=target, release=release, state=raw.get("state", "requested"))
+
+    for field in FIELD_NAMES:
+        proposed = getattr(release, field)
+        if base_action is not None and _violates_restrictiveness_floor(field, getattr(base_action.release, field), proposed):
+            # The model may ADD a restriction but may never REMOVE/loosen
+            # one already trusted at high confidence.
+            return None
+        if platform_forbidden and field in platform_forbidden and _violates_restrictiveness_floor(field, platform_forbidden[field], proposed):
+            # Nor may it loosen past what a platform rule already forced.
+            return None
+
+    return Action(objective=objective, target=target, release=release, state=state, prohibited=prohibited)
 
 
 __all__ = ["needs_semantic_escalation", "validate_semantic_action"]

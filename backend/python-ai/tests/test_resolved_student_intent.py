@@ -132,7 +132,14 @@ def test_action_with_no_provenance_is_left_alone():
     assert validated.state == "requested"
 
 
-def test_action_with_one_valid_and_one_invalid_origin_keeps_its_state():
+def test_action_with_one_valid_and_one_invalid_origin_downgrades_to_unresolved():
+    """Hardening fix: a single real origin must not vouch for a DIFFERENT,
+    unrelated forged claim riding along in the same provenance tuple (e.g.
+    a real current_message span alongside a forged conversation_turn
+    trying to justify an inherited value). The schema gives one action one
+    provenance tuple for ALL its fields, so "any valid" was unsafe — it let
+    a legitimate origin for one claim quietly launder an unrelated forged
+    one. Must be "all valid" instead."""
     action = Action(
         objective="solve", target="5b", state="requested",
         provenance=(
@@ -141,6 +148,20 @@ def test_action_with_one_valid_and_one_invalid_origin_keeps_its_state():
         ),
     )
     validated = validate_action_provenance(action, original_message="abcdef", turn_ledger={})
+    assert validated.state == "unresolved"
+
+
+def test_action_with_all_valid_origins_keeps_its_state():
+    action = Action(
+        objective="solve", target="5b", state="requested",
+        provenance=(
+            Origin(kind="conversation_turn", turn_id="turn-1"),
+            Origin(kind="current_message", span=(0, 3)),
+        ),
+    )
+    validated = validate_action_provenance(
+        action, original_message="abcdef", turn_ledger={"turn-1": {}},
+    )
     assert validated.state == "requested"
 
 

@@ -139,3 +139,64 @@ async def test_both_real_call_sites_gathered_with_mocked_clients_no_network(monk
     # Both fakes were actually invoked (not skipped) and nothing hit the network.
     assert dialogue_client.call_count == 1
     assert intent_client.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Hardening pass (code review): "a passing asyncio.gather test is not
+# sufficient evidence of semantic equivalence." This reproduces a concrete
+# case where the concurrent design's documented accuracy trade-off (call #2
+# sees the deterministic `base` dialogue, not call #1's resolved output)
+# actually changes the result — not just a theoretical risk.
+# ---------------------------------------------------------------------------
+
+def test_concurrent_path_produces_a_measurably_less_resolved_student_goal(monkeypatch):
+    """"go ahead", replying to an assistant offer to extend a flashcard set
+    to screws. TODAY's sequential behavior (call #1 fully resolves first,
+    THEN call #2 runs against that) classifies this correctly as
+    FLASHCARD_GENERATION with a goal that names "screws". The concurrent
+    helper's documented design runs call #2 against the deterministic
+    `base` instead — which never heard the semantic resolution at all — and
+    gets the generic, unresolved GENERAL_COURSE_QA. This is the real cost
+    side of the trade-off the module docstring now documents; it is NOT
+    evidence the trade-off is acceptable, only that it is real."""
+    from app.services.answer_intent import AcademicIntent
+
+    previous_turns = [
+        {"role": "user", "text": "Create flashcards about bearings."},
+        {"role": "assistant", "text": "Should I make the same set for screws?"},
+    ]
+    base_dialogue = resolve_dialogue("go ahead", previous_turns=previous_turns)
+    assert base_dialogue.resolved_request == "go ahead"  # deterministic layer doesn't know what "go ahead" means yet
+
+    client = _FakeClient({
+        "relation": "answer_to_assistant", "speechAct": "confirmation", "taskFamily": "flashcards",
+        "continuesPreviousGoal": True, "resolvedRequest": "Create flashcards about screws too.",
+        "confidence": 0.92,
+    })
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: client)
+    monkeypatch.setattr(
+        config_module, "get_settings",
+        lambda: type("S", (), {"openai_generate_model": "gpt-4o-mini", "openai_reasoning_effort": "high"})(),
+    )
+
+    # Sequential (today's real behavior): call #2 sees call #1's resolution.
+    resolved_dialogue = resolve_dialogue_semantically(
+        "go ahead", previous_turns=previous_turns, base=base_dialogue,
+    )
+    sequential_intent = interpret_student_intent(
+        "go ahead", dialogue=resolved_dialogue,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, mode="off",
+    )
+
+    # Concurrent helper's documented design: call #2 sees only `base`.
+    concurrent_intent = interpret_student_intent(
+        "go ahead", dialogue=base_dialogue,
+        resolved_access=ResolvedDocumentAccess.RELEVANCE, mode="off",
+    )
+
+    assert sequential_intent.student_goal != concurrent_intent.student_goal
+    assert "screw" in sequential_intent.student_goal.lower()
+    assert concurrent_intent.student_goal == "go ahead"
+    assert sequential_intent.primary_task is AcademicIntent.FLASHCARD_GENERATION
+    assert concurrent_intent.primary_task is AcademicIntent.GENERAL_COURSE_QA
+    assert sequential_intent.primary_task != concurrent_intent.primary_task
