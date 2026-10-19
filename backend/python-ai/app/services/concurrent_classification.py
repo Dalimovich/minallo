@@ -1,6 +1,17 @@
 """Milestone 2 — concurrent-gather primitive for the two classification call
 sites, per the Milestone 1 decision.
 
+SUPERSEDED for the classification-budget decision (Decision 1, see
+``docs/semantic-intent-milestone-3-plan.md`` and ``unified_semantic_call.
+py``): the user has since set the hard budget at ONE semantic
+classification call per turn, TOTAL. This module's design still issues
+TWO calls (only their latency overlaps, not their count), which no longer
+meets that budget regardless of the accuracy trade-off already documented
+below. It is kept — not deleted — because it is working, tested code and
+the "go ahead" divergence test is useful evidence on its own; it must NOT
+be wired into any live route. ``unified_semantic_call.py`` is the
+module built against the new one-call budget.
+
 Call #1 (``dialogue_state.resolve_dialogue_semantically``) and call #2 (the
 semantic escalation inside ``student_intent.interpret_student_intent``) are
 NOT merged into one model call — call #2's prompt includes call #1's
