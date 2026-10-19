@@ -57,6 +57,7 @@ from app.services.reliability import (
     source_label_matches,
     build_allowed_mapping_labels,
     validate_repaired_answer,
+    answer_obligations,
 )
 from app.services.visual_repair import (
     VisualAnswerOptionResult,
@@ -906,6 +907,95 @@ def test_calculation_obligations_require_value_unit_and_visible_option() -> None
     )
     assert not selected_result_matches_visible_option(
         answer="V_Spritz = 177 cm³", options=identity.visible_answer_options,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Priority 3 investigation (Semantic Student Intent Layer M3 wiring task):
+# "Now calculate F and M" must not silently answer only F. Root cause
+# FOUND and precisely reproduced below with the REAL extraction pipeline
+# (not a synthetic fixture) -- and DELIBERATELY NOT FIXED here. See the
+# docstring of the first test for exactly why a fix is unsafe to ship
+# standalone in this worktree.
+# ---------------------------------------------------------------------------
+
+def test_KNOWN_GAP_multi_quantity_obligation_uses_any_not_all_so_missing_one_quantity_is_not_detected() -> None:
+    """Root cause of 'Now calculate F and M -> silently answers only F':
+    answer_obligations' INCLUDE_REQUESTED_QUANTITY check uses
+    ``any(value in answer for value in requested_quantities)`` — so as
+    soon as ONE of several genuinely distinct, both-required quantities
+    appears, the WHOLE obligation is marked satisfied, even though the
+    other one is completely absent from the answer. Reproduced here with
+    the real identify_grounded_task extraction (not a hand-built
+    fixture): for "Now calculate F and M.", requested_quantities really
+    is the correct ['F', 'M'] (extraction itself is NOT the bug for this
+    exact example) -- the bug is purely in how satisfaction is computed
+    from that list.
+
+    DELIBERATELY NOT FIXED in this worktree: naively changing this one
+    ``any()`` to ``all()`` is UNSAFE to ship standalone, proven by
+    test_flipping_any_to_all_would_regress_ordinary_single_quantity_
+    answers immediately below -- requested_quantities extraction is
+    independently noisy for a huge fraction of ordinary questions
+    (e.g. "Calculate V_Spritz for this exercise." extracts ['V_Spritz',
+    'this', 'exercise'], the trailing two being extraction noise, not
+    real required quantities), and under all()-semantics that noise
+    would make a correct, complete single-quantity answer wrongly fail
+    its obligation check and trigger needless repair. Fixing the
+    completeness-check semantics safely requires it to land together
+    with (or after) the requested-quantity extraction-noise-reduction
+    work already active on a separate branch (fix/exercise-and-
+    quantity-extraction, confirmed via git log at session start; a
+    different worktree, out of scope and explicitly not to be touched
+    by this task). Flagged here, with reproducible evidence, for that
+    sequencing decision rather than shipped as a standalone fix that
+    would regress the common case."""
+    question = "Now calculate F and M."
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id=None, filename=None, page=None,
+    )
+    assert identity.requested_quantities == ["F", "M"]  # extraction itself is correct here
+    traits = classify_task_traits(question)
+    only_f_answered = "The final answer is F = 42 N."
+    obligations = answer_obligations(answer=only_f_answered, identity=identity, traits=traits)
+    quantity_obligation = next(o for o in obligations if o.obligation_type == "include_requested_quantity")
+    # DOCUMENTED BUG: "M" never appears in the answer, yet this reads as
+    # satisfied, because `any()` only needs ONE of the two to match.
+    assert quantity_obligation.satisfied is True
+    # What a correct all()-based check WOULD say, if it could safely be
+    # applied (see the next test for why it currently can't be, standalone):
+    assert not all(value.casefold() in only_f_answered.casefold() for value in identity.requested_quantities)
+
+
+def test_flipping_any_to_all_would_regress_ordinary_single_quantity_answers() -> None:
+    """Demonstrates PRECISELY why the obvious one-line fix (any -> all)
+    cannot be shipped alone: requested_quantities extraction is noisy
+    independent of this bug, and an ordinary, genuinely correct,
+    complete single-quantity answer would start failing its obligation
+    check purely because of that noise -- a regression far worse than
+    the bug being fixed. This is the evidence for the "not fixed here,
+    flagged for sequencing" decision in the KNOWN_GAP test above."""
+    question = "Calculate V_Spritz for this exercise."
+    identity = identify_grounded_task(
+        question=question, current_page_text="", document_id=None, filename=None, page=None,
+    )
+    # Extraction noise, confirmed: "this"/"exercise" are not real
+    # requested quantities, just nearby words the regex also grabbed.
+    assert "this" in identity.requested_quantities
+    assert "exercise" in identity.requested_quantities
+    traits = classify_task_traits(question)
+    genuinely_complete_answer = (
+        "Using the formula, V_Spritz = 191 cm3, so the molten volume required is 191 cm3."
+    )
+    obligations = answer_obligations(answer=genuinely_complete_answer, identity=identity, traits=traits)
+    quantity_obligation = next(o for o in obligations if o.obligation_type == "include_requested_quantity")
+    # Today (any()): correctly satisfied, because V_Spritz is genuinely there.
+    assert quantity_obligation.satisfied is True
+    # If any() were simply replaced with all(): this genuinely complete
+    # answer would WRONGLY read as unsatisfied, purely because of the
+    # unrelated "this"/"exercise" extraction noise.
+    assert not all(
+        value.casefold() in genuinely_complete_answer.casefold() for value in identity.requested_quantities
     )
 
 
