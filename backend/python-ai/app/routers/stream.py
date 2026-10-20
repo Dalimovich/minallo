@@ -69,7 +69,7 @@ from ..services.learning_recommendation import (
 )
 from ..services.deep_learn_reuse import course_revision_hash, find_existing_lesson
 from ..services.visual_aids import VisualContext, select_visual_aids
-from ..services.fallback_research import research_unresolved_items
+from ..services.fallback_research import FallbackResearchResult, research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
     ensure_complete_answer,
@@ -6124,7 +6124,7 @@ async def _prepare_ask_stream_response(
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
     fallback_research = (
-        SimpleNamespace(sources=[])
+        FallbackResearchResult()
         if fast_evidence_sufficient
         else await run_in_threadpool(lambda: research_unresolved_items(
             multi_item_result,
