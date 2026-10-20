@@ -535,7 +535,7 @@ interface LandingTranslation {
             // because Writing Coach now mounts inside the aipage/chatbot
             // shell (#ncbRoot) — a learner can open it without ever
             // triggering the separate 'german'/Practice feature load.
-            aipage: ['views/chatbot/chatbot.css?v=48', 'views/writing-coach/writing-coach.css'],
+            aipage: ['views/chatbot/chatbot.css?v=49', 'views/writing-coach/writing-coach.css'],
             german: ['views/practice/practice.css', 'views/writing-coach/writing-coach.css'],
             notes: ['views/lecturenotes/lecturenotes.css'],
             profile: ['views/profile/profile.css'],

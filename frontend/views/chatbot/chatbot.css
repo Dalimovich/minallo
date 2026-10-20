@@ -1469,33 +1469,18 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
      inside no matter what. */
 }
 
-/* Messages scroll above the composer. Reserve enough bottom padding
-   that the last reply's action row (Copy / Regenerate / Bookmark) is
-   never hidden behind the composer when scrolled to the end. Composer
-   is ~76px tall + ~44px safe gap = 140px reserved. */
+/* Let the conversation's flex ancestors grow with its content. The existing
+   .ncb-center scroller and sticky composer keep their scrolling handlers. */
+.ncb-center-inner:has(.ncb-empty[data-state="active"]),
+.ncb-empty[data-state="active"] {
+  flex: 1 0 auto;
+}
+
+/* The composer occupies its actual height in normal flow, including multiline
+   drafts and attachments. Only a small message-to-composer gap is needed. */
 .ncb-empty[data-state="active"] .ncb-msgs {
-  /* Reserve enough space for the sticky composer (textarea + mode row +
-     attachments can grow well past its ~76px baseline) plus its bottom
-     safe-area gap, so the last reply's text and action row (Copy /
-     Regenerate / Bookmark) never render underneath it — even while
-     streaming, after regenerate, or on a long chat. Short chats no
-     longer get a dead zone because margin-top:auto already positions
-     msgs right above the composer. */
-  padding-bottom: 160px;
-  /* Soft fade at the bottom so text gracefully disappears as it
-     approaches the composer's top edge. */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black calc(100% - 120px),
-    transparent 100%
-  );
-          mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black calc(100% - 120px),
-    transparent 100%
-  );
+  flex-shrink: 0;
+  padding-bottom: 24px;
 }
 
 /* Make sure no parent of the composer is clipping its shadow / safe-area
