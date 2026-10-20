@@ -719,3 +719,187 @@ def test_genuine_full_document_request_still_asks_which_document_over_route(monk
 
     assert b'"code": "FULL_DOCUMENT_SCOPE_REQUIRED"' in body
     assert b'"resolvedDocumentAccess": "full_document"' in body
+
+
+# ---------------------------------------------------------------------------
+# Cache-policy interaction (item 2 of the 2026-10-20 live-eval follow-up
+# round) -- proving, at the real cache-lookup call site this route uses
+# (app/services/cache.lookup_answer/question_hash, not a narrower hash-only
+# helper test), that an answer cached under one compiled ExecutionPolicy can
+# never be replayed once the SAME question's policy changes. stream.py
+# already folds execution_policy.policy_hash into cache_key_kwargs
+# (stream.py ~4634) before ever calling lookup_answer/save_answer -- this
+# section's job is to prove that construction, not to add a new one.
+#
+# This harness's own ``_setup`` mocks ``cache.lookup_answer``/``cache.
+# save_answer``/``cache.fetch_course_version_hash`` directly on the
+# ``cache`` module -- harmless for every OTHER test in this file (none of
+# them reach ``cacheable=True``, since they all set ``openFileContext``,
+# same documented reason ``test_permitted_final_answer_still_streams_
+# normally`` already gives), but it means those mocks never actually
+# reach stream.py's own call sites: stream.py imports those three names
+# directly (``from ..services.cache import fetch_course_version_hash,
+# lookup_answer, save_answer``), so it holds its OWN binding, exactly the
+# same "module holds its own binding" issue this file's docstring already
+# calls out for ``retrieve_exercise_block``. The tests below patch ``cache.
+# get_supabase`` instead (cache.py's OWN binding, which its internal calls
+# do resolve against) and leave the real ``lookup_answer``/``question_hash``
+# running, so the real hashing/policy_hash logic is what gets exercised.
+#
+# A real end-to-end save-then-replay round trip through this exact mocked
+# route additionally requires satisfying several PRODUCT gates unrelated to
+# caching (high-risk numeric-answer validation, document-indexing-pending
+# detection, fast-lane-vs-deep-reasoning routing) that have nothing to do
+# with policy_hash correctness and would make this test fragile and
+# coupled to unrelated internals. Instead, this seeds the fake cache store
+# with the exact hash the real lookup call computes for turn 1 (standing in
+# for a real save, which is covered as its own concern elsewhere) and
+# proves the lookup for an otherwise-IDENTICAL turn 2 request misses once
+# only the compiled policy changes -- the real discriminating mechanism
+# under test.
+# ---------------------------------------------------------------------------
+
+class _FakeCacheTable:
+    """Minimal in-memory stand-in for the two tables this test's real call
+    sites actually touch: ``ai_answer_cache`` (``cache.lookup_answer``)
+    and ``documents`` (``cache.fetch_course_version_hash``, needed first
+    to produce the ``version_hash`` lookup_answer requires) -- not a
+    general fake Supabase client."""
+
+    def __init__(self, store, name):
+        self._store = store
+        self._name = name
+        self._op = None
+        self._filters: dict = {}
+
+    def select(self, *_a, **_k):
+        self._op = "select"
+        return self
+
+    def eq(self, key, value):
+        self._filters[key] = value
+        return self
+
+    def limit(self, _n):
+        return self
+
+    def execute(self):
+        if self._name == "documents":
+            # One document with a fixed hash -- enough for fetch_course_
+            # version_hash to produce a real, non-empty version_hash.
+            return type("R", (), {"data": [{"document_hash": "rev-1", "updated_at": "t0"}]})()
+        if self._op == "select":
+            key = (
+                self._filters.get("user_id"), self._filters.get("course_id"),
+                self._filters.get("question_hash"), self._filters.get("document_version_hash"),
+            )
+            row = self._store.get(key)
+            return type("R", (), {"data": [row] if row else []})()
+        return type("R", (), {"data": []})()
+
+
+class _FakeSupabaseForCache:
+    def __init__(self):
+        self.store: dict = {}
+
+    def table(self, name):
+        return _FakeCacheTable(self.store, name)
+
+
+def test_answer_cached_under_a_permissive_policy_is_not_replayed_once_the_policy_turns_restrictive(monkeypatch):
+    """Turn 1 (no restriction, permissive compiled policy) gets a cache
+    row seeded under the real hash its own lookup call computed. Turn 2
+    asks the EXACT SAME question/user/course/document/context -- the only
+    difference is the compiled policy now prohibits the final answer for
+    the active target (e.g. the student just said "don't reveal the
+    answer" for it). The turn-2 request must MISS, never replay turn 1's
+    cached (permissive) answer."""
+    from app.services import cache as cache_mod
+
+    fake_sb = _FakeSupabaseForCache()
+    monkeypatch.setattr(cache_mod, "get_supabase", lambda: fake_sb)
+    real_lookup = cache_mod.lookup_answer
+    real_question_hash = cache_mod.question_hash
+    real_fetch_version = cache_mod.fetch_course_version_hash
+    lookup_calls: list[tuple[dict, dict | None]] = []
+    hashes: list[str] = []
+
+    def spy_question_hash(*args, **kwargs):
+        h = real_question_hash(*args, **kwargs)
+        hashes.append(h)
+        return h
+
+    monkeypatch.setattr(cache_mod, "question_hash", spy_question_hash)
+
+    def _ask(policy, conversation_id):
+        stream, _save_calls = _setup(
+            monkeypatch, policy=policy, draft_text="irrelevant for this path",
+            conversation_id=conversation_id,
+        )
+        # Re-point stream.py's OWN bindings -- patching the cache module's
+        # attributes (what _setup does) never reaches these; see this
+        # section's docstring above.
+        monkeypatch.setattr(stream, "fetch_course_version_hash", real_fetch_version)
+
+        def spy_lookup(**kwargs):
+            result = real_lookup(**kwargs)
+            lookup_calls.append((kwargs, result))
+            return result
+
+        monkeypatch.setattr(stream, "lookup_answer", spy_lookup)
+        # Built directly rather than via this file's shared ``_run`` --
+        # that helper hardcodes activeDocumentId/openFileContext/
+        # visiblePage to the values the OTHER tests in this file need
+        # (deliberately NOT cacheable, see this section's docstring),
+        # which would collide with the values this test needs instead.
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=None,
+            question="Explain Newton's second law.",
+            visiblePage=None,
+            sourceMode="course_files",
+            openFileContext=None,
+            conversationId=conversation_id,
+            conversationGeneration=1,
+        )
+        async def _call_and_drain():
+            response = await stream.ask_stream_endpoint(payload, {"id": USER_ID})
+            return b"".join([event async for event in response.body_iterator])
+
+        try:
+            body = asyncio.run(_call_and_drain())
+        finally:
+            from app.config import get_settings
+            get_settings.cache_clear()
+        return body
+
+    _ask(_permissive_policy(), "cache-policy-turn-1")
+    turn1_kwargs, turn1_result = lookup_calls[-1]
+    assert turn1_kwargs["policy_hash"] == "permitted-5b"
+    assert turn1_result is None  # nothing cached yet
+
+    # Seed the store under the EXACT hash turn 1's own lookup computed --
+    # standing in for turn 1's answer having been saved (see docstring).
+    h1 = hashes[-1]
+    key1 = (turn1_kwargs["user_id"], turn1_kwargs["course_id"], h1, turn1_kwargs["version_hash"])
+    fake_sb.store[key1] = {
+        "id": "seeded-turn-1", "usage_count": 0,
+        "answer_json": {"answer": "TURN-1-PERMISSIVE-CACHED-ANSWER"},
+    }
+
+    # Sanity check: an IDENTICAL request (same permissive policy_hash)
+    # DOES find the seeded row -- proves the harness/seed is valid, not
+    # just vacuously true because nothing is ever found.
+    _ask(_permissive_policy(), "cache-policy-turn-1-repeat")
+    _repeat_kwargs, repeat_result = lookup_calls[-1]
+    assert repeat_result == {"answer": "TURN-1-PERMISSIVE-CACHED-ANSWER"}
+
+    # Turn 2: same question/user/course/document/context, but the policy
+    # for this target is now restrictive.
+    _ask(_restrictive_policy(), "cache-policy-turn-2")
+    turn2_kwargs, turn2_result = lookup_calls[-1]
+    assert turn2_kwargs["policy_hash"] == "restricted-5b"
+    assert turn2_result is None, (
+        "turn 2's restrictive policy must never be served turn 1's "
+        "permissive cached answer"
+    )
