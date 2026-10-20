@@ -45,10 +45,12 @@ body.ncb-fullbleed #psec-aipage {
   height: 100dvh !important;
   min-height: 0 !important;
 }
+body.minallo-chatbot-only .ncb-card,
 body.ncb-fullbleed .ncb-card {
   border-radius: 0 !important;
   border: none !important;
 }
+body.minallo-chatbot-only .ncb-main,
 body.ncb-fullbleed .ncb-main {
   padding: 0 !important;
 }
