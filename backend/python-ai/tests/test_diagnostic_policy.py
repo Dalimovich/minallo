@@ -212,6 +212,19 @@ def test_adapt_unresolved_reference_produces_unresolved_state():
     assert resolved.actions[0].target == "current_request"
 
 
+def test_adapt_maps_quiz_generation_to_hint_objective_ab24_backstop():
+    """AB-24 policy-layer follow-up: once answer_intent.py's _QUIZ_RE fix
+    classifies "Frag mich die Lagerkraft R_A ab." as QUIZ_GENERATION, the
+    deterministic adapter must map it to objective="hint" (not the
+    "other" default) so policy_compiler's existing hint-objective
+    fallback closes final_answer, independent of whatever generation-
+    side quiz mechanism handles the actual interactive experience."""
+    message = "Frag mich die Lagerkraft R_A ab."
+    dialogue, intent = _student_intent(message)
+    resolved = adapt_deterministic_intent(message=message, dialogue=dialogue, student_intent=intent)
+    assert resolved.actions[0].objective == "hint"
+
+
 def test_adapt_with_no_student_intent_still_produces_a_valid_shape():
     dialogue = resolve_dialogue("Explain torsion.", previous_turns=[])
     resolved = adapt_deterministic_intent(message="Explain torsion.", dialogue=dialogue, student_intent=None)

@@ -233,6 +233,22 @@ _ACADEMIC_INTENT_TO_OBJECTIVE: Mapping[AcademicIntent, Objective] = {
     AcademicIntent.COMPLETE_NOTES: "summarize",
     AcademicIntent.TRANSLATION: "translate",
     AcademicIntent.GENERAL_COURSE_QA: "answer_subquestion",
+    # AB-24 follow-up (2026-10-20): QUIZ_GENERATION was missing from this
+    # map entirely, so a quiz request -- even after answer_intent.py's
+    # _QUIZ_RE fix correctly classifies it -- fell through .get()'s
+    # default to objective="other" here, which gets NO final_answer
+    # protection from policy_compiler's existing hint/explain fallbacks.
+    # That only matters when SEMANTIC_INTENT_POLICY_ENFORCEMENT_ENABLED
+    # is on AND this turn's deterministic (non-escalated) path is the one
+    # that runs -- exactly AB-24's shape, confirmed: no negation/quote/
+    # correction/multi-target cue, so needs_semantic_escalation never
+    # fires for it. Mapping to the EXISTING, already-tested "hint"
+    # objective reuses policy_compiler.py's hint-objective fallback
+    # (final_answer="prohibited", form="hint") as a policy-layer backstop
+    # -- independent of, and free of any extra model call compared to,
+    # whatever generation-side quiz mechanism (QUIZ_CONTRACT) handles the
+    # actual interactive experience.
+    AcademicIntent.QUIZ_GENERATION: "hint",
 }
 
 _DEPTH_TO_EXPLANATION_DEPTH: Mapping[str, ExplanationDepth] = {
