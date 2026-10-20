@@ -26,7 +26,7 @@ test('QA2-4: the ≤520px breakpoint turns the sidebar into an off-canvas drawer
   const block = /@media \(max-width: 520px\) \{[\s\S]*?\n\}\n(?!\n*@media)/.exec(mobileCss)?.[0]
     ?? mobileCss.slice(mobileCss.indexOf('@media (max-width: 520px)'));
   assert.doesNotMatch(block, /\.ncb-sidebar \{\s*display: none/);
-  assert.match(block, /\.ncb-sidebar \{[\s\S]*?position: fixed !important;[\s\S]*?transform: translateX\(-105%\) !important;/);
+  assert.match(block, /\.ncb-sidebar \{[\s\S]*?position: absolute !important;\s*inset: 12px auto 12px 12px;[\s\S]*?transform: translateX\(-105%\) !important;/);
   assert.match(block, /\.ncb-sidebar\.ncb-mob-open \{\s*transform: translateX\(0\) !important;/);
   assert.match(block, /\.ncb-mobile-sidebar-btn \{\s*display: grid !important;/);
   assert.match(block, /\.ncb-sidebar-scrim\.show \{\s*display: block;/);

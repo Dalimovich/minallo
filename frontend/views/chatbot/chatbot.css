@@ -280,7 +280,9 @@ body.ncb-fullbleed .ncb-main {
 .ncb-sidebar {
   flex-shrink: 0;
   width: 308px;
-  height: 100%;
+  height: calc(100% - 24px);
+  margin: 12px;
+  border-radius: 16px;
   border-right: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.045);
 }
@@ -493,7 +495,7 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   align-items: flex-start;
   gap: 10px;
   padding: 20px;
-  border-radius: 1.5rem;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.045);
   color: #f1f5f9;
@@ -541,17 +543,18 @@ body:not(.night) .ncb-scroll-bottom-btn:hover {
   min-width: 0;
   max-width: 100%;
   width: 340px;
-  height: 100%;
+  height: calc(100% - 24px);
+  margin: 12px;
+  border-radius: 16px;
   border-left: 1px solid rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.045);
-  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 0.18s ease;
+  transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
 }
 
 .ncb-card[data-context-open="false"] .ncb-context {
   width: 0;
-  opacity: 0;
   border-left-width: 0;
   pointer-events: none;
 }
@@ -4087,9 +4090,11 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
 @media (max-width: 1024px) {
   .ncb-context {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    margin: 0;
+    max-width: calc(100% - 24px);
     z-index: 50;
     width: min(360px, 90vw);
     border-left: 1px solid rgba(255, 255, 255, 0.10);
@@ -4097,8 +4102,8 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
     backdrop-filter: blur(28px);
     -webkit-backdrop-filter: blur(28px);
     box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
-    transform: translateX(100%);
-    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    transform: translateX(calc(100% + 12px));
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     opacity: 1;
   }
   .ncb-card[data-context-open="true"] .ncb-context {
@@ -4109,7 +4114,7 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
     pointer-events: auto;
   }
   .ncb-card[data-context-open="false"] .ncb-context {
-    transform: translateX(100%);
+    transform: translateX(calc(100% + 12px));
     width: min(360px, 90vw);
     opacity: 1;
     border-left-width: 1px;
@@ -4474,17 +4479,11 @@ body:not(.night) .ncb-builder-spark { color: #1d4ed8; }
   transform: none !important;
 }
 
-.ncb-context,
-.ncb-card[data-context-open="false"] .ncb-context {
-  transition: none !important;
-}
-
 @media (max-width: 1024px) {
   .ncb-context,
   .ncb-card[data-context-open="true"] .ncb-context,
   .ncb-card[data-context-open="false"] .ncb-context {
     box-shadow: none !important;
-    transition: none !important;
   }
 }
 
@@ -6558,7 +6557,7 @@ body.ncb-pdf-workspace-open #drDrawer {
 /* Desktop rails are separate floating surfaces, not rectangular edges of one card. */
 @media (min-width: 1025px) {
   .ncb-card {
-    gap: 14px;
+    gap: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
@@ -6571,17 +6570,16 @@ body.ncb-pdf-workspace-open #drDrawer {
   .ncb-sidebar,
   .ncb-context {
     align-self: center;
-    height: calc(100% - 28px);
+    height: calc(100% - 24px);
     border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 24px;
+    border-radius: 16px;
     background: #0b192c;
     box-shadow:
       0 18px 48px rgba(0, 0, 0, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.035);
   }
 
-  .ncb-sidebar { width: 252px; margin-left: 14px; }
-  .ncb-context { margin-right: 14px; }
+  .ncb-sidebar { width: 252px; }
 
   body.ncb-pdf-workspace-open .ncb-center {
     width: 0;
@@ -6610,7 +6608,7 @@ body.ncb-pdf-workspace-open #drDrawer {
   }
 
   .ncb-card[data-context-open="false"] .ncb-context {
-    margin-right: 0;
+    margin-left: 0;
     border-width: 0;
   }
 }
@@ -6992,4 +6990,12 @@ body.ncb-pdf-workspace-open #drDrawer {
   color: #eff6ff;
   background: rgba(37, 99, 235, 0.22);
   box-shadow: inset 2px 0 0 #60a5fa;
+}
+
+/* Phone drawers share the same motion; keep reduced-motion navigation instant. */
+@media (max-width: 520px) {
+  .ncb-context { transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ncb-sidebar, .ncb-context { transition: none !important; }
 }
