@@ -56,8 +56,11 @@ def test_single_target_wait_for_student_projects_one_question_at_a_time():
 
 
 def test_no_active_constraints_projects_all_false():
+    # "other", not "explain"/"hint": those two objectives now carry their
+    # own default-closed final_answer fallback (AB-02/AB-03/AB-24 fixes),
+    # so they are no longer "no active constraints" examples.
     policy = compile_policy(_intent([
-        Action(objective="explain", target="task", state="requested"),
+        Action(objective="other", target="task", state="requested"),
     ]))
     projection = project_execution_policy_to_legacy_constraints(policy)
     assert projection is not None

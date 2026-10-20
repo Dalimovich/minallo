@@ -620,6 +620,27 @@ def compile_policy(
         # any turn, in either direction, is untouched by this and still
         # wins exactly as before.
         is_hint_objective = base_action.objective == "hint"
+        # Explain-objective fallback (AB-02/AB-03, semantic-intent blind
+        # A/B eval, 2026-10-20): "explain"/conceptual-help requests
+        # ("Aufgabe 1 raff ich grad nicht so richtig", "this cutting
+        # speed thing makes no sense to me, can u explain") leaked full
+        # worked calculations and final values in BOTH configurations.
+        # The hint-objective fallback above already recognized that a
+        # fully-unspecified release must not silently open final_answer
+        # for one specific objective ("hint"); "explain" is the sibling
+        # case the Milestone-1 design doc's own Gate 4 names separately
+        # from "complete worked solution" and the live eval confirms is
+        # just as silent-by-default in practice. Only final_answer needs
+        # overriding here -- form's tutoring default is already
+        # "explanation", which is correct for this objective as-is.
+        # Gated on state=="requested" (an actual ask), not just the
+        # objective label: a target merely MENTIONED while discussing
+        # something else (state="unspecified", e.g. "my professor once
+        # said X, anyway can you explain the beam problem?") must not
+        # pick up a closed final_answer it was never actually asked to
+        # close -- see test_merely_discussing_or_relaying_a_quote_does_
+        # not_establish_a_persisted_restriction.
+        is_explain_objective = base_action.objective == "explain" and state == "requested"
         for field in FIELD_NAMES:
             if not is_unset_field(field, working[field]):
                 continue
@@ -629,6 +650,9 @@ def compile_policy(
             elif is_hint_objective and field in ("final_answer", "form"):
                 working[field] = "prohibited" if field == "final_answer" else "hint"
                 tag = "hint_objective_fallback"
+            elif is_explain_objective and field == "final_answer":
+                working[field] = "prohibited"
+                tag = "explain_objective_fallback"
             else:
                 working[field] = _TUTORING_DEFAULT[field]
                 tag = "tutoring_default"

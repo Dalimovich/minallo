@@ -869,10 +869,12 @@ def test_hint_objective_with_unspecified_release_defaults_to_prohibited_not_perm
 
 
 def test_non_hint_objective_with_unspecified_release_is_unaffected():
-    """Non-regression: an "explain"/"solve" objective with unspecified
-    release must still get the ordinary tutoring default (final_answer
-    defaults open) -- the hint-objective fallback is scoped exactly to
-    objective="hint", not a general tightening of the fallback rule."""
+    """Non-regression: a "solve" objective with unspecified release must
+    still get the ordinary tutoring default (final_answer defaults
+    open) -- the hint-objective fallback is scoped exactly to
+    objective="hint" (see the separate, equally-scoped "explain"
+    fallback below for AB-02/AB-03 -- "solve" is still unaffected by
+    either)."""
     policy = compile_policy(_intent([
         Action(objective="solve", target="9", state="requested", release=ReleaseConstraints()),
     ]))
@@ -909,6 +911,59 @@ def test_hint_objective_widened_to_solve_by_a_later_turn_no_longer_gets_the_hint
     policy = compile_policy(_intent([
         Action(objective="hint", target="7", state="requested"),
         Action(objective="solve", target="7", state="requested"),
+    ]))
+    action = policy.actions[0]
+    assert action.objective == "solve"
+    assert action.release.final_answer == "permitted"
+
+
+# ===========================================================================
+# Explain-objective fallback (AB-02/AB-03, semantic-intent blind A/B eval,
+# 2026-10-20): same gap as the hint-objective fallback above, for the
+# sibling "explain" objective. "Aufgabe 1 raff ich grad nicht so richtig"
+# and "this cutting speed thing makes no sense to me can u explain" both
+# classify to objective="explain" with release left unspecified, and both
+# leaked the full worked calculation and final value in the live eval
+# because the general tutoring default opens final_answer for silence.
+# ===========================================================================
+
+def test_explain_objective_with_unspecified_release_defaults_to_prohibited_final_answer():
+    """The exact live-eval failure shape for AB-02/AB-03: objective=
+    "explain", target extracted correctly, release left unspecified.
+    Must compile to final_answer="prohibited" -- form stays the ordinary
+    tutoring default ("explanation"), unlike the hint fallback which
+    also overrides form to "hint"."""
+    policy = compile_policy(_intent([
+        Action(objective="explain", target="1", state="requested", release=ReleaseConstraints()),
+    ]))
+    action = policy.actions[0]
+    assert action.release.final_answer == "prohibited"
+    assert action.release.form == "explanation"
+    assert action.release.explanation_depth == "method"
+
+
+def test_explain_objective_explicit_final_answer_from_any_turn_still_wins():
+    """Non-regression: an explicit final_answer="permitted" alongside an
+    "explain" objective (e.g. "explain AND show me the final answer")
+    is untouched by the fallback -- it only fires when the field was
+    never addressed at all."""
+    policy = compile_policy(_intent([
+        Action(
+            objective="explain", target="1", state="requested",
+            release=ReleaseConstraints(final_answer="permitted"),
+        ),
+    ]))
+    action = policy.actions[0]
+    assert action.release.final_answer == "permitted"
+
+
+def test_explain_objective_widened_to_solve_by_a_later_turn_no_longer_gets_the_explain_default():
+    """Same recency rule as the hint-objective case: once a later turn's
+    explicit request makes "solve" the target's current, authoritative
+    objective, the explain-objective fallback no longer applies."""
+    policy = compile_policy(_intent([
+        Action(objective="explain", target="1", state="requested"),
+        Action(objective="solve", target="1", state="requested"),
     ]))
     action = policy.actions[0]
     assert action.objective == "solve"
