@@ -418,6 +418,35 @@ def test_unrelated_fasse_zusammen_cooccurrence_does_not_misfire() -> None:
     assert classify_academic_intent(text) != AcademicIntent.COURSE_SUMMARY
 
 
+# AB-24 (semantic-intent blind A/B eval, 2026-10-20): "Frag mich die
+# Lagerkraft R_A ab." (quiz me on the support force R_A) leaked the answer
+# in BOTH the old and new pipeline, because _QUIZ_RE's separable-verb branch
+# only matched the literal, adjacent "frag(e/en)? mich ab" — any real direct
+# object between "frag"/"mich"/"ab" (which is how the separable verb
+# "abfragen" is actually used) fell through to ordinary Q&A instead of the
+# inline-quiz path that withholds the answer until the student attempts it.
+@pytest.mark.parametrize(
+    ("question", "intent"),
+    [
+        ("Frag mich die Lagerkraft R_A ab.", AcademicIntent.QUIZ_GENERATION),
+        ("Fragst du mich die Kraft ab?", AcademicIntent.QUIZ_GENERATION),
+        ("frag mich mal was zu dem Thema ab", AcademicIntent.QUIZ_GENERATION),
+        # Negated separable-verb form must still suppress quiz routing.
+        ("Frag mich das bitte nicht ab, erklär's mir einfach.", AcademicIntent.CONCEPTUAL_EXPLANATION),
+    ],
+)
+def test_separable_verb_quiz_request_with_object(question: str, intent: AcademicIntent) -> None:
+    assert classify_academic_intent(question) == intent
+
+
+def test_unrelated_frage_mich_ab_wann_does_not_misfire() -> None:
+    """Widening the 'frag ... mich ... ab' gap must not catch the unrelated
+    idiom 'Ich frage mich, ab wann ...' (I wonder from when ...), where a
+    comma breaks the clause between 'mich' and 'ab'."""
+    text = "Ich frage mich, ab wann diese Regel gilt."
+    assert classify_academic_intent(text) != AcademicIntent.QUIZ_GENERATION
+
+
 # --- Second review pass (final verification request), fresh-context review ---
 # caught 4 more real bugs before anything was merged. All fixed; locked in here.
 @pytest.mark.parametrize(

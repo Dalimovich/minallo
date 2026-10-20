@@ -119,7 +119,8 @@ _NO_SUMMARY_RE = NEGATED_SUMMARY_RE
 NEGATED_QUIZ_RE = re.compile(
     r"\b(?:(?<!why\s)do\s+not|(?<!why\s)don't|without|nicht|keine?)\b[^.!?;,\n]{0,25}\b(?:quiz\w*|test\s+me|abfrag\w*)\b|"
     r"\bno\s+quiz\w*\b|"
-    r"\berkl(?:ä|ae)r\w*\b[^.!?;,\n]{0,40}\bnicht\s+abfrag\w*\b",
+    r"\berkl(?:ä|ae)r\w*\b[^.!?;,\n]{0,40}\bnicht\s+abfrag\w*\b|"
+    r"\bfrag\w*\b[^.!?;,\n]{0,15}?\bmich\b[^.!?;,\n]{0,40}?\bnicht\b[^.!?;,\n]{0,20}?\bab\b",
     re.IGNORECASE,
 )
 _NO_QUIZ_RE = NEGATED_QUIZ_RE
@@ -153,7 +154,13 @@ _CODE_RE = re.compile(
 )
 _QUIZ_RE = re.compile(
     r"\b(quiz|mcq|multiple choice|practice questions?|test me|prüfe mich|uebungsfragen|übungsfragen|abfrag\w*)\b|"
-    r"\bfrag(?:e|en)?\s+mich\s+ab\b",
+    # German separable verb "abfragen" ("to quiz"): the "ab" particle
+    # moves to the end of the clause and a direct object ("die Lagerkraft
+    # R_A", "das", "mal was") normally sits between "frag" and "mich" and
+    # between "mich" and "ab" — e.g. "Frag mich die Lagerkraft R_A ab."
+    # The previous literal "frag(e/en)? mich ab" required those three
+    # tokens adjacent and missed every request with a real object (AB-24).
+    r"\bfrag\w*\b[^.!?;,\n]{0,15}?\bmich\b[^.!?;,\n]{0,40}?\bab\b",
     re.IGNORECASE,
 )
 # A request to BUILD an exam/Probeklausur. Either an unambiguous noun, or a
