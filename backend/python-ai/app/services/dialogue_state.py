@@ -183,6 +183,25 @@ _CHECK_RE = re.compile(
     r"prüf(?:e)? meine|pruef(?:e)? meine|kontrollier(?:e)?)\b",
     re.IGNORECASE,
 )
+# Quiz/Socratic follow-up (semantic-intent stabilization, 2026-10-20): a
+# bare numeric/short guess ("Ist es 40 N?", "75 N?", "is it 40N?") is the
+# student attempting an answer, not a new topic — but ONLY when there is
+# an ACTIVE exercise/question in play (reuses the same `active` label
+# this function already computes via `_active_questions` for every other
+# branch below, never a new tracking mechanism); a bare number with no
+# active question at all is not assumed to be an answer attempt. The
+# whole message must be essentially just the guess (anchored
+# start-to-end) — this stays narrow and does not loosen continuation
+# detection for any message carrying its own content. Deliberately NOT
+# gated on the immediately preceding assistant turn containing "?": a
+# realistic follow-up after a WRONG guess ("Nicht ganz, versuch es
+# nochmal.") doesn't repeat the question, but the exercise is still
+# active and a second short guess is still an answer attempt.
+_SHORT_ANSWER_ATTEMPT_RE = re.compile(
+    r"^\s*(?:is\s+it|ist\s+es|sind\s+es|w(?:ä|ae)re\s+es)?\s*"
+    r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Zµ°%]{0,6}\s*\?{0,2}\s*$",
+    re.IGNORECASE,
+)
 _RESULT_ONLY_RE = re.compile(
     r"\b(?:result|answer|final value|ergebnis|antwort|résultat|resultat)\s+only\b"
     r"|\b(?:only|just|nur)\s+(?:the\s+)?(?:result|answer|final value|ergebnis|antwort)\b",
@@ -729,7 +748,7 @@ def resolve_dialogue(
             f"Give only a concise overview of exercise {active or 'the active scope'}, "
             "without silently turning it into a complete solution."
         )
-    elif _CHECK_RE.search(text):
+    elif _CHECK_RE.search(text) or (_SHORT_ANSWER_ATTEMPT_RE.match(text) and active):
         act = DialogueAct.CHECK_ANSWER
         resolved = (
             f"Check the student's answer for exercise {active or 'the active question'} "

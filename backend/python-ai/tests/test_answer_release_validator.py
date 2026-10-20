@@ -53,6 +53,30 @@ def test_leak_in_markdown_table_cell_is_caught():
     assert "result_table_row" in result.matched_patterns
 
 
+def test_leak_as_markdown_heading_with_bullet_assignments_is_caught():
+    """Confirmed disguised-leak shape (independent A/B eval, AB-02/AB-03
+    forensic pass, 2026-10-20): a "### Results"-style heading followed
+    by bullet-point variable assignments carried none of the other
+    patterns' prose cues and passed this scan completely uncaught
+    before this fix (one of the eval's six documented xfails -- an
+    answer-release enforcement gap, not a semantic-escalation one)."""
+    text = "### Results\n- R_A = 75 N\n- R_B = 25 N\n\nThis follows from the equilibrium equations."
+    result = scan_generated_answer_for_prohibited_release(text, policy=_policy())
+    assert result.allowed is False
+    assert "markdown_heading_bullet_result" in result.matched_patterns
+
+
+def test_bare_bullet_list_of_given_values_under_unrelated_heading_is_not_a_false_positive():
+    """Non-regression: the new heading+bullet pattern requires a
+    RESULT-shaped heading specifically -- an innocent bullet list of a
+    problem's GIVEN values (not a result), under no heading or an
+    unrelated one, must not trip it."""
+    text = "Let's list the givens:\n- m = 10 kg\n- g = 9.81 m/s^2\n- angle = 30 degrees\nNow find F_parallel."
+    result = scan_generated_answer_for_prohibited_release(text, policy=_policy())
+    assert result.allowed is True
+    assert "markdown_heading_bullet_result" not in result.matched_patterns
+
+
 def test_leak_in_latex_boxed_result_is_caught():
     text = r"After simplifying, we get \boxed{42\,\text{N}}."
     result = scan_generated_answer_for_prohibited_release(text, policy=_policy())
@@ -98,6 +122,47 @@ def test_permitted_final_answer_is_never_scanned():
     )
     assert result.allowed is True
     assert result.reason == "no_restriction"
+
+
+def test_inline_quiz_block_explanation_is_not_treated_as_a_leak():
+    """Quiz turn-taking fix (2026-10-20 correction pass): app/routers/
+    stream.py's outer release gate buffers and scans ANY text when the
+    policy restricts final_answer for some target, uniformly across
+    lanes (no is_quiz_request awareness at that layer). A quiz action
+    now correctly compiles final_answer="prohibited" (this session's
+    fix), so an inline ```minallo-quiz block's own, LEGITIMATE
+    "explanation" field restating the correct option must not itself
+    be treated as a leak -- the frontend already keeps it hidden until
+    the student answers; that is the real protection mechanism, not
+    this prose scan."""
+    text = (
+        "Here's a quick check:\n\n"
+        "```minallo-quiz\n"
+        '{"title":"R_A","questions":[{"q":"What is R_A?",'
+        '"options":["50 N","75 N","100 N"],"answer":1,'
+        '"explanation":"The final answer is R_A = 75 N from the moment balance."}]}\n'
+        "```\n"
+    )
+    result = scan_generated_answer_for_prohibited_release(text, policy=_policy(final_answer="prohibited"))
+    assert result.allowed is True
+    assert result.matched_patterns == ()
+
+
+def test_leaky_intro_before_an_inline_quiz_block_is_still_caught():
+    """The quiz-block carve-out above is scoped to the FENCED block
+    only -- a leaky INTRO sentence before it (QUIZ_CONTRACT explicitly
+    allows "a short one-line intro") must still be caught exactly as
+    before."""
+    text = (
+        "The final answer is R_A = 75 N, but let's quiz you on it anyway!\n\n"
+        "```minallo-quiz\n"
+        '{"title":"R_A","questions":[{"q":"What is R_A?",'
+        '"options":["50 N","75 N","100 N"],"answer":1,"explanation":"Moment balance."}]}\n'
+        "```\n"
+    )
+    result = scan_generated_answer_for_prohibited_release(text, policy=_policy(final_answer="prohibited"))
+    assert result.allowed is False
+    assert "final_answer_phrase" in result.matched_patterns or result.matched_patterns
 
 
 def test_permitted_final_answer_with_official_solution_still_closed_is_not_withheld():

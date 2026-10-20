@@ -324,6 +324,8 @@ def adapt_deterministic_intent(
     prohibited: tuple[str, ...] = ()
     explanation_depth: ExplanationDepth = "unspecified"
     final_answer: Literal["permitted", "prohibited", "unspecified"] = "unspecified"
+    wait_for_student: bool | None = None
+    form: Literal["hint", "guided_questions", "explanation", "worked_solution", "unspecified"] = "unspecified"
     if student_intent is not None:
         objective = _ACADEMIC_INTENT_TO_OBJECTIVE.get(student_intent.primary_task, "other")
         prohibited = tuple(dict.fromkeys(
@@ -332,10 +334,30 @@ def adapt_deterministic_intent(
         explanation_depth = _DEPTH_TO_EXPLANATION_DEPTH.get(student_intent.depth, "unspecified")
         if student_intent.primary_task in student_intent.prohibited_tasks:
             final_answer = "prohibited"  # self-contradictory deterministic signal — be conservative, not permissive
+        if student_intent.primary_task is AcademicIntent.QUIZ_GENERATION:
+            # Quiz turn-taking fix (2026-10-20 verification pass): both
+            # must be explicit, trusted values here -- not left to the
+            # generic "unresolved target" safety net (_MOST_RESTRICTIVE
+            # in policy_compiler.py), which only coincidentally produced
+            # wait_for_student=True for AB-24's own message because its
+            # target happened not to resolve, nor to the shared
+            # objective="hint" fallback's form="hint" default (policy_
+            # compiler.py's is_hint_objective branch), which renders as
+            # "respond with a HINT only, not a worked solution" --
+            # directly at odds with QUIZ_CONTRACT's instruction to BUILD
+            # a quiz. "guided_questions" is an EXISTING ReleaseForm value
+            # (no taxonomy change) that already renders as "respond with
+            # guiding questions, not a direct answer" -- compatible with
+            # constructing an actual quiz rather than contradicting it.
+            wait_for_student = True
+            form = "guided_questions"
 
     action = Action(
         objective=objective, target=target,
-        release=ReleaseConstraints(final_answer=final_answer, explanation_depth=explanation_depth),
+        release=ReleaseConstraints(
+            final_answer=final_answer, explanation_depth=explanation_depth,
+            wait_for_student=wait_for_student, form=form,
+        ),
         prohibited=prohibited,
         state="requested" if target_resolved else "unresolved",
     )

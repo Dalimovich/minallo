@@ -145,6 +145,25 @@ _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Z°%]{0,6}\b",
         re.IGNORECASE,
     )),
+    # Confirmed disguised-leak shape (independent A/B eval, AB-02/AB-03
+    # forensic pass, 2026-10-20): a markdown heading literally named
+    # "Results"/"Answer"/"Solution" (or German equivalent) followed
+    # within a couple of lines by a bullet-point variable assignment —
+    # "### Results\n- R_A = 75 N\n- R_B = 25 N" — carries none of the
+    # prose cues (no "the answer is", no "therefore") the patterns
+    # above look for, and was confirmed to pass this scan completely
+    # uncaught. Requires BOTH the result-shaped heading AND a bulleted
+    # "<name> = <number>" assignment together, deliberately narrower
+    # than a bare "bullet + number" match — an innocent bullet list of
+    # a problem's GIVEN values (e.g. "- m = 10 kg\n- g = 9.81 m/s^2")
+    # under an unrelated or no heading must not trip this.
+    ("markdown_heading_bullet_result", re.compile(
+        r"^#{1,6}\s*(?:results?|answers?|solutions?|ergebnis(?:se)?|"
+        r"l(?:ö|oe)sung(?:en)?|antwort(?:en)?)\b[^\n]*\n(?:[^\n]*\n){0,2}?"
+        r"\s*[-*]\s*[A-Za-zΑ-Ωα-ω][A-Za-z0-9_]{0,6}\s*=\s*"
+        r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Z°%]{0,6}\b",
+        re.IGNORECASE | re.MULTILINE,
+    )),
 )
 
 
@@ -178,6 +197,27 @@ def _any_action_prohibits(policy: ExecutionPolicy, field: str) -> bool:
 # entirely permitted answer.
 _OFFICIAL_SOLUTION_PATTERN_NAMES = frozenset({"official_solution_phrase"})
 
+# Quiz-vs-release-gate fix (2026-10-20 correction pass): app/routers/
+# stream.py's outer release gate buffers and scans the FULL rendered
+# text whenever the compiled policy restricts final_answer/
+# official_solution for any target -- uniformly, with no awareness of
+# WHICH internal lane (quiz, exam, ordinary answer) produced it. A quiz
+# target correctly compiling final_answer="prohibited" (this session's
+# fix) now means every inline quiz response goes through this scan too.
+# But a ```minallo-quiz fenced block's "explanation" fields routinely,
+# LEGITIMATELY restate the correct option as justification -- that is
+# the answer key the frontend already keeps hidden until the student
+# answers, not a prose leak. Scanning that text would risk withholding
+# an entirely correct quiz. "```minallo-quiz" is Minallo's own reserved
+# fence tag (per QUIZ_CONTRACT); no other answer type has a legitimate
+# reason to emit it, so stripping it before the scan is safe regardless
+# of request type, with no new cross-layer wiring needed.
+_INLINE_QUIZ_FENCE_RE = re.compile(r"```minallo-quiz.*?```", re.DOTALL)
+
+
+def _strip_inline_quiz_blocks(text: str) -> str:
+    return _INLINE_QUIZ_FENCE_RE.sub("", text or "")
+
 
 def _scan_text(
     text: str, *, final_answer_restricted: bool, official_solution_restricted: bool,
@@ -195,13 +235,14 @@ def _scan_text(
     contains a final-answer-shaped phrase."""
     if not final_answer_restricted and not official_solution_restricted:
         return ReleaseValidationResult(allowed=True, reason="no_restriction", matched_patterns=())
+    scan_text = _strip_inline_quiz_blocks(text)
     matched = tuple(
         name for name, pattern in _LEAK_PATTERNS
         if (
             official_solution_restricted if name in _OFFICIAL_SOLUTION_PATTERN_NAMES
             else final_answer_restricted
         )
-        and pattern.search(text or "")
+        and pattern.search(scan_text)
     )
     if matched:
         return ReleaseValidationResult(allowed=False, reason="matched_leak_pattern", matched_patterns=matched)
