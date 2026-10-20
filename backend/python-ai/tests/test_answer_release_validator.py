@@ -12,6 +12,7 @@ import pytest
 from app.services.answer_release_validator import (
     enforce_release_policy,
     enforce_release_policy_per_target,
+    extract_protected_values_from_evidence,
     parse_target_sections,
     scan_generated_answer_for_prohibited_release,
 )
@@ -75,6 +76,129 @@ def test_bare_bullet_list_of_given_values_under_unrelated_heading_is_not_a_false
     result = scan_generated_answer_for_prohibited_release(text, policy=_policy())
     assert result.allowed is True
     assert "markdown_heading_bullet_result" not in result.matched_patterns
+
+
+# ===========================================================================
+# Value-grounded detection (2026-10-20 comprehensive remediation). All
+# three real disclosures in the five-scenario live evaluation (AB-24,
+# AB-03, the 3-turn quiz scenario) stated the protected result as an
+# ordinary concluding sentence or a LaTeX expression with no trigger word
+# any existing pattern looks for -- confirmed to pass this scan
+# completely uncaught. A narrower "symbol ≈ number" pattern was tried and
+# rejected (confirmed, by direct test, to false-positive on ordinary
+# physical-constant restatements like "g ≈ 9.81 m/s^2"). This is the
+# independent, value-grounded signal added instead.
+# ===========================================================================
+
+_MECH1_EVIDENCE = (
+    "[Aufgabe 1] Balken AB, 4 m lang, Lager A (fest) und B (Rolle), "
+    "Einzellast 100 N bei 1 m ab A. Gesucht: R_A, R_B. "
+    "Lösung: R_A = 75 N, R_B = 25 N (ΣM_A: R_B*4=100*1 -> R_B=25N; ΣF_v: R_A=100-25=75N)"
+)
+
+
+def test_extract_protected_values_reads_only_the_solution_segment():
+    values = extract_protected_values_from_evidence(_MECH1_EVIDENCE)
+    assert "75" in values and "25" in values
+    # The point load "100 N" appears ONLY in the problem-statement portion
+    # (before "Lösung:"), never inside the labeled solution segment itself
+    # -- confirming extraction is scoped to that segment, not the whole
+    # evidence string. ("100" also happens to appear a second time INSIDE
+    # the solution segment's own parenthetical derivation here -- that
+    # occurrence IS picked up by design; see the module's documented
+    # limitation on derivation-restated givens.)
+    assert "100" not in extract_protected_values_from_evidence(
+        "[Aufgabe 1] ... Einzellast 100 N ... Gesucht: R_A, R_B."  # no "Lösung:" segment at all
+    )
+
+
+def test_ab24_exact_live_disclosure_shape_is_now_caught_via_protected_value():
+    """The EXACT confirmed live-eval disclosure for AB-24/the quiz
+    scenario: no trigger word, no heading, no table, no LaTeX boxed{} --
+    just an ordinary concluding sentence stating the protected value.
+    Confirmed to pass every existing pattern uncaught; now caught via
+    the value-grounded signal when the exercise's own solution text is
+    passed as evidence."""
+    text = "The support force at A is \\( R_A = 75 \\, \\text{N} \\)."
+    result = scan_generated_answer_for_prohibited_release(
+        text, policy=_policy(target="1"), evidence_text=_MECH1_EVIDENCE,
+    )
+    assert result.allowed is False
+    assert "protected_value_match" in result.matched_patterns
+
+
+def test_ab03_exact_live_disclosure_shape_is_now_caught_via_protected_value():
+    """The EXACT confirmed live-eval disclosure for AB-03: a LaTeX
+    \\approx expression with no trigger word."""
+    kin1_evidence = (
+        "[Aufgabe 13a] Drehmaschine, d=80mm, vc=120 m/min. Gesucht: Drehzahl n. "
+        "Lösung: n = vc/(pi*d) = 120/(pi*0.08) ca. 477.5 1/min (ca. 477 1/min)"
+    )
+    text = r"$$ n = \frac{120}{\pi \cdot 0.08} \approx 477.5 \text{ RPM} $$"
+    result = scan_generated_answer_for_prohibited_release(
+        text, policy=_policy(target="13a"), evidence_text=kin1_evidence,
+    )
+    assert result.allowed is False
+    assert "protected_value_match" in result.matched_patterns
+
+
+def test_protected_value_check_is_additive_not_required():
+    """No evidence_text supplied -- behaves exactly as before (relies on
+    the pattern scan alone); confirms this is backward-compatible, not a
+    breaking change to the existing call contract."""
+    text = "The support force at A is R_A = 75 N."
+    result = scan_generated_answer_for_prohibited_release(text, policy=_policy(target="1"))
+    assert result.allowed is True  # no pattern matches, no evidence to cross-check
+    assert result.matched_patterns == ()
+
+
+def test_protected_value_check_does_not_fire_when_final_answer_is_permitted():
+    """A permitted final answer must stream through unchanged even when
+    evidence_text is supplied and literally contains the same number --
+    evidence_text is only consulted when final_answer_restricted."""
+    text = "The support force at A is R_A = 75 N."
+    result = scan_generated_answer_for_prohibited_release(
+        text, policy=_policy(final_answer="permitted", target="1"), evidence_text=_MECH1_EVIDENCE,
+    )
+    assert result.allowed is True
+
+
+def test_single_digit_given_does_not_false_positive_via_protected_value():
+    """A single digit (0-9, e.g. a step count) is excluded outright --
+    far too likely to coincidentally co-occur -- so an unrelated hint
+    mentioning one must not trip this check even if that exact digit
+    happens to appear somewhere in the labeled solution segment too."""
+    evidence = "[Aufgabe X] ... Lösung: uses 2 equations to find F = 49.05 N"
+    values = extract_protected_values_from_evidence(evidence)
+    assert "49.05" in values
+    assert "2" not in values  # single digit, excluded regardless of context
+    hint_text = "Think about which 2 equilibrium equations apply here."
+    result = scan_generated_answer_for_prohibited_release(
+        hint_text, policy=_policy(target="X"), evidence_text=evidence,
+    )
+    assert result.allowed is True
+
+
+def test_given_value_restated_within_the_solution_segment_is_a_documented_limitation():
+    """Honest, direct test of the trade-off documented in this module:
+    a 2+ digit given/intermediate value that happens to be restated
+    INSIDE the labeled solution segment itself (not excluded, by
+    design -- see extract_protected_values_from_evidence's docstring)
+    CAN cause a legitimate, unrelated hint mentioning that same number
+    to be wrongly withheld. This is accepted and documented, not hidden
+    behind a passing test that doesn't exercise it."""
+    evidence = (
+        "[Aufgabe 2a] Block m=10kg auf Schiefe Ebene, 30°. Gesucht: F_parallel. "
+        "Lösung: F_parallel = m*g*sin(30°) = 10*9.81*0.5 = 49.05 N"
+    )
+    values = extract_protected_values_from_evidence(evidence)
+    assert "49.05" in values
+    assert "30" in values  # the angle, restated inside the solution segment -- the documented trade-off
+    hint_text = "Think about the angle, 30 degrees, and which component of gravity acts along the incline."
+    result = scan_generated_answer_for_prohibited_release(
+        hint_text, policy=_policy(target="2a"), evidence_text=evidence,
+    )
+    assert result.allowed is False  # confirmed false-positive, matching the documented limitation exactly
 
 
 def test_leak_in_latex_boxed_result_is_caught():

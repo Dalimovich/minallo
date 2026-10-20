@@ -375,6 +375,29 @@ def interpret_turn_authoritatively(
             message=question, dialogue=dialogue, student_intent=deterministic_intent,
             authorized_exercise_labels=authorized_exercise_labels,
         )
+        # AB-02 fallback-weakness fix (2026-10-20 live eval, confirmed via
+        # forensic prompt capture): when THIS function itself already
+        # decided the message needed real semantic understanding
+        # (escalate=True) but the call failed or its response didn't
+        # validate, silently falling through to the ordinary deterministic
+        # path treats a message the system flagged as needing help
+        # exactly like one that never needed any -- for an informal
+        # request with no lexical hint/explain cue, that path's own
+        # tutoring default opens final_answer, which is exactly the
+        # confirmed AB-02 failure shape. Downgrading every action's state
+        # to "unresolved" here reuses compile_policy's EXISTING,
+        # already-tested per-field restrictive fallback (_MOST_RESTRICTIVE)
+        # -- the same degrade-safely contract every other untrusted claim
+        # in this pipeline already gets -- rather than inventing a new
+        # mechanism. A message that never escalated in the first place
+        # (escalate=False) is completely unaffected, so an explicitly
+        # authorized full-solution request keeps working exactly as
+        # before.
+        if escalate and not unified_call_succeeded:
+            resolved_intent = replace(
+                resolved_intent,
+                actions=tuple(replace(a, state="unresolved") for a in resolved_intent.actions),
+            )
 
     turn_ledger = build_authoritative_turn_ledger(
         user_id=user_id, conversation_id=conversation_id,

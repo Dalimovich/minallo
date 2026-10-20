@@ -2140,7 +2140,14 @@ def stream_answer(
         system_prompt += "\n" + workspace_block
         if not problem_solver:
             system_prompt += ACTIONS_CONTRACT
-            system_prompt += QUIZ_CONTRACT
+    # QUIZ_CONTRACT (confirmed wiring defect, 2026-10-20 live eval: AB-24 and
+    # the 3-turn quiz scenario both disclosed the answer directly instead of
+    # building an inline quiz, traced to this instruction being ABSENT from
+    # the model's prompt whenever workspace_block was empty -- a genuine
+    # quiz request has nothing to do with whether workspace stats exist) --
+    # moved out from under that gate; `not problem_solver` is unchanged.
+    if not problem_solver:
+        system_prompt += QUIZ_CONTRACT
     if assistant_mode == "exam_coach":
         system_prompt += EXAM_COACH_OVERLAY
     elif assistant_mode == "tutor" and not app_question:

@@ -6762,6 +6762,19 @@ async def _prepare_ask_stream_response(
                         distinct_targets = {
                             action.target for action in execution_policy.actions
                         } if execution_policy else set()
+                        # Value-grounded release check (2026-10-20
+                        # comprehensive remediation): the SAME retrieved
+                        # evidence already used for grounding/generation,
+                        # passed through so the release gate's second,
+                        # independent signal (extract_protected_values_
+                        # from_evidence) has a labeled solution/answer
+                        # segment to check against when one exists in the
+                        # retrieved chunks for this turn -- additive, never
+                        # required (both functions treat a missing/empty
+                        # value the same as not passing one at all).
+                        release_evidence_text = "\n".join(
+                            chunk.text for chunk in (multi_item_result.chunks or []) if getattr(chunk, "text", None)
+                        )
                         if len(distinct_targets) <= 1:
                             from ..services.answer_release_validator import (  # noqa: WPS433
                                 enforce_release_policy_single_target,
@@ -6770,6 +6783,7 @@ async def _prepare_ask_stream_response(
                                 "".join(full_text_buf),
                                 policy=execution_policy,
                                 response_language=language_context.requested_response_language,
+                                evidence_text=release_evidence_text,
                             )
                         else:
                             from ..services.answer_release_validator import (  # noqa: WPS433
@@ -6779,6 +6793,7 @@ async def _prepare_ask_stream_response(
                                 "".join(full_text_buf),
                                 policy=execution_policy,
                                 response_language=language_context.requested_response_language,
+                                evidence_text=release_evidence_text,
                             )
                         full_text_buf.clear()
                         full_text_buf.append(release_decision.text)

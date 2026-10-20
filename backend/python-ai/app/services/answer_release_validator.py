@@ -167,6 +167,103 @@ _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Value-grounded detection (2026-10-20 comprehensive remediation, confirmed
+# via live-model forensic evidence): ALL THREE real disclosures in the
+# 2026-10-20 five-scenario live evaluation (AB-24, AB-03, and the 3-turn
+# quiz scenario) stated the protected result as an ordinary concluding
+# sentence or a LaTeX expression with no trigger word any _LEAK_PATTERNS
+# entry looks for ("The support force at A is R_A = 75 N.", a LaTeX
+# \approx block). A narrower pattern targeting those exact shapes was
+# tried and rejected here, directly: a bare "symbol ≈ number" pattern
+# (no trigger word) was confirmed, by direct test, to false-positive on
+# ordinary physical-constant restatements ("g ≈ 9.81 m/s^2", "π ≈
+# 3.14159") that are completely unrelated to any protected result —
+# exactly the over-restriction failure mode this project has already
+# had to fix once this session (the official_solution/final_answer
+# conflation bug). More sentence-shape regexes keep finding new false
+# positives or false negatives because natural language has no fixed
+# shape for stating a result.
+#
+# This is why a SECOND, independent, value-grounded signal is added
+# instead: when the retrieved course evidence for the active exercise(s)
+# contains its own stated solution (common in a worked-example/exercise-
+# sheet corpus — confirmed present in this project's own test fixtures,
+# "Lösung: R_A = 75 N, ..."), extract the actual PROTECTED NUMBER(S) from
+# that solution text specifically (never from the problem statement/
+# givens portion) and check whether the SAME number appears anywhere in
+# the generated text. This catches a disclosure regardless of its
+# sentence shape, because it is keyed on the actual protected VALUE, not
+# a phrasing pattern.
+#
+# Explicitly documented limitations (do not overclaim -- this is an
+# additive signal, not a solved problem):
+# - Only usable when the evidence passed in actually contains a labeled
+#   solution/answer segment -- NOT available for every real request
+#   (many retrieved chunks are problem statements only, with no stored
+#   answer key at all; this is additive, never a replacement for the
+#   pattern scan).
+# - Real answer-key text is NOT structurally uniform even within this
+#   project's own fixtures: some state the result BEFORE a parenthetical
+#   derivation ("R_A = 75 N, R_B = 25 N (ΣM_A: ...)"), some as one
+#   chained equation ("F = m*g*sin(30°) = 10*9.81*0.5 = 49.05 N"), some
+#   using "≈"/"ca." rather than "=". Attempting to parse out exactly
+#   "the final result, never a given or intermediate step" from this
+#   variety was tried here and abandoned as its own endless-special-
+#   casing trap (the same failure mode this task explicitly warns
+#   against for leak PATTERNS, just relocated to value EXTRACTION
+#   instead) -- so this extracts every sufficiently-specific number
+#   (2+ digits, or any decimal) from the WHOLE labeled solution segment,
+#   including the derivation. A given or intermediate value restated
+#   within that same labeled segment (e.g. "30" in "sin(30°)") CAN be
+#   mistaken for a protected value and cause a false withhold on an
+#   unrelated, legitimate hint that happens to mention the same number.
+#   This is a real, accepted, documented trade-off, not an oversight.
+# - A model restating the value in a different unit or equivalent form
+#   (75 N vs 0.075 kN) is NOT caught, since the comparison is on the
+#   literal numeric token, not a unit-aware equivalence.
+# ---------------------------------------------------------------------------
+
+_SOLUTION_LABEL_RE = re.compile(
+    r"(?:l(?:ö|oe)sung|antwort|solution|answer)\s*:\s*(.+?)(?=\[|\Z)",
+    re.IGNORECASE | re.DOTALL,
+)
+_NUMERIC_TOKEN_RE = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+# A lone single digit (0-9, e.g. a count or a step number) is excluded --
+# far too likely to coincidentally co-occur in any response -- but a
+# 2-digit value or anything with a decimal point is kept; see the
+# documented limitation above for exactly what that trades away.
+_MIN_BARE_INT_DIGITS = 2
+
+
+def extract_protected_values_from_evidence(evidence_text: str) -> frozenset[str]:
+    """Extract candidate protected numeric values from any solution/
+    answer-labeled segment of retrieved evidence text -- never from the
+    problem-statement/givens portion. Returns normalized numeric strings
+    (comma decimals folded to periods)."""
+    values: set[str] = set()
+    for m in _SOLUTION_LABEL_RE.finditer(evidence_text or ""):
+        segment = m.group(1)
+        for nm in _NUMERIC_TOKEN_RE.finditer(segment):
+            token = nm.group(0)
+            normalized = token.replace(",", ".")
+            has_decimal = "." in normalized
+            digits = normalized.lstrip("+-").replace(".", "")
+            if has_decimal or len(digits) >= _MIN_BARE_INT_DIGITS:
+                values.add(normalized)
+    return frozenset(values)
+
+
+def _text_matches_protected_value(text: str, protected_values: frozenset[str]) -> str | None:
+    if not protected_values:
+        return None
+    for m in _NUMERIC_TOKEN_RE.finditer(text or ""):
+        normalized = m.group(0).replace(",", ".")
+        if normalized in protected_values:
+            return normalized
+    return None
+
+
 @dataclass(frozen=True)
 class ReleaseValidationResult:
     allowed: bool
@@ -221,6 +318,7 @@ def _strip_inline_quiz_blocks(text: str) -> str:
 
 def _scan_text(
     text: str, *, final_answer_restricted: bool, official_solution_restricted: bool,
+    evidence_text: str | None = None,
 ) -> ReleaseValidationResult:
     """Shared leak-pattern scan both the whole-response scan and the
     per-target scan delegate to, so the two never drift apart on what
@@ -232,7 +330,13 @@ def _scan_text(
     combined flag, so a policy permitting final_answer but still
     closing official_solution (the ordinary tutoring default) does not
     withhold a correctly-permitted final answer just because it
-    contains a final-answer-shaped phrase."""
+    contains a final-answer-shaped phrase.
+
+    ``evidence_text``, when supplied, adds the second, independent,
+    value-grounded signal (see the module's own section docstring above
+    _SOLUTION_LABEL_RE): checked only when final_answer_restricted,
+    since it specifically targets the protected FINAL ANSWER, not the
+    official-solution-key concern."""
     if not final_answer_restricted and not official_solution_restricted:
         return ReleaseValidationResult(allowed=True, reason="no_restriction", matched_patterns=())
     scan_text = _strip_inline_quiz_blocks(text)
@@ -244,24 +348,33 @@ def _scan_text(
         )
         and pattern.search(scan_text)
     )
+    if final_answer_restricted and evidence_text:
+        protected_values = extract_protected_values_from_evidence(evidence_text)
+        if _text_matches_protected_value(scan_text, protected_values):
+            matched = matched + ("protected_value_match",)
     if matched:
         return ReleaseValidationResult(allowed=False, reason="matched_leak_pattern", matched_patterns=matched)
     return ReleaseValidationResult(allowed=True, reason="no_match", matched_patterns=())
 
 
 def scan_generated_answer_for_prohibited_release(
-    text: str, *, policy: ExecutionPolicy | None,
+    text: str, *, policy: ExecutionPolicy | None, evidence_text: str | None = None,
 ) -> ReleaseValidationResult:
     """The one real check: does ``text`` look like it reveals a final
     result or official solution the compiled policy prohibits for ANY
     target? Conservative by construction — see module docstring for
-    exactly what this does and does not detect."""
+    exactly what this does and does not detect. ``evidence_text`` is the
+    optional retrieved course evidence for the active exercise(s) --
+    when it contains a labeled solution/answer segment, its protected
+    numeric value(s) are checked against the text directly (see the
+    value-grounded detection section above)."""
     if policy is None:
         return ReleaseValidationResult(allowed=True, reason="no_policy", matched_patterns=())
     return _scan_text(
         text,
         final_answer_restricted=_any_action_prohibits(policy, "final_answer"),
         official_solution_restricted=_any_action_prohibits(policy, "official_solution"),
+        evidence_text=evidence_text,
     )
 
 
@@ -274,6 +387,7 @@ class ReleaseDecision:
 
 def enforce_release_policy(
     candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
+    evidence_text: str | None = None,
 ) -> ReleaseDecision:
     """The actual release gate a generation pipeline must call before ANY
     candidate answer text (the initial draft, a repair/rewrite output, or
@@ -300,7 +414,9 @@ def enforce_release_policy(
     show up in the withheld draft) — it is NOT what this function's
     ``withheld`` decision is conditioned on.
     """
-    scan = scan_generated_answer_for_prohibited_release(candidate_text, policy=policy)
+    scan = scan_generated_answer_for_prohibited_release(
+        candidate_text, policy=policy, evidence_text=evidence_text,
+    )
     if scan.reason in ("no_policy", "no_restriction"):
         return ReleaseDecision(text=candidate_text, withheld=False, scan=scan)
     return ReleaseDecision(
@@ -382,6 +498,7 @@ class PerTargetReleaseDecision:
 
 def enforce_release_policy_per_target(
     candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
+    evidence_text: str | None = None,
 ) -> PerTargetReleaseDecision:
     """DISABLED permissive path -- see the module docstring's "REVISED
     after further review" note for why. This now always delegates to
@@ -394,7 +511,9 @@ def enforce_release_policy_per_target(
     is ever built (server-controlled per-target generation, not
     model-self-reported section markers), it belongs here; until then,
     this function is a thin, deliberately inert wrapper."""
-    decision = enforce_release_policy(candidate_text, policy=policy, response_language=response_language)
+    decision = enforce_release_policy(
+        candidate_text, policy=policy, response_language=response_language, evidence_text=evidence_text,
+    )
     return PerTargetReleaseDecision(
         text=decision.text, withheld=decision.withheld, structural=False,
         scan=decision.scan, sections=(),
@@ -403,6 +522,7 @@ def enforce_release_policy_per_target(
 
 def enforce_release_policy_single_target(
     candidate_text: str, *, policy: ExecutionPolicy | None, response_language: str,
+    evidence_text: str | None = None,
 ) -> PerTargetReleaseDecision:
     """Scan-conditioned release gate for the genuinely single-target case
     — see the module docstring's "Hint-suppression fix" section for why
@@ -418,7 +538,9 @@ def enforce_release_policy_single_target(
     decision by design (see its own docstring); this one is conditioned
     on it by design, because there is only one target in play here.
     """
-    scan = scan_generated_answer_for_prohibited_release(candidate_text, policy=policy)
+    scan = scan_generated_answer_for_prohibited_release(
+        candidate_text, policy=policy, evidence_text=evidence_text,
+    )
     if scan.reason == "matched_leak_pattern":
         return PerTargetReleaseDecision(
             text=safe_withheld_answer_text(response_language=response_language),
@@ -454,6 +576,7 @@ __all__ = [
     "enforce_release_policy",
     "enforce_release_policy_per_target",
     "enforce_release_policy_single_target",
+    "extract_protected_values_from_evidence",
     "parse_target_sections",
     "safe_withheld_answer_text",
     "scan_generated_answer_for_prohibited_release",
