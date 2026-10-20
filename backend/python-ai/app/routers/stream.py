@@ -4008,6 +4008,7 @@ async def _prepare_ask_stream_response(
         selected_region_id=selected_region_id,
         visible_text=payload.openFileContext,
         has_visible_image=bool(open_file_images),
+        known_active_question=dialogue.active_question,
     )
     evidence_decision = decide_evidence(
         reference,

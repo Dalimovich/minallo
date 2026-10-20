@@ -641,10 +641,41 @@ def compile_policy(
         # close -- see test_merely_discussing_or_relaying_a_quote_does_
         # not_establish_a_persisted_restriction.
         is_explain_objective = base_action.objective == "explain" and state == "requested"
+        # Quiz/hint form contradiction fix (2026-10-20, confirmed via live-
+        # eval forensic capture): a quiz request maps to objective="hint"
+        # (deliberately -- see diagnostic_policy.py's QUIZ_GENERATION
+        # mapping comment, reusing this existing fallback rather than a
+        # new taxonomy value), and ALSO sets release.form="guided_
+        # questions" explicitly on that same action, independent of
+        # whether its target resolves. But an unresolved/untrusted
+        # action's field VALUES are deliberately dropped at the merge
+        # step above (trust boundary: never let an unverified target
+        # claim ALSO smuggle in a permissive field value) -- which also
+        # discarded this one, falling through to the "unresolved"
+        # branch's blanket form="hint", directly contradicting
+        # QUIZ_CONTRACT's "build an inline quiz" instruction (confirmed
+        # present in the same prompt). Reading it directly off
+        # merged.primary (the raw action, never from `working`, which
+        # was already wiped) and checking for this EXACT value only --
+        # not any non-unspecified claim -- keeps this narrow: it does
+        # NOT reopen the trust boundary for final_answer/official_
+        # solution or for any other form value, only recognizes that
+        # "hint" and "guided_questions" are equally non-disclosing forms
+        # for the SAME objective, so picking the one the deterministic
+        # classifier (never an unverified model claim) already selected
+        # is safe regardless of target-resolution trust.
+        quiz_shaped_form = (
+            is_hint_objective
+            and getattr(merged.primary, "release", None) is not None
+            and merged.primary.release.form == "guided_questions"
+        )
         for field in FIELD_NAMES:
             if not is_unset_field(field, working[field]):
                 continue
-            if state == "unresolved" or field in merged.contested_fields:
+            if field == "form" and quiz_shaped_form:
+                working[field] = "guided_questions"
+                tag = "quiz_shaped_form_fallback"
+            elif state == "unresolved" or field in merged.contested_fields:
                 working[field] = _MOST_RESTRICTIVE[field]
                 tag = "unresolved_fallback" if state == "unresolved" else "contested_fallback"
             elif is_hint_objective and field in ("final_answer", "form"):
