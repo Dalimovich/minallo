@@ -455,3 +455,79 @@ def test_classifier_uses_low_reasoning_effort_for_a_reasoning_model(monkeypatch)
     assert captured_kwargs.get("reasoning_effort") == "low"
     assert captured_kwargs.get("max_completion_tokens") == 12000
     assert "temperature" not in captured_kwargs
+
+
+def test_resolve_dialogue_semantically_logs_latency_on_success(monkeypatch, caplog) -> None:
+    """Milestone 1 flagged this call site as missing the latency logging
+    ``student_intent._semantic_model_call``/``interpret_student_intent``
+    already has (via ``_log_shadow``). This mirrors that: fired regardless
+    of outcome, counts/enums/latency only, never message text."""
+    import logging
+    from app import config as config_module
+    from app.services import openai_client
+    from app.services.dialogue_state import resolve_dialogue_semantically
+
+    content = (
+        '{"relation":"new_topic","speechAct":"question","taskFamily":"explain",'
+        '"continuesPreviousGoal":false,"resolvedRequest":"why?","confidence":0.9}'
+    )
+
+    class _FakeClient:
+        def with_options(self, **_kwargs):
+            return self
+
+        @property
+        def chat(self):
+            class _Completions:
+                @staticmethod
+                def create(**_kwargs):
+                    message = type("Msg", (), {"content": content})()
+                    choice = type("Choice", (), {"message": message})()
+                    return type("Completion", (), {"choices": [choice]})()
+
+            return type("Chat", (), {"completions": _Completions()})()
+
+    monkeypatch.setattr(openai_client, "get_openai_client", lambda: _FakeClient())
+    monkeypatch.setattr(
+        config_module, "get_settings",
+        lambda: type("S", (), {"openai_generate_model": "gpt-4o-mini", "openai_reasoning_effort": "high"})(),
+    )
+
+    turns = [
+        {"role": "user", "text": "Explain welding from my course."},
+        {"role": "assistant", "text": "Welding joins materials."},
+    ]
+    base = resolve_dialogue("why?", previous_turns=turns)
+    with caplog.at_level(logging.INFO, logger="app.services.dialogue_state"):
+        resolve_dialogue_semantically("why?", previous_turns=turns, base=base)
+
+    emitted = "\n".join(record.getMessage() for record in caplog.records)
+    assert "dialogue_semantic_resolution" in emitted
+    assert "latency_ms=" in emitted
+    assert "outcome=model" in emitted
+    # Privacy: never the message or assistant text.
+    assert "why?" not in emitted
+    assert "welding" not in emitted.lower()
+
+
+def test_resolve_dialogue_semantically_logs_latency_on_fallback(monkeypatch, caplog) -> None:
+    import logging
+    from app.services import openai_client
+    from app.services.dialogue_state import resolve_dialogue_semantically
+
+    monkeypatch.setattr(
+        openai_client, "get_openai_client",
+        lambda: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+    turns = [
+        {"role": "user", "text": "Create flashcards about bearings."},
+        {"role": "assistant", "text": "Should I make the same set for screws?"},
+    ]
+    base = resolve_dialogue("go ahead", previous_turns=turns)
+    with caplog.at_level(logging.INFO, logger="app.services.dialogue_state"):
+        resolve_dialogue_semantically("go ahead", previous_turns=turns, base=base)
+
+    emitted = "\n".join(record.getMessage() for record in caplog.records)
+    assert "dialogue_semantic_resolution" in emitted
+    assert "outcome=exception_fallback" in emitted
+    assert "latency_ms=" in emitted

@@ -2124,6 +2124,7 @@ def generate_answer(
     active_document_id: str | None = None,
     grounding_policy: str = "strict_course",
     request_plan_overlay: str | None = None,
+    execution_policy: Any | None = None,
 ) -> dict[str, Any]:
     """Return the structured answer dict the API surface exposes.
 
@@ -2171,6 +2172,13 @@ def generate_answer(
     system_prompt += ADAPTIVE_TABLE_LAYOUT_RULE + SEMANTIC_LEARNING_BLOCK_RULE + SHARED_ANSWER_INTEGRITY_RULES
     if request_plan_overlay:
         system_prompt += request_plan_overlay
+    if execution_policy is not None:
+        # Semantic Student Intent Layer Phase C — additive overlay, same
+        # pattern as request_plan_overlay above; "" no-op when the policy
+        # carries no restriction. execution_policy=None (every existing
+        # caller) is byte-identical to omitting this parameter.
+        from .policy_prompt_rendering import render_execution_policy_overlay  # noqa: WPS433
+        system_prompt += render_execution_policy_overlay(execution_policy)
     # Exam generation / "a question for every selected file": append the
     # authoritative file list so the model covers each selected source exactly
     # once and never invents a file the student didn't select.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Iterable
@@ -113,6 +113,67 @@ EXTRACTION_TARGET_RE = re.compile(
 _KURZFRAGEN = re.compile(r"kurzfragen?|short\s+questions?", re.I)
 
 
+# Milestone 3 Priority 4 finding: the SAME false-positive shape Phase B
+# already fixed for grounding_contract.py's classifier ("you didn't
+# answer the whole Aufgabe, parts a and c are missing" / "Ich möchte
+# keine Zusammenfassung des gesamten PDFs" -- a correction/rejection
+# complaint that lexically matches an exhaustive-coverage quantifier
+# despite meaning the opposite) is ALSO, independently, a false positive
+# here: EXHAUSTIVE_COVERAGE_RE's bare "whole"/"gesamten" match has no
+# concept of negation or conversational relation either, and THIS
+# classifier's COVERAGE result is what stream.py uses (at MULTIPLE call
+# sites -- the early job-precreation check before the SSE generator
+# even starts, AND resolve_scoped_request's own follow-up-inheritance
+# use inside the later generation path) to decide whether to create an
+# exhaustive async extraction job -- a real, consequential route
+# decision, not prompt text. semantic_intent_orchestrator.correct_full_
+# document_scope_false_positive never touches this module's output, so
+# this was an unguarded second occurrence of the same bug class, not
+# something the earlier fix already covered. Applied INSIDE classify_
+# scoped_request itself (not as a separate per-call-site step) so every
+# caller, present and future, gets it automatically -- a lesson from
+# this exact investigation: a wrapper callers must remember to apply
+# only fixed the ONE call site it was added at, not resolve_scoped_
+# request's own internal re-classification.
+_INCOMPLETE_ANSWER_COMPLAINT_RE = re.compile(
+    r"\b(?:didn'?t|did\s+not|haven'?t|have\s+not)\s+(?:answer|respond|cover|address)\b|"
+    r"\b(?:not\s+answered|unanswered|incomplete|missing|left\s+out)\b|"
+    r"\bnicht\s+(?:\w+\s+){0,2}beantwortet\b|\bunvollst(?:ä|ae)ndig\b|\bfehlen?\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_SUMMARY_REJECTION_RE = re.compile(
+    r"\b(?:don'?t|do\s+not)\s+want\s+(?:a\s+)?summary\b|"
+    r"\bkeine\s+zusammenfassung\b|\bohne\s+zusammenfassung\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_correction_or_rejection(text: str) -> bool:
+    return bool(
+        _INCOMPLETE_ANSWER_COMPLAINT_RE.search(text or "")
+        or _EXPLICIT_SUMMARY_REJECTION_RE.search(text or "")
+    )
+
+
+def correct_exhaustive_coverage_false_positive(spec: ScopedRequestSpec, *, message: str) -> ScopedRequestSpec:
+    """Narrow a lexical-only EXHAUSTIVE_COVERAGE_RE match back to
+    RELEVANCE when independent evidence says the student is correcting
+    or rejecting, not actually requesting exhaustive document coverage
+    -- see the module note above. Mirrors semantic_intent_orchestrator.
+    correct_full_document_scope_false_positive's own narrowing contract:
+    never WIDENS a RELEVANCE classification, only ever narrows a
+    lexical-only COVERAGE guess back down when independent evidence says
+    the student does NOT actually want exhaustive coverage. Exported
+    separately for direct unit testing; classify_scoped_request (below)
+    already applies it to every caller, so callers never need to call
+    this themselves."""
+    if spec.retrieval_mode is not RetrievalMode.COVERAGE:
+        return spec
+    if looks_like_correction_or_rejection(message or ""):
+        return replace(spec, retrieval_mode=RetrievalMode.RELEVANCE, coverage_intent=CoverageIntent.SINGLE)
+    return spec
+
+
 def classify_scoped_request(text: str) -> ScopedRequestSpec:
     normalized = " ".join((text or "").split())
     # "all questions in exercise/section 12" is complete coverage of one
@@ -126,7 +187,11 @@ def classify_scoped_request(text: str) -> ScopedRequestSpec:
         r"\b\d{1,3}\.\d{1,3}\b)",
         normalized, re.I,
     ))
-    exhaustive = bool(_ALL.search(normalized)) and not exact_bounded_target
+    exhaustive = (
+        bool(_ALL.search(normalized))
+        and not exact_bounded_target
+        and not looks_like_correction_or_rejection(text)
+    )
     canonical_target = "kurzfragen" if _KURZFRAGEN.search(normalized) else "questions"
     return ScopedRequestSpec(
         retrieval_mode=RetrievalMode.COVERAGE if exhaustive else RetrievalMode.RELEVANCE,

@@ -95,6 +95,39 @@ def validate_durable_conversation(*, user_id: str, conversation_id: str) -> bool
     return bool(rows)
 
 
+def get_durable_conversation_messages_for_diagnostics(
+    *, user_id: str, conversation_id: str, limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Lightweight, diagnostic-only variant of
+    ``get_durable_conversation_messages``. The caller MUST have already
+    verified ownership itself (unlike the full function, this one does
+    NOT re-check it — it exists specifically to avoid the redundant
+    second ownership round trip measured in production, see
+    docs/semantic-intent-milestone-3-plan.md's Milestone 3 verification
+    history) and skips the `ai_tutor_requests` enrichment join entirely,
+    since `TurnLedger`/`compile_policy` (the only consumers of this data
+    today) only ever read `client_message_id` and chronological order —
+    never `role`, `content`, or any of the `ai_tutor_requests` fields
+    (confirmed by inspection: `VerifiedTurn.data` is stored but never
+    read). Capped at the most recent `limit` turns: an older turn falling
+    outside that window simply fails to resolve a rank (the same safe,
+    existing "no verifiable rank" degrade `compile_policy` already uses
+    for a request with no ledger at all), which is acceptable because
+    this diagnostic's result is never consumed downstream regardless.
+    Do not use this for any consumer that needs the real transcript —
+    that's what `get_durable_conversation_messages` is for."""
+    rows = (
+        get_supabase().table("ai_chat_messages")
+        .select("client_message_id,created_at")
+        .eq("conversation_id", conversation_id)
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    ).data or []
+    return list(reversed(rows))
+
+
 def get_durable_conversation_messages(*, user_id: str, conversation_id: str) -> list[dict[str, Any]]:
     """Return the complete ordered transcript after verifying ownership."""
     if not validate_durable_conversation(user_id=user_id, conversation_id=conversation_id):
@@ -156,6 +189,7 @@ def update_tutor_request(
     error_code: str | None = None, retryable: bool = True,
     automatic_retry_count: int | None = None,
     answer_provenance: dict[str, Any] | None = None,
+    compiled_policy_by_target: dict[str, Any] | None = None,
 ) -> None:
     patch: dict[str, Any] = {
         "status": status, "stage": stage, "error_code": error_code,
@@ -181,6 +215,20 @@ def update_tutor_request(
             "answerProvenance": {key: answer_provenance[key] for key in
                 ("answerMode", "groundingMode", "sourceScope")
                 if isinstance(answer_provenance.get(key), str)},
+        }
+    if compiled_policy_by_target is not None:
+        # Semantic Student Intent Layer multi-turn persistence (Priority
+        # 1): the per-target release-constraint deviations this turn's
+        # compiled ExecutionPolicy resolved to (policy_compiler.extract_
+        # persistable_restrictions), reusing this EXISTING request_
+        # snapshot JSONB column -- the same field already used for
+        # answerProvenance/commentaryEvents, never a new table. A later
+        # turn's orchestrator (semantic_intent_orchestrator._reconstruct_
+        # persisted_target_actions) reads this back via the full durable
+        # turn ledger to rebuild a trusted historical Action per target.
+        patch["request_snapshot"] = {
+            **(patch.get("request_snapshot") or dict(rows[0].get("request_snapshot") or {})),
+            "policyByTarget": compiled_policy_by_target,
         }
     if final_answer is not None and rows[0].get("partial_answer"):
         saved_partial = str(rows[0]["partial_answer"]).strip()
@@ -325,6 +373,6 @@ def _sweep_loop(interval_seconds: int) -> None:
 __all__ = [
     "DurableConversation", "ensure_durable_conversation", "validate_durable_conversation",
     "create_durable_tutor_turn", "update_tutor_request", "append_tutor_commentary", "get_tutor_request",
-    "get_durable_conversation_messages",
+    "get_durable_conversation_messages", "get_durable_conversation_messages_for_diagnostics",
     "expire_stale_tutor_request", "sweep_stale_tutor_requests", "start_tutor_request_sweeper",
 ]

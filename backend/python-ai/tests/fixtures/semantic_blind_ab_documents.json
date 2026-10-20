@@ -1,0 +1,87 @@
+{
+  "DOC-ALG1": {
+    "title": "Algebra Set B",
+    "language": "de/en",
+    "type": "exercise_sheet",
+    "exercises": {
+      "4": {
+        "prompt": "Solve for x: 3x + 7 = 22",
+        "answer": "x = 5"
+      },
+      "5": {
+        "prompt": "Solve: x^2 - 5x + 6 = 0",
+        "answer": "x = 2 or x = 3"
+      },
+      "6": {
+        "prompt": "Solve the system: x + y = 10, x - y = 2",
+        "answer": "x = 6, y = 4"
+      }
+    }
+  },
+  "DOC-MECH1": {
+    "title": "Mechanik Übungsblatt 3",
+    "language": "de",
+    "type": "exercise_sheet",
+    "exercises": {
+      "1": {
+        "prompt": "Balken AB, 4 m lang, Lager A (fest) und B (Rolle), Einzellast 100 N bei 1 m ab A. Gesucht: R_A, R_B.",
+        "answer": "R_A = 75 N, R_B = 25 N (ΣM_A: R_B*4=100*1 -> R_B=25N; ΣF_v: R_A=100-25=75N)"
+      },
+      "3": {
+        "prompt": "Schraubenschlüssel, 50 N senkrecht, Hebelarm 0.3 m. Gesucht: Drehmoment.",
+        "answer": "M = F*d = 50*0.3 = 15 N·m"
+      },
+      "2a": {
+        "prompt": "Block m=10kg auf reibungsfreier Schiefe Ebene, 30°. Gesucht: F_parallel (Hangabtriebskraft).",
+        "answer": "F_parallel = m*g*sin(30°) = 10*9.81*0.5 = 49.05 N"
+      },
+      "2b": {
+        "prompt": "Gleiche Ebene. Gesucht: Normalkraft F_N.",
+        "answer": "F_N = m*g*cos(30°) = 10*9.81*0.866 ≈ 84.96 N"
+      }
+    }
+  },
+  "DOC-KIN1": {
+    "title": "Kinematik: Drehen",
+    "language": "de/en",
+    "type": "exercise_sheet",
+    "exercises": {
+      "13a": {
+        "prompt": "Drehmaschine, d=80mm, vc=120 m/min. Gesucht: Drehzahl n.",
+        "answer": "n = vc/(π*d) = 120/(π*0.08) ≈ 477.5 1/min (≈477 1/min)"
+      },
+      "13b": {
+        "prompt": "Gleicher Durchmesser, Drehzahl auf n=600 1/min erhöht. Gesucht: neue vc.",
+        "answer": "vc2 = π*d*n = π*0.08*600 ≈ 150.8 m/min"
+      }
+    }
+  },
+  "DOC-DEU-GRAM1": {
+    "title": "Deutsch Grammatik Quiz",
+    "language": "de",
+    "type": "exercise_sheet",
+    "exercises": {
+      "1": {
+        "prompt": "Er ___ jeden Tag ins Büro. (geht/gehen/ging)",
+        "answer": "geht (Präsens, 3. Pers. Sg.)"
+      },
+      "2": {
+        "prompt": "Wenn ich Zeit hätte, ___ ich dir helfen. (würde/werde/hatte)",
+        "answer": "würde (Konjunktiv II)"
+      },
+      "3": {
+        "prompt": "Das ist das Haus, ___ wir letztes Jahr gekauft haben. (das/der/dem)",
+        "answer": "das (Relativpronomen, Neutrum Akkusativ — 'Haus' ist sächlich, direktes Objekt von 'gekauft haben')"
+      }
+    }
+  },
+  "DOC-BIO1": {
+    "title": "Photosynthesis Notes",
+    "language": "en",
+    "type": "notes_no_exercise_numbering",
+    "sections": {
+      "light_dependent": "Light-dependent reactions occur in the thylakoid membrane, producing ATP and NADPH.",
+      "calvin_cycle": "The Calvin cycle (light-independent reactions) occurs in the stroma and fixes CO2 into glucose using ATP/NADPH from the light reactions."
+    }
+  }
+}

@@ -593,6 +593,130 @@ def test_fast_grounded_escalation_on_a_reused_grounding_follow_up_does_not_crash
     assert b'"done": true' in joined
 
 
+def test_fast_grounded_sufficient_evidence_builds_prompt_overlay_without_crashing(monkeypatch):
+    """Regression for an AttributeError: when the FAST_GROUNDED lane has
+    sufficient evidence, stream.py short-circuits `fallback_research` to a
+    bare `SimpleNamespace(sources=[])` instead of a real
+    `FallbackResearchResult()`. That stand-in satisfies every other read of
+    `fallback_research.sources` (an empty list either way) but has no
+    `prompt_overlay()` method — and `request_plan_overlay=` always calls
+    `fallback_research.prompt_overlay()` unconditionally when building the
+    generation call, regardless of which branch produced it. Reproduces by
+    forcing the exact combination (FAST_GROUNDED lane + sufficient evidence)
+    and driving the request all the way to the generation call."""
+    import dataclasses
+
+    from app.routers import stream
+    from app.services import cache, dialogue_state, mastery, tutor_state_store
+    from app.services.execution_router import ExecutionLane
+    from app.services.tutor_state import TutorState
+
+    user_id = "00000000-0000-4000-8000-000000000007"
+    document_id = "00000000-0000-4000-8000-000000000008"
+    conversation_id = "fast-grounded-sufficient-evidence"
+
+    latest_generation = 0
+
+    def claim(_uid, _conversation, _course, generation):
+        nonlocal latest_generation
+        if generation < latest_generation:
+            return False
+        latest_generation = generation
+        return True
+
+    monkeypatch.setattr(stream, "require_active_subscription", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_interactive_cap", lambda *_: None)
+    monkeypatch.setattr(stream, "enforce_rate_limit", lambda *_: None)
+    monkeypatch.setattr(tutor_state_store, "claim_generation", claim)
+    monkeypatch.setattr(
+        tutor_state_store, "load_tutor_state",
+        lambda *_a, **_k: TutorState(conversation_id=conversation_id, user_id=user_id),
+    )
+    monkeypatch.setattr(tutor_state_store, "save_tutor_state", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        tutor_state_store, "current_persisted_generation", lambda *_a, **_k: latest_generation,
+    )
+    monkeypatch.setattr(
+        stream, "_load_authorized_documents",
+        lambda *_: {
+            document_id: {
+                "id": document_id,
+                "user_id": user_id,
+                "course_id": "course-1",
+                "file_name": "lecture.pdf",
+                "storage_path": "synthetic/lecture.pdf",
+                "document_hash": "rev-1",
+                "processing_status": "ready",
+                "page_count": 10,
+                "chunk_count": 20,
+            }
+        },
+    )
+    monkeypatch.setattr(stream, "fetch_workspace_snapshot", lambda *_: None)
+    monkeypatch.setattr(mastery, "fetch_weak_topics", lambda *_: [])
+    monkeypatch.setattr(cache, "fetch_course_version_hash", lambda *_: "course-rev")
+    monkeypatch.setattr(cache, "lookup_answer", lambda **_: None)
+    monkeypatch.setattr(cache, "save_answer", lambda **_: None)
+
+    # Reuse a prior-grounding follow-up (requires_new_retrieval=False) so no
+    # fresh retrieval runs — irrelevant to this bug, just the smallest path
+    # that reaches the FAST_GROUNDED branch at all.
+    _real_resolve_dialogue = dialogue_state.resolve_dialogue
+
+    def _forced_no_new_retrieval(*args, **kwargs):
+        result = _real_resolve_dialogue(*args, **kwargs)
+        return dataclasses.replace(result, requires_new_retrieval=False)
+
+    monkeypatch.setattr(dialogue_state, "resolve_dialogue", _forced_no_new_retrieval)
+
+    _real_resolve_execution_plan = stream.resolve_execution_plan
+
+    def _forced_fast_grounded(*args, **kwargs):
+        task_profile, plan = _real_resolve_execution_plan(*args, **kwargs)
+        forced_plan = dataclasses.replace(
+            plan, executionLane=ExecutionLane.FAST_GROUNDED, initialLane=ExecutionLane.FAST_GROUNDED,
+        )
+        return task_profile, forced_plan
+
+    monkeypatch.setattr(stream, "resolve_execution_plan", _forced_fast_grounded)
+    # The actual bug: force the promotion rule's real sufficiency check to
+    # True so `fast_evidence_sufficient=True`, which is what selects the
+    # broken SimpleNamespace(sources=[]) stand-in for `fallback_research`
+    # instead of calling research_unresolved_items at all.
+    monkeypatch.setattr(stream, "fast_grounded_evidence_is_sufficient", lambda **_: True)
+    monkeypatch.setattr(stream, "fetch_account_snapshot", lambda *_a, **_k: None)
+
+    def fake_stream_answer(**_kwargs):
+        done = {"done": True, "retrievalMode": "strong", "answerMode": "explain", "sources": []}
+        yield 'data: {"meta": true}\n\n'.encode()
+        yield b'data: {"t":"Answer."}\n\n'
+        yield f"data: {json.dumps(done)}\n\n".encode()
+
+    monkeypatch.setattr(stream, "stream_answer", fake_stream_answer)
+
+    async def run():
+        payload = stream.AskStreamRequest(
+            courseId="course-1",
+            activeDocumentId=document_id,
+            question="and the next part?",
+            sourceMode="course_files",
+            conversationId=conversation_id,
+            conversationGeneration=1,
+            previousTurns=[
+                {"role": "user", "text": "Explain the first part of the lecture."},
+                {"role": "assistant", "text": "The first part covers torsion."},
+            ],
+        )
+        response = await stream.ask_stream_endpoint(payload, {"id": user_id})
+        return [event async for event in response.body_iterator]
+
+    events = asyncio.run(run())
+    joined = b"".join(events)
+    assert b'"code": "internal_error"' not in joined, joined
+    assert b"AttributeError" not in joined, joined
+    assert b'"done": true' in joined
+
+
 # ── Phase 3 of the TTFT brief: /conversations/ensure is skippable for a chat
 # ── that's already persisted — /ask-stream must create the durable turn
 # ── itself on first sight of a request_id it hasn't seen yet, idempotently.

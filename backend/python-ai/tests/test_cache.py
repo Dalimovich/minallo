@@ -150,3 +150,19 @@ def test_document_version_hash_changes_when_a_doc_changes() -> None:
     h1 = document_version_hash(["abc", "def"])
     h2 = document_version_hash(["abc", "def-v2"])
     assert h1 != h2
+
+
+def test_question_hash_isolates_by_policy_hash() -> None:
+    """Semantic Student Intent Layer Phase C: the same question under two
+    different compiled per-target policies must never share a cached
+    answer (one may permit the final result, the other prohibit it)."""
+    from app.services.cache import question_hash
+
+    base = question_hash("What is torsion?")
+    with_policy_a = question_hash("What is torsion?", policy_hash="policy-aaa")
+    with_policy_b = question_hash("What is torsion?", policy_hash="policy-bbb")
+
+    assert base != with_policy_a
+    assert with_policy_a != with_policy_b
+    # Omitting policy_hash (every existing caller) stays unchanged.
+    assert question_hash("What is torsion?") == base

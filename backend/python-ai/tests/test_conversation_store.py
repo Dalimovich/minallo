@@ -207,6 +207,176 @@ def test_stale_running_request_becomes_recoverable(monkeypatch) -> None:
     assert record["retryable"] is True
 
 
+def test_compiled_policy_by_target_persists_into_request_snapshot(monkeypatch) -> None:
+    """Multi-turn permission persistence (Priority 1) reuses the EXISTING
+    request_snapshot JSONB column -- never a new table. Writing it must
+    compose with an existing answerProvenance write (both land in the
+    same snapshot) and round-trip back out through get_durable_
+    conversation_messages, which is exactly what semantic_intent_
+    orchestrator._reconstruct_persisted_target_actions reads from on the
+    next turn."""
+    db = FakeSupabase()
+    db.rows["ai_chat_conversations"].append({"id": "conversation", "user_id": "user"})
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "user_client_message_id": "u-1", "assistant_client_message_id": "a-1",
+        "partial_answer": "",
+    })
+    db.rows["ai_chat_messages"].extend([
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "u-1",
+         "role": "user", "content": "Don't reveal the final answer for 5b."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "a-1",
+         "role": "assistant", "content": ""},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="running", stage="request_preflight",
+        answer_provenance={"answerMode": "tutor", "groundingMode": "course", "sourceScope": "document"},
+        compiled_policy_by_target={"5b": {"final_answer": "prohibited", "form": "hint"}},
+    )
+
+    stored_snapshot = db.rows["ai_tutor_requests"][0]["request_snapshot"]
+    assert stored_snapshot["policyByTarget"] == {"5b": {"final_answer": "prohibited", "form": "hint"}}
+    assert stored_snapshot["answerProvenance"]["answerMode"] == "tutor"  # composes, doesn't clobber
+
+    rows = conversation_store.get_durable_conversation_messages(user_id="user", conversation_id="conversation")
+    by_id = {row["client_message_id"]: row for row in rows}
+    assert by_id["u-1"]["request_snapshot"]["policyByTarget"]["5b"]["final_answer"] == "prohibited"
+    assert by_id["a-1"]["request_snapshot"]["policyByTarget"]["5b"]["final_answer"] == "prohibited"
+
+
+def test_compiled_policy_by_target_omitted_when_none_leaves_snapshot_untouched(monkeypatch) -> None:
+    """Legacy/OFF-mode parity: a call that never passes compiled_policy_
+    by_target (every existing call site, and the new one whenever
+    execution_policy is None) must not write a policyByTarget key at
+    all."""
+    db = FakeSupabase()
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "assistant_client_message_id": "a-1", "partial_answer": "",
+    })
+    db.rows["ai_chat_messages"].append({
+        "conversation_id": "conversation", "client_message_id": "a-1", "content": "",
+    })
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="running", stage="request_preflight",
+    )
+
+    assert "request_snapshot" not in db.rows["ai_tutor_requests"][0] or \
+        "policyByTarget" not in (db.rows["ai_tutor_requests"][0].get("request_snapshot") or {})
+
+
+def test_persisted_policy_round_trips_through_db_write_and_orchestrator_reconstruction(monkeypatch) -> None:
+    """End-to-end proof for Priority 1's persistence claim (coordinator
+    review item 3): a policy written via update_tutor_request's
+    compiled_policy_by_target -- exactly what stream.py calls -- must
+    survive a REAL write-then-read through conversation_store's own
+    functions and reconstruct correctly as a trusted historical Action,
+    not just be asserted piecewise at the unit level on each function in
+    isolation."""
+    from app.services import semantic_intent_orchestrator as sio
+
+    db = FakeSupabase()
+    db.rows["ai_chat_conversations"].append({"id": "conversation", "user_id": "user"})
+    db.rows["ai_tutor_requests"].append({
+        "request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+        "user_client_message_id": "u-1", "assistant_client_message_id": "a-1",
+        "partial_answer": "",
+    })
+    db.rows["ai_chat_messages"].extend([
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "u-1",
+         "role": "user", "content": "Don't reveal the final answer for Aufgabe 5b."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "a-1",
+         "role": "assistant", "content": "Understood, hint-only for 5b."},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    # Exactly the write stream.py performs once turn 1's policy is compiled.
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="completed", stage="completed",
+        compiled_policy_by_target={"5b": {"final_answer": "prohibited", "form": "hint"}},
+    )
+
+    # Exactly the read interpret_turn_authoritatively performs for turn 2.
+    ledger = sio.build_authoritative_turn_ledger(
+        user_id="user", conversation_id="conversation",
+        validate_ownership=conversation_store.validate_durable_conversation,
+        get_messages=conversation_store.get_durable_conversation_messages,
+    )
+    assert ledger is not None
+    historical = sio._reconstruct_persisted_target_actions(frozenset({"5b"}), ledger)
+    assert len(historical) == 1
+    assert historical[0].target == "5b"
+    assert historical[0].release.final_answer == "prohibited"
+    assert historical[0].release.form == "hint"
+    assert historical[0].provenance[0].turn_id in {"u-1", "a-1"}
+
+
+def test_newer_verified_turn_is_not_overridden_by_a_stale_later_write_to_an_older_turn(monkeypatch) -> None:
+    """'Stale generation can't override a newer verified permission
+    state' (coordinator review item 3): turn 1 restricts 5b, turn 2 (a
+    real, later turn) verifiedly lifts it. A stale/delayed retry that
+    later re-writes turn 1's OWN row (out-of-order COMPLETION, not
+    out-of-order creation -- e.g. a slow duplicate request finally
+    landing) must not resurface. Reconstruction for a third turn must
+    still resolve from turn 2, because the ledger's recency comes from
+    message CREATION order (TurnLedger.build via get_durable_
+    conversation_messages' own chronological query), never from
+    whichever write happens to land last in wall-clock time."""
+    from app.services import semantic_intent_orchestrator as sio
+
+    db = FakeSupabase()
+    db.rows["ai_chat_conversations"].append({"id": "conversation", "user_id": "user"})
+    db.rows["ai_tutor_requests"].extend([
+        {"request_id": "request-1", "user_id": "user", "conversation_id": "conversation",
+         "user_client_message_id": "u-1", "assistant_client_message_id": "a-1", "partial_answer": ""},
+        {"request_id": "request-2", "user_id": "user", "conversation_id": "conversation",
+         "user_client_message_id": "u-2", "assistant_client_message_id": "a-2", "partial_answer": ""},
+    ])
+    db.rows["ai_chat_messages"].extend([
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "u-1",
+         "role": "user", "content": "Don't reveal the final answer for 5b."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "a-1",
+         "role": "assistant", "content": "Understood."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "u-2",
+         "role": "user", "content": "Actually, give the full answer for 5b now."},
+        {"conversation_id": "conversation", "user_id": "user", "client_message_id": "a-2",
+         "role": "assistant", "content": "Sure, here it is."},
+    ])
+    monkeypatch.setattr(conversation_store, "get_supabase", lambda: db)
+
+    # Turn 1 completes first: restrictive.
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="completed", stage="completed",
+        compiled_policy_by_target={"5b": {"final_answer": "prohibited"}},
+    )
+    # Turn 2 completes second: a verified, later permission lift.
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-2", status="completed", stage="completed",
+        compiled_policy_by_target={"5b": {"final_answer": "permitted"}},
+    )
+    # A STALE retry of turn 1 finally lands LAST in wall-clock time,
+    # re-writing turn 1's OWN row with a distinguishable sentinel value.
+    conversation_store.update_tutor_request(
+        user_id="user", request_id="request-1", status="completed", stage="completed",
+        compiled_policy_by_target={"5b": {"final_answer": "prohibited", "max_items": 7}},
+    )
+
+    ledger = sio.build_authoritative_turn_ledger(
+        user_id="user", conversation_id="conversation",
+        validate_ownership=conversation_store.validate_durable_conversation,
+        get_messages=conversation_store.get_durable_conversation_messages,
+    )
+    historical = sio._reconstruct_persisted_target_actions(frozenset({"5b"}), ledger)
+    assert len(historical) == 1
+    # Turn 2's (chronologically later) value wins, not the stale rewrite.
+    assert historical[0].release.final_answer == "permitted"
+    assert historical[0].release.max_items is None  # the stale sentinel never surfaces
+
+
 def test_sweep_expires_every_abandoned_request_but_leaves_fresh_ones(monkeypatch) -> None:
     db = FakeSupabase()
     stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()

@@ -63,6 +63,7 @@ def question_hash(
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
     routing_fingerprint: str | None = None,
+    policy_hash: str | None = None,
 ) -> str:
     """Composite cache key for an answer.
 
@@ -144,6 +145,14 @@ def question_hash(
         parts.append(f"ground={grounding_mode}")
     if routing_fingerprint:
         parts.append("routing=" + hashlib.sha256(routing_fingerprint.encode("utf-8")).hexdigest()[:24])
+    if policy_hash:
+        # Semantic Student Intent Layer Phase C — compile_policy's own
+        # policy_hash is designed for exactly this role (see policy_
+        # compiler.compute_policy_hash's docstring: "logging/cache-keying/
+        # consistency ONLY"). Two requests with the same question but
+        # different compiled per-target constraints (e.g. "hint only for
+        # 5b" vs no restriction at all) must never share a cached answer.
+        parts.append(f"policy={policy_hash}")
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -265,6 +274,7 @@ def lookup_answer(
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
     routing_fingerprint: str | None = None,
+    policy_hash: str | None = None,
 ) -> dict[str, Any] | None:
     """Return the cached answer JSON, or None on miss. Bumps usage stats on hit.
 
@@ -302,6 +312,7 @@ def lookup_answer(
         index_version=index_version,
         conversation_generation=conversation_generation,
         routing_fingerprint=routing_fingerprint,
+        policy_hash=policy_hash,
     )
     sb = get_supabase()
     try:
@@ -362,6 +373,7 @@ def save_answer(
     index_version: str = _INDEX_VERSION,
     conversation_generation: int | None = None,
     routing_fingerprint: str | None = None,
+    policy_hash: str | None = None,
 ) -> None:
     """Upsert the answer for next time. Safe to no-op on errors.
 
@@ -399,6 +411,7 @@ def save_answer(
             index_version=index_version,
             conversation_generation=conversation_generation,
             routing_fingerprint=routing_fingerprint,
+            policy_hash=policy_hash,
         ),
         "normalized_question":   _normalize_question(question),
         "document_version_hash": version_hash,

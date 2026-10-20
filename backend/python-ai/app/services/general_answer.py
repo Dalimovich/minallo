@@ -49,9 +49,20 @@ def _bounded_history(previous_turns: list[dict[str, str]] | None) -> list[dict[s
     return history
 
 
+def _policy_overlay(execution_policy: Any | None) -> str:
+    """Semantic Student Intent Layer Phase C — additive, "" no-op when
+    absent or when the policy carries no restriction. execution_policy=
+    None (every existing caller) is byte-identical to omitting it."""
+    if execution_policy is None:
+        return ""
+    from .policy_prompt_rendering import render_execution_policy_overlay  # noqa: WPS433
+    return render_execution_policy_overlay(execution_policy)
+
+
 def generate_general_answer(
     question: str, *, prefix: str = "", max_tokens: int = 1200,
     previous_turns: list[dict[str, str]] | None = None, context_block: str = "",
+    execution_policy: Any | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
     target_model = settings.openai_generate_model
@@ -60,7 +71,7 @@ def generate_general_answer(
     completion = client.chat.completions.create(
         model=target_model,
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT + context_block},
+            {"role": "system", "content": _SYSTEM_PROMPT + context_block + _policy_overlay(execution_policy)},
             *history,
             {"role": "user", "content": question.strip()},
         ],
@@ -86,7 +97,8 @@ def generate_general_answer(
 
 def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]] | None = None,
                           context_block: str = "", max_tokens: int = 700,
-                          prefix: str = "") -> Iterator[dict[str, Any]]:
+                          prefix: str = "", execution_policy: Any | None = None,
+                          ) -> Iterator[dict[str, Any]]:
     """Yield real model deltas immediately; never buffer a fast-lane answer."""
     settings = get_settings()
     target_model = settings.openai_generate_model
@@ -95,7 +107,7 @@ def stream_general_answer(question: str, *, previous_turns: list[dict[str, str]]
     history = _bounded_history(previous_turns)
     stream = get_openai_client().chat.completions.create(
         model=target_model,
-        messages=[{"role": "system", "content": _SYSTEM_PROMPT + context_block}, *history,
+        messages=[{"role": "system", "content": _SYSTEM_PROMPT + context_block + _policy_overlay(execution_policy)}, *history,
                   {"role": "user", "content": question.strip()}],
         stream=True,
         stream_options={"include_usage": True},

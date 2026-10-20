@@ -69,7 +69,7 @@ from ..services.learning_recommendation import (
 )
 from ..services.deep_learn_reuse import course_revision_hash, find_existing_lesson
 from ..services.visual_aids import VisualContext, select_visual_aids
-from ..services.fallback_research import research_unresolved_items
+from ..services.fallback_research import FallbackResearchResult, research_unresolved_items
 from ..services.multi_item_retrieval import (
     answer_plan_overlay,
     ensure_complete_answer,
@@ -136,6 +136,20 @@ from ..supabase_client import get_supabase
 _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
+# _run_semantic_intent_diagnostic_policy runs as a bounded background task
+# (never awaited on the student's response path — see
+# _schedule_semantic_intent_diagnostic_policy), so this no longer protects
+# response latency directly. It still matters: it bounds how long a single
+# diagnostic can occupy one of the limited concurrent background slots, so
+# one slow durable-history lookup can't pin a slot indefinitely (production
+# Hetzner measurement: 1 of 3 idle-host lookups already exceeded 1.0s, so
+# this is a real, not theoretical, bound).
+_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS = 1.0
+# Caps concurrent background diagnostics per worker process. Capacity
+# exhausted -> the new request's diagnostic is skipped (logged), never
+# queued -- this stays a bounded fire-and-forget, not a task queue.
+_SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT = 4
+_semantic_intent_diagnostic_tasks: "set[asyncio.Task[None]]" = set()
 _INNER_STREAM_HEARTBEAT_SECONDS = 10.0
 # A heartbeat proves the coroutine is alive, not that useful work is advancing.
 # Focused (non-leased) responses therefore get an absolute per-stage deadline;
@@ -474,6 +488,166 @@ def _previous_turn_to_dict(turn: "PreviousTurn") -> dict[str, str]:
         if value:
             out[key] = value
     return out
+
+
+async def _run_semantic_intent_diagnostic_policy(
+    *,
+    question: str,
+    dialogue: Any,
+    computed_intent: Any,
+    user_id: str,
+    conversation_id: str | None,
+    has_unverified_context: bool,
+    mode: str,
+) -> None:
+    """Milestone 3 observational wiring. Computes a diagnostic-only
+    ExecutionPolicy from the StudentIntent/DialogueResolution the caller
+    already computed today (no new model call) purely to compare against
+    the legacy pipeline — see diagnostic_policy.py's module docstring.
+    The result is never returned to the caller and never reaches
+    resolve_execution_plan, generation, grounding, verification, repair,
+    or cache; any failure here must never affect the real answer.
+
+    Runs as a bounded background task (see
+    _schedule_semantic_intent_diagnostic_policy) — never awaited on the
+    student's response path. A production Hetzner measurement found the
+    real durable-history lookup exceeded the then-inline-awaited 1.0s
+    bound in 1 of 3 idle-host samples, so this was moved off the critical
+    path entirely rather than widening the timeout.
+
+    `conversation_id` must already be gated by the caller to a verified
+    durable conversation (never a course-rail synthetic id — see
+    docs/semantic-intent-milestone-3-plan.md S4). Passing None does NOT
+    always mean "history_free": `has_unverified_context` tells the
+    diagnostic layer whether the caller actually has no prior turns at
+    all (genuinely history_free) versus has a non-durable conversationId
+    and/or client-supplied previousTurns it is deliberately refusing to
+    trust (diagnosed as "unavailable" instead — see
+    diagnostic_policy.build_turn_ledger_from_durable_store). Either way,
+    payload.previousTurns itself is never read into the ledger.
+
+    Uses get_durable_conversation_messages_for_diagnostics, not the full
+    get_durable_conversation_messages — the full function internally
+    re-validates ownership (redundant: build_turn_ledger_from_durable_
+    store already does so immediately before calling it) and joins
+    ai_tutor_requests, whose fields nothing in the diagnostic path reads.
+    That cut the diagnostic from 4 sequential DB round trips to 2.
+
+    run_in_threadpool has no cooperative cancellation: the real worker
+    thread keeps running past the timeout regardless. A review found
+    that the FIRST version of this background-task change only let the
+    timeout abandon the *await*, while this coroutine (and therefore its
+    tracked capacity slot in _schedule_semantic_intent_diagnostic_policy)
+    returned immediately — so _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT
+    bounded how many coroutines were being waited on, not how many real
+    underlying DB calls were actually in flight; a deterministic test
+    (3 waves of 4 requests, each slower than the timeout) measured 12
+    real concurrent underlying calls against a cap of 4. Fixed by
+    `asyncio.shield`-ing the real call so the timeout only stops US from
+    waiting on it, then awaiting it to completion anyway (result still
+    discarded, same timeout log) so this coroutine's own lifetime — and
+    so its capacity slot — lasts exactly as long as the real DB work
+    does. This is still a real, accepted limitation (the thread itself
+    can't be cooperatively cancelled), but the capacity bound this module
+    advertises now actually holds for real underlying operations, not
+    just for tracked coroutines.
+    """
+    from ..services.conversation_store import (  # noqa: WPS433
+        get_durable_conversation_messages_for_diagnostics, validate_durable_conversation,
+    )
+    from ..services.diagnostic_policy import compile_diagnostic_policy  # noqa: WPS433
+
+    started = time.perf_counter()
+    db_call = asyncio.ensure_future(
+        run_in_threadpool(
+            lambda: compile_diagnostic_policy(
+                message=question,
+                dialogue=dialogue,
+                student_intent=computed_intent,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                has_unverified_context=has_unverified_context,
+                validate_ownership=validate_durable_conversation,
+                get_messages=get_durable_conversation_messages_for_diagnostics,
+            )
+        )
+    )
+    try:
+        _policy, record = await asyncio.wait_for(
+            asyncio.shield(db_call), timeout=_SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        log.warning(
+            "semantic_intent_diagnostic_policy_timeout mode=%s timeout_s=%.1f",
+            mode, _SEMANTIC_INTENT_DIAGNOSTIC_TIMEOUT_SECONDS,
+        )
+        # Discard the eventual result, but keep this coroutine (and its
+        # tracked capacity slot) alive until the real underlying call
+        # actually finishes -- see the docstring above.
+        try:
+            await db_call
+        except (Exception, asyncio.CancelledError):  # noqa: BLE001
+            pass
+        return
+    except Exception:  # noqa: BLE001 — diagnostic-only; must degrade silently
+        log.warning("semantic_intent_diagnostic_policy_failed mode=%s", mode, exc_info=True)
+        return
+    log.info(
+        "semantic_intent_diagnostic_policy mode=%s history_source=%s action_count=%d "
+        "target_resolved=%s needs_clarification=%s response_language=%s "
+        "policy_hash=%s latency_ms=%.1f",
+        mode, record.history_source, record.action_count, record.target_resolved,
+        record.needs_clarification, record.response_language,
+        record.policy_hash, (time.perf_counter() - started) * 1000,
+    )
+
+
+def _on_semantic_intent_diagnostic_task_done(task: "asyncio.Task[None]") -> None:
+    _semantic_intent_diagnostic_tasks.discard(task)
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:  # pragma: no cover — _run_semantic_intent_diagnostic_policy
+        # already catches every exception it can raise; this is a defensive
+        # backstop so an unforeseen failure is logged, never silently lost.
+        log.warning("semantic_intent_diagnostic_policy_task_unhandled_exception", exc_info=exc)
+
+
+def _schedule_semantic_intent_diagnostic_policy(
+    *,
+    question: str,
+    dialogue: Any,
+    computed_intent: Any,
+    user_id: str,
+    conversation_id: str | None,
+    has_unverified_context: bool,
+    mode: str,
+) -> None:
+    """Fire-and-forget scheduling for _run_semantic_intent_diagnostic_policy
+    — deliberately NOT awaited, so the diagnostic can never add latency to
+    the student's response regardless of how slow the real durable-history
+    lookup turns out to be. Strictly bounded to
+    _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT in-flight tasks per worker
+    process; a request past that bound has its diagnostic skipped
+    (logged, never queued) rather than piling up unbounded background
+    work."""
+    if len(_semantic_intent_diagnostic_tasks) >= _SEMANTIC_INTENT_DIAGNOSTIC_MAX_CONCURRENT:
+        log.warning(
+            "semantic_intent_diagnostic_policy_skipped_capacity mode=%s inflight=%d",
+            mode, len(_semantic_intent_diagnostic_tasks),
+        )
+        return
+    task = asyncio.create_task(_run_semantic_intent_diagnostic_policy(
+        question=question,
+        dialogue=dialogue,
+        computed_intent=computed_intent,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        has_unverified_context=has_unverified_context,
+        mode=mode,
+    ))
+    _semantic_intent_diagnostic_tasks.add(task)
+    task.add_done_callback(_on_semantic_intent_diagnostic_task_done)
 
 
 class ProblemSolverPayload(BaseModel):
@@ -1675,11 +1849,57 @@ async def ask_stream_endpoint(
         question, previous_turns=preflight_turns,
         response_language=payload.responseLanguage or "en",
     )
-    if needs_semantic_resolution(question, turn_resolution, preflight_turns):
+    _settings_for_unified_gate = get_settings()
+    use_unified_semantic_call = (
+        _settings_for_unified_gate.semantic_intent_mode == "enabled"
+        and _settings_for_unified_gate.semantic_intent_policy_enforcement_enabled
+        and _settings_for_unified_gate.semantic_intent_unified_call_enabled
+    )
+    # When the unified call is active, it is the ONE call budget for this
+    # turn (Semantic Student Intent Layer Phase A) -- it must never run
+    # ALONGSIDE the legacy call #1 below, or a turn could pay for two
+    # model calls. OFF/SHADOW/legacy-ENABLED (the flags off, the default)
+    # take this branch exactly as before -- byte-identical, unconditional.
+    if not use_unified_semantic_call and needs_semantic_resolution(question, turn_resolution, preflight_turns):
         turn_resolution = await run_in_threadpool(
             lambda: resolve_dialogue_semantically(
                 question, previous_turns=preflight_turns, base=turn_resolution,
             )
+        )
+    authoritative_interpretation = None
+    if use_unified_semantic_call:
+        from ..services.conversation_store import (  # noqa: WPS433
+            get_durable_conversation_messages, validate_durable_conversation,
+        )
+        from ..services.semantic_intent_orchestrator import (  # noqa: WPS433
+            correct_full_document_scope_false_positive, interpret_turn_authoritatively,
+        )
+        authoritative_interpretation = await run_in_threadpool(
+            lambda: interpret_turn_authoritatively(
+                question=question,
+                dialogue_base=turn_resolution,
+                preflight_turns=preflight_turns,
+                user_id=user_id,
+                conversation_id=payload.conversationId if payload.durableConversation else None,
+                validate_ownership=validate_durable_conversation,
+                get_messages=get_durable_conversation_messages,
+                resolved_access=resolved_access,
+                has_visible_context=bool(
+                    grounding_request.viewerContext or payload.openFileContext
+                ),
+            )
+        )
+        turn_resolution = authoritative_interpretation.dialogue
+        # Phase B required deliverable: a semantic correction/rejection
+        # ("you didn't answer the whole Aufgabe", "keine Zusammenfassung
+        # des gesamten PDFs") can lexically match resolve_document_access's
+        # own "whole/entire + document-noun" regex despite meaning the
+        # opposite. This only ever NARROWS a lexical-only guess back to
+        # the safe default (never touches an explicit UI hint) — the
+        # authorization layer below is completely independent either way.
+        resolved_access, resolution_reason = correct_full_document_scope_false_positive(
+            resolved_access=resolved_access, resolution_reason=resolution_reason,
+            resolved_intent=authoritative_interpretation.resolved_intent, dialogue=turn_resolution,
         )
     if is_pure_social_turn(question, turn_resolution):
         social_decision = classify_source_scope(
@@ -1731,6 +1951,19 @@ async def ask_stream_endpoint(
     # but never forwards to resolve_execution_plan, while "enabled" does.
     semantic_intent_mode = get_settings().semantic_intent_mode
     student_intent = None
+    execution_policy = (
+        authoritative_interpretation.execution_policy if authoritative_interpretation else None
+    )
+    # Multi-turn permission persistence (Priority 1): the compiled per-
+    # target deviations this turn resolved, written into the turn's own
+    # ai_tutor_requests.request_snapshot below (_mark_preflight_running)
+    # so a LATER turn's orchestrator can reconstruct them. None whenever
+    # the unified call path isn't active -- legacy OFF/SHADOW is
+    # byte-identical (update_tutor_request skips the write entirely).
+    compiled_policy_by_target = (
+        authoritative_interpretation.compiled_policy_by_target
+        if authoritative_interpretation else None
+    )
     if semantic_intent_mode != "off":
         from ..services.student_intent import (  # noqa: WPS433
             intent_for_router, interpret_student_intent,
@@ -1738,20 +1971,66 @@ async def ask_stream_endpoint(
         # _semantic_model_call (when triggered) does a blocking OpenAI call —
         # must run off the event loop like every other blocking call in this
         # handler (e.g. resolve_dialogue_semantically just above).
-        computed_intent = await run_in_threadpool(
-            lambda: interpret_student_intent(
-                question,
-                dialogue=turn_resolution,
-                resolved_access=resolved_access,
-                has_visible_context=bool(
-                    grounding_request.viewerContext or payload.openFileContext
-                ),
-                mode=semantic_intent_mode,
-                previous_turns=preflight_turns,
-                user_id=user_id,
+        if use_unified_semantic_call:
+            # The orchestrator above already made the ONE model-call
+            # decision for this turn (or determined none was needed) —
+            # forced to mode="off" here (zero model calls) purely to
+            # populate the legacy StudentIntent-shaped consumers below
+            # (the inert execution_signal marker, the M3 diagnostic).
+            # Calling interpret_student_intent with the real mode here
+            # would risk a SECOND model call via its own internal
+            # _needs_semantic_path escalation, breaking the ≤1-call budget.
+            computed_intent = await run_in_threadpool(
+                lambda: interpret_student_intent(
+                    question, dialogue=turn_resolution, resolved_access=resolved_access,
+                    has_visible_context=bool(
+                        grounding_request.viewerContext or payload.openFileContext
+                    ),
+                    mode="off", previous_turns=preflight_turns, user_id=user_id,
+                )
             )
+            student_intent = intent_for_router("enabled", computed_intent)
+        else:
+            computed_intent = await run_in_threadpool(
+                lambda: interpret_student_intent(
+                    question,
+                    dialogue=turn_resolution,
+                    resolved_access=resolved_access,
+                    has_visible_context=bool(
+                        grounding_request.viewerContext or payload.openFileContext
+                    ),
+                    mode=semantic_intent_mode,
+                    previous_turns=preflight_turns,
+                    user_id=user_id,
+                )
+            )
+            student_intent = intent_for_router(semantic_intent_mode, computed_intent)
+        # Milestone 3 observational wiring (behavior-inert — see
+        # diagnostic_policy.py): its return value is discarded, it never
+        # gates anything below, and it runs as a bounded background task —
+        # never awaited here, so it can never add latency to this response
+        # (see _schedule_semantic_intent_diagnostic_policy's own docstring
+        # for why: a production measurement found the real durable-history
+        # lookup exceeds 1.0s often enough that awaiting it inline was
+        # itself the problem, not just the timeout value). Only a verified
+        # durable conversationId is ever passed as real history (never the
+        # course-rail surface's synthetic id — docs/semantic-intent-
+        # milestone-3-plan.md S4); a non-durable request with its own
+        # conversationId or client-supplied previousTurns is diagnosed as
+        # "unavailable" (unverified, not trusted), not "history_free" —
+        # that's reserved for a request that genuinely has neither.
+        _schedule_semantic_intent_diagnostic_policy(
+            question=question,
+            dialogue=turn_resolution,
+            computed_intent=computed_intent,
+            user_id=user_id,
+            conversation_id=payload.conversationId if payload.durableConversation else None,
+            has_unverified_context=(
+                not payload.durableConversation
+                and bool(payload.conversationId or preflight_turns)
+            ),
+            mode=semantic_intent_mode,
         )
-        student_intent = intent_for_router(semantic_intent_mode, computed_intent)
     _task_profile, execution_plan = resolve_execution_plan(
         question=turn_resolution.resolved_request,
         resolved_access=resolved_access,
@@ -1825,6 +2104,7 @@ async def ask_stream_endpoint(
             update_tutor_request(
                 user_id=user_id, request_id=request_id,
                 status="running", stage="request_preflight",
+                compiled_policy_by_target=compiled_policy_by_target,
             )
 
         try:
@@ -2570,6 +2850,9 @@ async def ask_stream_endpoint(
         from ..services.scoped_extraction import (  # noqa: WPS433
             RetrievalMode, classify_scoped_request,
         )
+        # classify_scoped_request itself already narrows a correction/
+        # rejection complaint back to RELEVANCE (see scoped_extraction.
+        # py's module note) -- no separate correction step needed here.
         early_spec = classify_scoped_request(question)
         if early_spec.retrieval_mode is RetrievalMode.COVERAGE:
             from ..services.scoped_job_store import create_or_resume_job  # noqa: WPS433
@@ -2895,6 +3178,7 @@ async def ask_stream_endpoint(
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
                         "turn_resolution": turn_resolution,
+                        "execution_policy": execution_policy,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -2981,6 +3265,7 @@ async def ask_stream_endpoint(
                         "documents": preflight_documents,
                         "execution_plan": execution_plan,
                         "turn_resolution": turn_resolution,
+                        "execution_policy": execution_policy,
                         "grounding_request": grounding_request,
                         "grounding_resolution": grounding_resolution,
                     },
@@ -3072,6 +3357,7 @@ async def ask_stream_endpoint(
                             "documents": preflight_documents,
                             "execution_plan": execution_plan,
                             "turn_resolution": turn_resolution,
+                            "execution_policy": execution_policy,
                             "grounding_request": grounding_request,
                             "grounding_resolution": grounding_resolution,
                         },
@@ -3575,6 +3861,10 @@ async def _prepare_ask_stream_response(
         previous_turns=previous_turns_payload,
         response_language=language_context.requested_response_language,
     )
+    # Semantic Student Intent Layer Phase C — the authoritative
+    # ExecutionPolicy computed in the preflight (ENABLED mode + both new
+    # flags only; None for every other request, byte-identical to today).
+    execution_policy = (preflight or {}).get("execution_policy")
     observer.event(
         "turn_resolved", taskFamily=dialogue.task_family.value,
         relation=dialogue.relation.value, speechAct=dialogue.speech_act.value,
@@ -3718,6 +4008,7 @@ async def _prepare_ask_stream_response(
         selected_region_id=selected_region_id,
         visible_text=payload.openFileContext,
         has_visible_image=bool(open_file_images),
+        known_active_question=dialogue.active_question,
     )
     evidence_decision = decide_evidence(
         reference,
@@ -4336,6 +4627,12 @@ async def _prepare_ask_stream_response(
             f"{get_settings().openai_generate_model}|"
             f"{get_settings().openai_generate_model_strong}"
         ),
+        # Semantic Student Intent Layer Phase C — two requests with the
+        # same question but different compiled per-target constraints
+        # (e.g. "hint only for 5b" vs no restriction) must never share a
+        # cached answer. None for every request without an active
+        # authoritative policy — byte-identical to today's key.
+        "policy_hash": execution_policy.policy_hash if execution_policy else None,
     }
     from ..services.question_routing import build_question_routing_plan  # noqa: WPS433
     cache_routing_plan = build_question_routing_plan(question)
@@ -5828,7 +6125,7 @@ async def _prepare_ask_stream_response(
         evidence_payload["multiItem"] = multi_item_result.to_dict()
     source_decision = replace(source_decision, evidence_report=evidence_payload)
     fallback_research = (
-        SimpleNamespace(sources=[])
+        FallbackResearchResult()
         if fast_evidence_sufficient
         else await run_in_threadpool(lambda: research_unresolved_items(
             multi_item_result,
@@ -6038,7 +6335,20 @@ async def _prepare_ask_stream_response(
     # concerns separate prevents the active-exercise identity validator from
     # replacing a valid ten-section answer with a quantity-mismatch warning.
     coverage_buffering = bool(multi_item_result.evidence)
-    buffer_answer_output = high_risk_validation or coverage_buffering
+    # Semantic Student Intent Layer Phase D: a compiled policy with any
+    # actual release restriction (final_answer/official_solution
+    # prohibited for some target) must be buffered and scanned before
+    # release — additive OR, never a replacement of the existing
+    # high-risk/coverage buffering triggers (docs/semantic-intent-
+    # milestone-1-report.md §7's exact specified extension).
+    policy_has_release_restriction = bool(
+        execution_policy and any(
+            action.release.final_answer == "prohibited"
+            or action.release.official_solution == "prohibited"
+            for action in execution_policy.actions
+        )
+    )
+    buffer_answer_output = high_risk_validation or coverage_buffering or policy_has_release_restriction
     # Usage checkpoint captured from the generator's internal usageEst event
     # (model + estimated prompt tokens, emitted just before the OpenAI call).
     # Consulted by gen_with_abort_meter when the stream dies early.
@@ -6179,6 +6489,7 @@ async def _prepare_ask_stream_response(
                 + grounded_request_context.prompt_overlay()
                 + explanation_plan.prompt_overlay()
             ),
+            execution_policy=execution_policy,
         )
         for chunk_bytes in gen_iter:
             for ready_event in _poll_decoration_ready():
@@ -6244,7 +6555,13 @@ async def _prepare_ask_stream_response(
                     _await_decoration_results()
                     evt["learningRecommendations"] = decoration_results["learningRecommendations"]
                     evt["visualAids"] = decoration_results["visualAids"]
-                    if multi_item_result.evidence:
+                    # Gated off for a policy-restricted target: this step can
+                    # YIELD completed_text directly, before the centralized
+                    # release gate below ever runs — a multi-item coverage
+                    # "fallback_generator" call is a fresh, unchecked model
+                    # generation that must never reach the student ahead of
+                    # (or instead of) the release decision.
+                    if multi_item_result.evidence and not policy_has_release_restriction:
                         original_text = "".join(full_text_buf)
                         completed_text, coverage = ensure_complete_answer(
                             multi_item_result,
@@ -6337,7 +6654,20 @@ async def _prepare_ask_stream_response(
                         item.obligation_type for item in draft_contract.obligations
                         if not item.satisfied
                     ]
-                    if (semantic_mismatches or obligation_failures) and high_risk_validation:
+                    # Semantic Student Intent Layer Phase D (completion): a
+                    # policy-restricted target is handled EXCLUSIVELY by the
+                    # centralized release gate below (search
+                    # "policy_has_release_restriction:" in this function) —
+                    # the grounded-repair attempt below produces fresh
+                    # free-form model text that has never been checked
+                    # against the release policy, so it must never run (and
+                    # therefore never get a chance to yield its output
+                    # directly, bypassing the gate) for a restricted target.
+                    if (
+                        (semantic_mismatches or obligation_failures)
+                        and high_risk_validation
+                        and not policy_has_release_restriction
+                    ):
                         from ..services.visual_repair import (  # noqa: WPS433
                             generate_grounded_repair_sync,
                         )
@@ -6395,7 +6725,97 @@ async def _prepare_ask_stream_response(
                         open_file_images=open_file_images,
                         open_file_context=payload.openFileContext,
                     )
-                    if (
+                    # Semantic Student Intent Layer Phase D (completion) —
+                    # the ONE centralized release-safety decision point.
+                    # Deliberately the FIRST branch in this chain: a
+                    # policy-restricted target must never reach any of the
+                    # repair/rewrite/verification branches below, because
+                    # every one of them can produce fresh free-form model
+                    # text (a regrounded draft, a repaired visual-denial
+                    # answer, a language rewrite) that has never itself
+                    # been checked against the release policy — "fixing"
+                    # a restricted draft is not the same as clearing it for
+                    # release. See answer_release_validator.enforce_
+                    # release_policy's docstring for why this withholds
+                    # unconditionally rather than trusting a clean regex
+                    # scan. This also protects the final buffer flush
+                    # ("elif buffer_answer_output" below): when this branch
+                    # is taken, buffer_answer_output is always true too
+                    # (policy_has_release_restriction is one of its ORs),
+                    # so the original, unvalidated streamed tokens in
+                    # pending_token_events are discarded here, never
+                    # flushed.
+                    if policy_has_release_restriction:
+                        # Hint-suppression fix: a policy with exactly ONE
+                        # distinct target has no cross-target attribution
+                        # problem (every byte of the draft is about that
+                        # one target — see answer_release_validator.py's
+                        # module docstring "Hint-suppression fix" section),
+                        # so it gets the scan-conditioned single-target
+                        # gate: released when the leak-pattern scan finds
+                        # nothing, withheld only when it actually matches.
+                        # A policy with two or more distinct targets keeps
+                        # going through enforce_release_policy_per_target
+                        # — Priority 2's unconditional whole-response
+                        # withhold, UNCHANGED, because a clean scan there
+                        # cannot prove which target the clean-looking text
+                        # belongs to.
+                        distinct_targets = {
+                            action.target for action in execution_policy.actions
+                        } if execution_policy else set()
+                        # Value-grounded release check (2026-10-20
+                        # comprehensive remediation): the SAME retrieved
+                        # evidence already used for grounding/generation,
+                        # passed through so the release gate's second,
+                        # independent signal (extract_protected_values_
+                        # from_evidence) has a labeled solution/answer
+                        # segment to check against when one exists in the
+                        # retrieved chunks for this turn -- additive, never
+                        # required (both functions treat a missing/empty
+                        # value the same as not passing one at all).
+                        release_evidence_text = "\n".join(
+                            chunk.text for chunk in (multi_item_result.chunks or []) if getattr(chunk, "text", None)
+                        )
+                        if len(distinct_targets) <= 1:
+                            from ..services.answer_release_validator import (  # noqa: WPS433
+                                enforce_release_policy_single_target,
+                            )
+                            release_decision = enforce_release_policy_single_target(
+                                "".join(full_text_buf),
+                                policy=execution_policy,
+                                response_language=language_context.requested_response_language,
+                                evidence_text=release_evidence_text,
+                            )
+                        else:
+                            from ..services.answer_release_validator import (  # noqa: WPS433
+                                enforce_release_policy_per_target,
+                            )
+                            release_decision = enforce_release_policy_per_target(
+                                "".join(full_text_buf),
+                                policy=execution_policy,
+                                response_language=language_context.requested_response_language,
+                                evidence_text=release_evidence_text,
+                            )
+                        full_text_buf.clear()
+                        full_text_buf.append(release_decision.text)
+                        pending_token_events.clear()
+                        yield _sse_bytes(json.dumps({"t": release_decision.text}, ensure_ascii=False))
+                        evt["releaseWithheld"] = release_decision.withheld
+                        evt["releaseWithheldReason"] = release_decision.scan.reason
+                        evt["releaseStructural"] = release_decision.structural
+                        if release_decision.sections:
+                            evt["releaseSectionsWithheld"] = [
+                                section.target for section in release_decision.sections if section.withheld
+                            ]
+                        if release_decision.withheld:
+                            evt["answerMode"] = "release_withheld"
+                            evt["confidence"] = "low"
+                            evt["unsupported"] = True
+                            evt["recovery"] = {
+                                "code": "answer_release_restricted",
+                                "action": "ask_for_hint_or_permission",
+                            }
+                    elif (
                         (semantic_mismatches or obligation_failures)
                         and high_risk_validation
                         and not pending_index_with_page_evidence
@@ -6741,6 +7161,13 @@ async def _prepare_ask_stream_response(
                         and not wrong_language
                         and not critical_reject
                         and not unsafe_model_downgrade
+                        # A policy-restricted, withheld answer must never
+                        # feed its (possibly leaked) verifiedResults into
+                        # durable tutor_state either — that would persist
+                        # the exact numeric final answer this turn just
+                        # withheld from the student, via a different
+                        # channel than the SSE text.
+                        and not policy_has_release_restriction
                         and _verification_is_cacheable(
                             verification_payload,
                             task_type=task_type,

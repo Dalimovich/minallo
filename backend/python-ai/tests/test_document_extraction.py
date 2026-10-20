@@ -79,6 +79,22 @@ def test_extraction_shaped_requests_route_regardless_of_which_all_phrasing_is_us
         assert matched, question
 
 
+def test_correction_complaint_naming_an_exercise_does_not_trigger_extraction() -> None:
+    """Milestone 3 Priority 4 finding: this classifier shares EXHAUSTIVE_
+    COVERAGE_RE/EXTRACTION_TARGET_RE with scoped_extraction.classify_
+    scoped_request (see that module's fix history) but had no correction/
+    rejection guard of its own. "You didn't answer the whole Aufgabe"
+    matches an exhaustive quantifier ("whole") AND an extraction-target
+    noun ("Aufgabe") despite being a correction complaint, not a request
+    to extract the entire document -- a THIRD, independent occurrence of
+    the same false-positive shape Phase B fixed for grounding_contract.py
+    and this task fixed for scoped_extraction.py."""
+    matched, _correction, _target = extraction.classify_document_extraction(
+        "You didn't answer the whole Aufgabe. Parts a and c are missing.",
+    )
+    assert matched is False
+
+
 def test_summarize_or_study_whole_document_still_does_not_trigger_extraction() -> None:
     """These have no extraction target (questions/exercises/Kurzfragen) at
     all — they mean "read/summarize everything", which classify_document_

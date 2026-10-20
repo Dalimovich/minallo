@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import re
 import json
+import time
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any
@@ -180,6 +181,25 @@ _OVERVIEW_RE = re.compile(
 _CHECK_RE = re.compile(
     r"\b(?:check my (?:answer|work|calculation)|is my answer|"
     r"prüf(?:e)? meine|pruef(?:e)? meine|kontrollier(?:e)?)\b",
+    re.IGNORECASE,
+)
+# Quiz/Socratic follow-up (semantic-intent stabilization, 2026-10-20): a
+# bare numeric/short guess ("Ist es 40 N?", "75 N?", "is it 40N?") is the
+# student attempting an answer, not a new topic — but ONLY when there is
+# an ACTIVE exercise/question in play (reuses the same `active` label
+# this function already computes via `_active_questions` for every other
+# branch below, never a new tracking mechanism); a bare number with no
+# active question at all is not assumed to be an answer attempt. The
+# whole message must be essentially just the guess (anchored
+# start-to-end) — this stays narrow and does not loosen continuation
+# detection for any message carrying its own content. Deliberately NOT
+# gated on the immediately preceding assistant turn containing "?": a
+# realistic follow-up after a WRONG guess ("Nicht ganz, versuch es
+# nochmal.") doesn't repeat the question, but the exercise is still
+# active and a second short guess is still an answer attempt.
+_SHORT_ANSWER_ATTEMPT_RE = re.compile(
+    r"^\s*(?:is\s+it|ist\s+es|sind\s+es|w(?:ä|ae)re\s+es)?\s*"
+    r"[-+]?\d+(?:[.,]\d+)?\s*[a-zA-Zµ°%]{0,6}\s*\?{0,2}\s*$",
     re.IGNORECASE,
 )
 _RESULT_ONLY_RE = re.compile(
@@ -728,7 +748,7 @@ def resolve_dialogue(
             f"Give only a concise overview of exercise {active or 'the active scope'}, "
             "without silently turning it into a complete solution."
         )
-    elif _CHECK_RE.search(text):
+    elif _CHECK_RE.search(text) or (_SHORT_ANSWER_ATTEMPT_RE.match(text) and active):
         act = DialogueAct.CHECK_ANSWER
         resolved = (
             f"Check the student's answer for exercise {active or 'the active question'} "
@@ -957,6 +977,21 @@ def is_pure_social_turn(message: str, resolution: DialogueResolution) -> bool:
     return is_non_academic_chitchat(message)
 
 
+def _log_dialogue_semantic_latency(outcome: str, resolution: DialogueResolution, started: float) -> None:
+    """Latency/outcome diagnostics for this call site, mirroring
+    ``student_intent._log_shadow``'s format (counts/enums/latency only,
+    never message text) — Milestone 1's audit flagged this call as the one
+    missing latency logging that call #2 (``student_intent._semantic_model_
+    call`` via ``interpret_student_intent``) already had."""
+    latency_ms = (time.perf_counter() - started) * 1000
+    log.info(
+        "dialogue_semantic_resolution outcome=%s relation=%s task_family=%s "
+        "confidence=%.2f latency_ms=%.1f",
+        outcome, resolution.relation.value, resolution.task_family.value,
+        resolution.confidence, latency_ms,
+    )
+
+
 def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str, str]],
                                   base: DialogueResolution) -> DialogueResolution:
     """Resolve only ambiguous turns with a small structured model call; fail closed."""
@@ -964,6 +999,7 @@ def resolve_dialogue_semantically(message: str, *, previous_turns: list[dict[str
     from .openai_client import INTERACTIVE_CLASSIFIER_TIMEOUT, get_openai_client
     from ..config import get_settings
 
+    started = time.perf_counter()
     frame = {
         "activeTask": _infer_active_task(previous_turns).value,
         "recentTurns": previous_turns[-10:],
@@ -1019,7 +1055,9 @@ Do not include reasoning."""
             # exactly what routes an ordinary follow-up into RAG. The prior
             # conversation is the safest available evidence for this class
             # of turn regardless of classifier confidence.
-            return _safe_conversational_fallback(message, previous_turns, base)
+            result = _safe_conversational_fallback(message, previous_turns, base)
+            _log_dialogue_semantic_latency("low_confidence_fallback", result, started)
+            return result
         resolved = str(data.get("resolvedRequest") or message).strip()[:4000]
         inferred_task = _infer_active_task(previous_turns)
         if inferred_task is TaskFamily.UNKNOWN:
@@ -1032,13 +1070,14 @@ Do not include reasoning."""
         ):
             # A semantic model cannot turn a standalone social acknowledgement
             # into a phantom pending dependency when history contains no task.
+            _log_dialogue_semantic_latency("no_pending_task", base, started)
             return base
         continues_previous_goal = bool(data.get("continuesPreviousGoal"))
         evidence_requirement = resolve_evidence_requirement(
             message, relation=relation, continues_previous_goal=continues_previous_goal,
             previous_turns=previous_turns,
         )
-        return DialogueResolution(
+        result = DialogueResolution(
             **{**base.__dict__, "resolved_request": resolved, "relation": relation,
                "speech_act": speech_act, "task_family": task_family,
                "continues_previous_goal": continues_previous_goal,
@@ -1046,6 +1085,8 @@ Do not include reasoning."""
                "requires_new_retrieval": evidence_requirement not in _EVIDENCE_SKIPS_RETRIEVAL,
                "confidence": confidence}
         )
+        _log_dialogue_semantic_latency("model", result, started)
+        return result
     except Exception as exc:
         # Classification unavailability must not erase obvious conversational
         # continuity. This branch is reached only for turns already deemed
@@ -1057,7 +1098,9 @@ Do not include reasoning."""
             "dialogue_semantic_classifier_fallback exception=%s",
             type(exc).__name__,
         )
-        return _safe_conversational_fallback(message, previous_turns, base)
+        result = _safe_conversational_fallback(message, previous_turns, base)
+        _log_dialogue_semantic_latency("exception_fallback", result, started)
+        return result
 
 
 def _safe_conversational_fallback(

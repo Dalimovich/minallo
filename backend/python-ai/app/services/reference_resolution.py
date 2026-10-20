@@ -219,12 +219,25 @@ def resolve_question_reference(
     selected_region_id: str | None,
     visible_text: str | None,
     has_visible_image: bool,
+    known_active_question: str | None = None,
 ) -> QuestionReference:
     explicit_questions = detect_explicit_questions(question)
     selected = (selected_text or "").strip()
     page_text = selected or (visible_text or "").strip()
     explicit = _EXPLICIT_LABEL_RE.search(question or "")
     requested = normalize_question_label(explicit.group(1)) if explicit else None
+    carried_over_label = False
+    if requested is None and known_active_question:
+        # The CURRENT message names no exercise at all (e.g. "Actually,
+        # just give me the full solution now.") -- a permission/goal
+        # change about whichever exercise conversation continuity already
+        # established, not a fresh, label-free reference that genuinely
+        # needs page evidence to identify. dialogue_state already verified
+        # this target across turns; reuse it here exactly like an
+        # explicit in-message label (same exact_lookup_required deferral
+        # below), rather than demanding a new one be typed out.
+        requested = normalize_question_label(known_active_question) or known_active_question
+        carried_over_label = bool(requested)
     mark = _MARK_RE.search(question or "")
     mark_value = mark.group(1).replace(",", ".") if mark else None
     candidates = list(dict.fromkeys(
@@ -256,6 +269,8 @@ def resolve_question_reference(
         ref.evidence.append(ReferenceEvidence("visible_image", "attached", visible_page))
     if mark_value:
         ref.evidence.append(ReferenceEvidence("user_described_mark", mark_value, visible_page))
+    if carried_over_label:
+        ref.evidence.append(ReferenceEvidence("carried_over_active_question", requested, visible_page))
 
     if requested:
         exact = [c for c in candidates if exact_question_label_match(requested, c)]
@@ -307,16 +322,28 @@ def decide_evidence(
     has_history: bool,
 ) -> EvidenceDecision:
     explicit_questions = detect_explicit_questions(question)
-    visual_or_correction = bool(
-        (not explicit_questions.self_contained and _VISUAL_REFERENCE_RE.search(question or ""))
-        or _CORRECTION_RE.search(question or "")
+    # Visual pointers ("explain this diagram") and corrections ("actually...",
+    # "no, ...") used to share one gate requiring fresh page evidence. A real
+    # visual pointer genuinely cannot be answered without seeing a page — but
+    # a correction-shaped message is also how a student phrases an ordinary
+    # permission/goal change ("Actually, just give me the full solution
+    # now."), which dialogue_state already resolves to an explicit target
+    # via conversation continuity (see dialogue.resolved_request's "...about
+    # exercise N..." template). Blocking those unconditionally, before the
+    # semantic intent layer -- which HAS the real conversation history --
+    # ever runs, was stopping a legitimate turn-2 "change of mind" cold. Only
+    # the visual case still hard-blocks here; a correction with no resolvable
+    # label and no history still falls through to the clarify branch below.
+    is_visual_reference = bool(
+        not explicit_questions.self_contained and _VISUAL_REFERENCE_RE.search(question or "")
     )
+    is_correction = bool(_CORRECTION_RE.search(question or ""))
     if reference.status == "ambiguous":
         return EvidenceDecision(
             False, False, False, ["exact question reference"], [],
             reference.confidence, "clarify", "ambiguous_reference",
         )
-    if visual_or_correction and reference.status != "resolved":
+    if is_visual_reference and reference.status != "resolved":
         return EvidenceDecision(
             False, False, False, ["active document and visible page evidence"], [],
             reference.confidence, "clarify", "exact_question_not_resolved",
@@ -325,7 +352,7 @@ def decide_evidence(
         # Explicit labels without a visible match are allowed to proceed only
         # when there is no visual/current-page claim; Stage-A exact metadata
         # retrieval can resolve them later without substring matching.
-        if not visual_or_correction:
+        if not is_visual_reference:
             return EvidenceDecision(
                 True, False, False, ["exact question text"], [],
                 0.35, "answer", "exact_lookup_required",
@@ -341,7 +368,7 @@ def decide_evidence(
             "answer",
             None,
         )
-    if has_history and _CORRECTION_RE.search(question or ""):
+    if has_history and is_correction:
         return EvidenceDecision(
             False, False, False, ["visible page evidence"], [],
             0.15, "clarify", "exact_question_not_resolved",
