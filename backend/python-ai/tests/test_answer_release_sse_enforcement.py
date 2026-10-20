@@ -72,6 +72,32 @@ def _mixed_5a_permitted_5b_prohibited_policy():
     )
 
 
+def _real_compiled_explain_policy_ab02_ab03():
+    """Not hand-built like the policies above -- this goes through the
+    REAL compile_policy (same call semantic_intent_orchestrator.
+    interpret_turn_authoritatively makes), for an objective="explain"
+    action with release left completely unspecified: the exact shape
+    the unified semantic call produced for both AB-02 ("Aufgabe 1 raff
+    ich grad nicht so richtig") and AB-03 ("this cutting speed thing
+    makes no sense to me can u explain"). Proves the policy_compiler.py
+    explain-objective fallback's output actually reaches the SSE gate,
+    not just that compile_policy returns the right dataclass in
+    isolation (test_policy_compiler.py already covers that)."""
+    from app.services.policy_compiler import compile_policy
+    from app.services.resolved_student_intent import (
+        Action, ReleaseConstraints, ResolvedStudentIntent, SCHEMA_VERSION,
+    )
+
+    intent = ResolvedStudentIntent(
+        schema_version=SCHEMA_VERSION, original_message=QUESTION, student_goal=QUESTION,
+        actions=(
+            Action(objective="explain", target="5b", state="requested", release=ReleaseConstraints()),
+        ),
+        conversation="new", references=None, response_language="en", teaching=None, trust=None,
+    )
+    return compile_policy(intent)
+
+
 def _permissive_policy():
     from app.services.policy_compiler import ExecutionPolicy
     from app.services.resolved_student_intent import Action, ReleaseConstraints
@@ -269,6 +295,32 @@ def test_restricted_final_answer_never_reaches_the_sse_stream(monkeypatch, draft
     # refuses to persist any answer carrying a `recovery` field — treats
     # this turn as unpersistable, the same mechanism every other safety
     # branch in this cascade already relies on.
+    assert b'"code": "answer_release_restricted"' in body
+    assert not save_calls, "a withheld/restricted answer must never be persisted to the cache"
+
+
+def test_explain_objective_unspecified_release_is_withheld_over_sse_ab02_ab03(monkeypatch):
+    """End-to-end for the AB-02/AB-03 fix: a REAL compile_policy output
+    (not a hand-built ExecutionPolicy) for an unspecified-release
+    "explain" action still gets its final_answer withheld over the
+    actual SSE route, the same way the already-proven "hint" case does.
+    Closes the gap between test_policy_compiler.py (proves compile_
+    policy's return value) and this file (otherwise only ever exercises
+    hand-built policies) -- this is the one place that proves the fix
+    reaches the student-visible stream, not just the dataclass."""
+    draft_text = "For Aufgabe 1: the final answer is R_A = 75 N, R_B = 25 N."
+    conversation_id = "release-gate-explain-ab02-ab03"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_real_compiled_explain_policy_ab02_ab03(),
+        draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"75 N" not in body and b"25 N" not in body, body
     assert b'"code": "answer_release_restricted"' in body
     assert not save_calls, "a withheld/restricted answer must never be persisted to the cache"
 
