@@ -100,6 +100,28 @@ def test_permitted_final_answer_is_never_scanned():
     assert result.reason == "no_restriction"
 
 
+def test_permitted_final_answer_with_official_solution_still_closed_is_not_withheld():
+    """Confirmed defect (semantic-intent stabilization, 2026-10-20): the
+    REALISTIC shape a real compile_policy produces for an explicit
+    full-solution request -- final_answer="permitted" (explicitly
+    requested) alongside official_solution="prohibited" (the ordinary
+    tutoring default, which closes unless explicitly requested
+    otherwise -- see policy_compiler.py's _TUTORING_DEFAULT) -- used to
+    still trip the final-answer-shaped patterns, because the scan
+    combined both fields into one "restricted" flag. An ordinary,
+    correct "the final answer is 42 N" in a genuinely permitted
+    full-solution response must stream through unchanged; this is
+    different from test_permitted_final_answer_is_never_scanned above,
+    which (by leaving official_solution at its "unspecified" default)
+    never exercised this combination at all."""
+    text = "The final answer is 42 N."
+    result = scan_generated_answer_for_prohibited_release(
+        text, policy=_policy(final_answer="permitted", official_solution="prohibited"),
+    )
+    assert result.allowed is True
+    assert result.reason == "no_match"
+
+
 def test_no_policy_is_never_scanned():
     text = "The final answer is 42 N."
     result = scan_generated_answer_for_prohibited_release(text, policy=None)

@@ -159,13 +159,50 @@ def _any_action_prohibits(policy: ExecutionPolicy, field: str) -> bool:
     return any(getattr(action.release, field) == "prohibited" for action in policy.actions)
 
 
-def _scan_text(text: str, *, restricted: bool) -> ReleaseValidationResult:
+# Confirmed defect (semantic-intent stabilization, 2026-10-20): every
+# pattern above used to share ONE combined `restricted` flag
+# (final_answer prohibited OR official_solution prohibited). compile_
+# policy's own tutoring default closes official_solution for virtually
+# every compiled action (it "defaults closed and must be explicitly
+# requested" -- see policy_compiler.py's _TUTORING_DEFAULT comment), so
+# that one flag was almost always True even for a policy that
+# explicitly PERMITS final_answer -- which meant the final-answer-
+# shaped patterns below (an ordinary, correct "the final answer is
+# 75 N" in a legitimately permitted full-solution response) still
+# matched and the whole response was wrongly withheld. Confirmed via
+# direct instrumentation: a real compile_policy output for
+# objective="solve" with final_answer="permitted" (the Stage-5
+# acceptance-case-E shape, "solve this completely") carries
+# official_solution="prohibited" by that same ordinary default, which
+# alone used to be enough to trigger "final_answer_phrase" on an
+# entirely permitted answer.
+_OFFICIAL_SOLUTION_PATTERN_NAMES = frozenset({"official_solution_phrase"})
+
+
+def _scan_text(
+    text: str, *, final_answer_restricted: bool, official_solution_restricted: bool,
+) -> ReleaseValidationResult:
     """Shared leak-pattern scan both the whole-response scan and the
     per-target scan delegate to, so the two never drift apart on what
-    counts as a leak or what "no restriction applies" means."""
-    if not restricted:
+    counts as a leak or what "no restriction applies" means. Each
+    pattern is checked against the restriction it actually detects --
+    "official_solution_phrase" (official/answer-key wording) against
+    official_solution_restricted, every other pattern (final numeric
+    result shapes) against final_answer_restricted -- never one
+    combined flag, so a policy permitting final_answer but still
+    closing official_solution (the ordinary tutoring default) does not
+    withhold a correctly-permitted final answer just because it
+    contains a final-answer-shaped phrase."""
+    if not final_answer_restricted and not official_solution_restricted:
         return ReleaseValidationResult(allowed=True, reason="no_restriction", matched_patterns=())
-    matched = tuple(name for name, pattern in _LEAK_PATTERNS if pattern.search(text or ""))
+    matched = tuple(
+        name for name, pattern in _LEAK_PATTERNS
+        if (
+            official_solution_restricted if name in _OFFICIAL_SOLUTION_PATTERN_NAMES
+            else final_answer_restricted
+        )
+        and pattern.search(text or "")
+    )
     if matched:
         return ReleaseValidationResult(allowed=False, reason="matched_leak_pattern", matched_patterns=matched)
     return ReleaseValidationResult(allowed=True, reason="no_match", matched_patterns=())
@@ -180,8 +217,11 @@ def scan_generated_answer_for_prohibited_release(
     exactly what this does and does not detect."""
     if policy is None:
         return ReleaseValidationResult(allowed=True, reason="no_policy", matched_patterns=())
-    restricted = _any_action_prohibits(policy, "final_answer") or _any_action_prohibits(policy, "official_solution")
-    return _scan_text(text, restricted=restricted)
+    return _scan_text(
+        text,
+        final_answer_restricted=_any_action_prohibits(policy, "final_answer"),
+        official_solution_restricted=_any_action_prohibits(policy, "official_solution"),
+    )
 
 
 @dataclass(frozen=True)

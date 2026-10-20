@@ -98,6 +98,36 @@ def _real_compiled_explain_policy_ab02_ab03():
     return compile_policy(intent)
 
 
+def _real_compiled_explicit_full_solution_policy():
+    """Also goes through the REAL compile_policy, for an explicitly
+    PERMITTED full-solution request ("Solve exercise 4 completely, show
+    me x" -- Stage-5 acceptance case E / Gate 6): objective="solve",
+    final_answer="permitted" explicitly set. Unlike _permissive_policy()
+    above (hand-built, leaves official_solution at the dataclass
+    default "unspecified"), this goes through compile_policy's own
+    tutoring default, which closes official_solution to "prohibited"
+    whenever it isn't explicitly requested -- the realistic combination
+    that exposed the answer_release_validator.py scan-gate conflation
+    bug (a permitted final_answer was still withheld because
+    official_solution was, separately and correctly, closed)."""
+    from app.services.policy_compiler import compile_policy
+    from app.services.resolved_student_intent import (
+        Action, ReleaseConstraints, ResolvedStudentIntent, SCHEMA_VERSION,
+    )
+
+    intent = ResolvedStudentIntent(
+        schema_version=SCHEMA_VERSION, original_message=QUESTION, student_goal=QUESTION,
+        actions=(
+            Action(
+                objective="solve", target="5b", state="requested",
+                release=ReleaseConstraints(final_answer="permitted"),
+            ),
+        ),
+        conversation="new", references=None, response_language="en", teaching=None, trust=None,
+    )
+    return compile_policy(intent)
+
+
 def _permissive_policy():
     from app.services.policy_compiler import ExecutionPolicy
     from app.services.resolved_student_intent import Action, ReleaseConstraints
@@ -323,6 +353,31 @@ def test_explain_objective_unspecified_release_is_withheld_over_sse_ab02_ab03(mo
     assert b"75 N" not in body and b"25 N" not in body, body
     assert b'"code": "answer_release_restricted"' in body
     assert not save_calls, "a withheld/restricted answer must never be persisted to the cache"
+
+
+def test_explicit_full_solution_request_remains_permitted_over_sse(monkeypatch):
+    """End-to-end for the answer_release_validator.py scan-gate
+    conflation fix (Gate 6 / Stage-5 acceptance case E): a REAL compile_
+    policy output for an explicitly permitted full-solution request
+    ("Solve exercise 4 completely, show me x") streams its ordinary
+    "the final answer is 75 N..." text through unchanged -- the
+    official_solution="prohibited" tutoring default that always rides
+    alongside it must not also close the final_answer the student
+    explicitly asked for and was explicitly granted."""
+    draft_text = "The final answer is R_A = 75 N, R_B = 25 N, derived from the equilibrium equations."
+    conversation_id = "release-gate-explicit-full-solution"
+    stream, save_calls = _setup(
+        monkeypatch, policy=_real_compiled_explicit_full_solution_policy(),
+        draft_text=draft_text, conversation_id=conversation_id,
+    )
+    try:
+        body = asyncio.run(_run(stream, conversation_id=conversation_id))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+
+    assert b"75 N" in body and b"25 N" in body, body
+    assert b'"code": "answer_release_restricted"' not in body
 
 
 def test_mixed_permission_unmatched_leak_shape_still_withheld_whole_over_sse(monkeypatch):
