@@ -112,6 +112,48 @@ def test_extract_protected_values_reads_only_the_solution_segment():
     )
 
 
+def test_solution_segment_does_not_bleed_across_a_chunk_boundary():
+    """Confirmed 2026-10-21 production incident: app/routers/stream.py
+    joins every retrieved chunk's text into one evidence string before
+    this extraction runs -- when retrieval's "course-wide semantic
+    fallback" pulls in a chunk from a completely UNRELATED document/
+    exercise, its own "Lösung:" label used to have no stop condition
+    except a literal "[" or the end of the ENTIRE joined string, so the
+    labeled segment swept in every chunk joined AFTER it, including
+    numbers that have nothing to do with that exercise at all. Chunks are
+    now joined with a blank line specifically so this extraction stops at
+    the chunk boundary; a genuine multi-line solution within ONE chunk
+    (no blank line) is unaffected."""
+    evidence = (
+        "Gesucht: Reaktionskraft R_A am Lager A. Lösung: R_A = 75 N.\n\n"
+        "Pflichtmodule des Studiengangs: ESE umfasst 30 ECTS-Punkte, "
+        "SAS umfasst 30 ECTS-Punkte, ASE umfasst 30 ECTS-Punkte."
+    )
+    values = extract_protected_values_from_evidence(evidence)
+    assert "75" in values
+    assert "30" not in values, (
+        "a later, unrelated chunk's own numbers must never be swept into an "
+        "earlier chunk's unrelated 'Lösung:' segment"
+    )
+
+
+def test_genuine_multiline_solution_within_one_chunk_is_unaffected():
+    """Non-regression: the blank-line stop is a CHUNK boundary signal, not
+    a sentence/line boundary -- a real solution that spans several lines
+    with no blank line in between (how retrieved chunk text actually
+    looks; confirmed against this project's own real fixtures) still
+    extracts correctly end-to-end."""
+    evidence = (
+        "[Aufgabe 1] Balken AB, 4 m lang.\n"
+        "Gesucht: R_A, R_B.\n"
+        "Lösung:\n"
+        "R_A = 75 N\n"
+        "R_B = 25 N"
+    )
+    values = extract_protected_values_from_evidence(evidence)
+    assert "75" in values and "25" in values
+
+
 def test_ab24_exact_live_disclosure_shape_is_now_caught_via_protected_value():
     """The EXACT confirmed live-eval disclosure for AB-24/the quiz
     scenario: no trigger word, no heading, no table, no LaTeX boxed{} --

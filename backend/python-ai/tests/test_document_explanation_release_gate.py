@@ -116,6 +116,63 @@ def _install_curriculum_document(monkeypatch):
     return doc_id
 
 
+UNRELATED_EXERCISE_SHEET_TEXT = (
+    "Gesucht: Reaktionskraft R_A am Lager A. Lösung: R_A = 75 N bei einem "
+    "Winkel von 30 Grad zur Horizontalen."
+)
+
+
+def _install_curriculum_document_with_unrelated_course_fallback(monkeypatch):
+    """Exact shape of the confirmed 2026-10-21 production incident (traced
+    directly from the live request_snapshot + document_chunks rows):
+    retrieval's "course-wide semantic fallback" (app/services/retrieval.py)
+    returned 8 chunks for "explain this to me" on the curriculum PDF -- only
+    1 from the active document itself, the other 7 from a COMPLETELY
+    UNRELATED Statics lecture script in the same course, several of them
+    "Lösung:"-labeled worked examples with their own real numeric results
+    (e.g. "FRx = FR = 45,6 kN"). This mirrors that exactly: the active
+    document's own single chunk, plus an unrelated document's chunk
+    carrying a real, unrelated "Lösung:" segment -- same shape, smaller
+    fixture. Returns the curriculum document's id."""
+    import app.routers.stream as stream_mod
+
+    doc_id = str(uuid.uuid4())
+    curriculum_chunk = retrieval.RetrievedChunk(
+        chunk_id="c-curriculum", document_id=doc_id, page_start=1, page_end=2,
+        text=CURRICULUM_TEXT, score=1.0, similarity=1.0,
+        chunk_type="notes", section_title="Modulhandbuch",
+    )
+    unrelated_doc_id = str(uuid.uuid4())
+    unrelated_chunk = retrieval.RetrievedChunk(
+        chunk_id="c-unrelated-statics", document_id=unrelated_doc_id, page_start=12, page_end=12,
+        text=UNRELATED_EXERCISE_SHEET_TEXT, score=0.4, similarity=0.4,
+        chunk_type="example", section_title="Lösung",
+    )
+    chunks = [curriculum_chunk, unrelated_chunk]
+    monkeypatch.setattr(stream_mod, "retrieve_routed_chunks", lambda **kw: chunks)
+    monkeypatch.setattr(retrieval, "retrieve_routed_chunks", lambda **kw: chunks)
+    monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **kw: chunks)
+    monkeypatch.setattr(
+        stream_mod, "retrieve_multi_item_course_evidence",
+        lambda **kw: type("R", (), {
+            "chunks": chunks, "evidence": [], "to_dict": lambda self: {},
+        })(),
+    )
+    monkeypatch.setattr(stream_mod, "_load_authorized_documents", lambda *_: {
+        doc_id: {
+            "id": doc_id, "user_id": base.USER_ID, "course_id": "course-1",
+            "file_name": "modulhandbuch.pdf", "storage_path": "synthetic/modulhandbuch.pdf",
+            "document_hash": "rev-1", "processing_status": "ready",
+            "page_count": 5, "chunk_count": 5,
+        },
+    })
+    monkeypatch.setattr(stream_mod, "_load_authorized_course_candidates", lambda *_a, **_k: [{
+        "id": doc_id, "file_name": "modulhandbuch.pdf", "user_id": base.USER_ID,
+        "course_id": "course-1", "active_index_revision": "rev-1",
+    }])
+    return doc_id
+
+
 async def _ask_with_page(
     stream, *, document_id, question, conversation_id="doc-explain-test",
     generation=1, previous_turns=None, visible_page_text=CURRICULUM_TEXT,
@@ -193,6 +250,88 @@ def test_explain_this_to_me_on_a_non_exercise_document_is_not_withheld(monkeypat
     )
     assert "ESE" in rendered and "ASE" in rendered, "the actual explanation must reach the student"
     assert "withholding the final result" not in rendered
+
+
+# ---------------------------------------------------------------------------
+# Test 1b -- the ACTUAL live production regression (2026-10-21, second
+# incident), reproduced with the real retrieval shape, not just the real
+# draft shape: confirmed via the live request_snapshot + document_chunks
+# rows that retrieval's "course-wide semantic fallback" pulled 7 of 8
+# chunks from a completely unrelated document, several carrying their own
+# real "Lösung:"-labeled results. Joining ALL retrieved chunks' text
+# before extracting protected values let that unrelated document's own
+# genuine answer contaminate evidence for THIS document's explanation.
+# Fixed in app/routers/stream.py: release_evidence_text is now scoped to
+# the active document's own chunks only.
+# ---------------------------------------------------------------------------
+
+def test_unrelated_course_fallback_chunk_cannot_make_curriculum_text_look_prohibited(monkeypatch):
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_curriculum_document_with_unrelated_course_fallback(monkeypatch)
+    # Exact live failure shape: an ordinary curriculum explanation whose
+    # prose legitimately restates a credit count ("30 ECTS") coincides
+    # with the UNRELATED document's own, correctly-labeled "Lösung: R_A
+    # = 75 N bei einem Winkel von 30 Grad" -- "30" is a genuine part of
+    # THAT document's real answer, extracted correctly, but it has
+    # nothing to do with this document's explanation at all.
+    draft = (
+        "This handbook describes three specializations: ESE, SAS, and ASE, "
+        "each worth 30 ECTS and requiring at least four modules."
+    )
+    base._install_capturing_transport(monkeypatch, intent_response_json=None, draft_text=draft)
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id, question="explain this to me",
+            conversation_id="doc-explain-unrelated-fallback",
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    rendered = base._rendered_text(body)
+    assert b'"code": "answer_release_restricted"' not in body, (
+        f"an unrelated course document's own real solution must never make an "
+        f"unrelated curriculum explanation look like a withheld exercise answer: {body!r}"
+    )
+    assert "ESE" in rendered and "30 ECTS" in rendered
+
+
+def test_recovers_in_a_conversation_that_already_contains_an_earlier_withheld_turn(monkeypatch):
+    """Mandatory acceptance case: a conversation where an EARLIER turn
+    already got the (now-fixed) false-withholding response -- exactly
+    the shape of repeatedly asking the same question and getting the
+    same wrong answer, as actually happened in production -- must still
+    recover on the next turn. The stale withheld turn in history must
+    not itself become a new source of contamination (this is a same-
+    turn evidence-scoping bug, not a cross-turn persistence one, so
+    history content is not expected to matter -- this test confirms
+    that directly rather than assuming it)."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_curriculum_document_with_unrelated_course_fallback(monkeypatch)
+    previous = [
+        {"role": "user", "text": "explain this to me"},
+        {"role": "assistant", "text": (
+            "I'm withholding the final result here, since that's what you asked "
+            "for this exercise. Let me know when you'd like the solution, or if "
+            "a hint would help instead."
+        )},
+    ]
+    draft = (
+        "This handbook describes three specializations: ESE, SAS, and ASE, "
+        "each worth 30 ECTS and requiring at least four modules."
+    )
+    base._install_capturing_transport(monkeypatch, intent_response_json=None, draft_text=draft)
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id, question="explain this to me",
+            conversation_id="doc-explain-recovers-after-withheld-history",
+            generation=2, previous_turns=previous,
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    rendered = base._rendered_text(body)
+    assert b'"code": "answer_release_restricted"' not in body
+    assert "ESE" in rendered and "30 ECTS" in rendered
 
 
 # ---------------------------------------------------------------------------

@@ -6795,8 +6795,47 @@ async def _prepare_ask_stream_response(
                         # retrieved chunks for this turn -- additive, never
                         # required (both functions treat a missing/empty
                         # value the same as not passing one at all).
-                        release_evidence_text = "\n".join(
-                            chunk.text for chunk in (multi_item_result.chunks or []) if getattr(chunk, "text", None)
+                        #
+                        # Document-scoped (2026-10-21 production incident,
+                        # confirmed via live request_snapshot + chunk
+                        # inspection): retrieval's own "course-wide semantic
+                        # fallback" (app/services/retrieval.py) pulls chunks
+                        # from OTHER documents in the same course when the
+                        # active document's own content scores poorly for a
+                        # generic query like "explain this to me" -- e.g. a
+                        # curriculum PDF's weak match pulled in 7 of 8
+                        # chunks from a completely unrelated Statics lecture
+                        # script, whose own worked examples are full of
+                        # "Lösung:"-labeled numeric results. Joining ALL
+                        # retrieved chunks' text, regardless of which
+                        # document they came from, before extracting
+                        # protected values let an unrelated document's own
+                        # genuine exercise answer get treated as a
+                        # protected value for THIS document's unrelated
+                        # explanation -- any matching number in the
+                        # generated text (a credit count, a module count)
+                        # then false-positived as a "leak". Scoped to the
+                        # active/viewed document specifically because that
+                        # is what this turn's explanation is actually
+                        # about; when no single active document is set
+                        # (multi-document/whole-course requests), every
+                        # retrieved chunk is kept, unchanged from before.
+                        _release_evidence_chunks = (
+                            [
+                                chunk for chunk in (multi_item_result.chunks or [])
+                                if getattr(chunk, "document_id", None) == payload.activeDocumentId
+                            ]
+                            if payload.activeDocumentId
+                            else (multi_item_result.chunks or [])
+                        )
+                        # Joined with a BLANK line specifically: answer_
+                        # release_validator._SOLUTION_LABEL_RE stops a
+                        # labeled solution segment at the first blank line
+                        # it finds, so this is the chunk-boundary marker
+                        # that mechanism relies on to never bleed a
+                        # "Lösung:" match from one chunk into the next.
+                        release_evidence_text = "\n\n".join(
+                            chunk.text for chunk in _release_evidence_chunks if getattr(chunk, "text", None)
                         )
                         if len(distinct_targets) <= 1:
                             from ..services.answer_release_validator import (  # noqa: WPS433

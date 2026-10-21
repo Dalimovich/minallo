@@ -96,6 +96,26 @@ _TRIVIAL_RE = re.compile(
     r"^\s*(hi|hello|hey|hallo|danke|thanks|translate|übersetze)\b", re.IGNORECASE
 )
 
+# Deictic-only topic (2026-10-21 production incident): _topic_from_question
+# has no document content to resolve "this"/"that" against -- only the
+# literal question text -- so "explain this to me" (no noun left once the
+# "explain" prefix is stripped) left `topic` as nothing but pronoun/filler
+# words, surfaced verbatim as a "Start Deep Learn: this to me" recommendation.
+# Recommending a lesson on a non-topic is worse than recommending none, so a
+# topic made ENTIRELY of these words is treated as "no topic resolved" and
+# suppresses the Deep Learn recommendation below -- it does not invent a
+# document-grounded topic (this module has no document content to ground it
+# in), it just stops presenting an empty one as if it were a real subject.
+_DEICTIC_FILLER_WORDS = frozenset({
+    "this", "that", "it", "these", "those", "one", "me", "to", "for", "please",
+    "dies", "diese", "dieses", "dieser", "das", "es", "mir", "bitte", "mal",
+})
+
+
+def _is_deictic_only_topic(topic: str) -> bool:
+    words = re.findall(r"[a-zA-ZäöüßÄÖÜ]+", topic.lower())
+    return bool(words) and all(word in _DEICTIC_FILLER_WORDS for word in words)
+
 
 @dataclass(frozen=True)
 class ExplanationPlan:
@@ -293,7 +313,12 @@ def build_learning_recommendations(
     previous_turns: list[dict[str, str]] | None = None,
     response_language: str | None = None,
 ) -> list[dict[str, Any]]:
-    if not course_id or _ADMIN_RE.search(plan.topic) or _TRIVIAL_RE.search(plan.topic):
+    if (
+        not course_id
+        or _ADMIN_RE.search(plan.topic)
+        or _TRIVIAL_RE.search(plan.topic)
+        or _is_deictic_only_topic(plan.topic)
+    ):
         return []
     weak_match = next(
         (item for item in (weak_topics or []) if item.lower() in plan.topic.lower()), None

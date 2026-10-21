@@ -56,6 +56,55 @@ def test_trivial_question_does_not_recommend() -> None:
     )
 
 
+def test_deictic_only_topic_does_not_recommend() -> None:
+    """Confirmed 2026-10-21 production incident: "explain this to me"
+    (no real noun left once the "explain" prefix is stripped -- this
+    function has no document content to resolve "this" against, only the
+    literal question text) surfaced a "Start Deep Learn: this to me"
+    recommendation. Recommending a lesson on a non-topic is worse than
+    recommending none."""
+    plan = build_explanation_plan("explain this to me")
+    assert plan.topic == "this to me"
+    assert (
+        build_learning_recommendations(
+            plan,
+            course_id="course-a",
+            document_ids=["doc-a"],
+            source_chunk_ids=["chunk-a"],
+        )
+        == []
+    )
+
+
+def test_deictic_only_topic_in_german_does_not_recommend() -> None:
+    plan = build_explanation_plan("erkläre mir das bitte")
+    assert (
+        build_learning_recommendations(
+            plan,
+            course_id="course-a",
+            document_ids=["doc-a"],
+            source_chunk_ids=["chunk-a"],
+        )
+        == []
+    )
+
+
+def test_a_real_topic_that_happens_to_include_this_still_recommends() -> None:
+    """Non-regression: the deictic-only check requires the topic to
+    consist ENTIRELY of filler words -- a real topic that happens to
+    include one of them (e.g. "this" as part of a real noun phrase) is
+    unaffected."""
+    plan = build_explanation_plan("explain this stress-strain curve in detail")
+    assert plan.topic not in ("this", "")
+    recommendations = build_learning_recommendations(
+        plan,
+        course_id="course-a",
+        document_ids=["doc-a"],
+        source_chunk_ids=["chunk-a"],
+    )
+    assert recommendations != []
+
+
 def test_selected_course_region_precedes_web_lookup() -> None:
     plan = build_explanation_plan(
         "Explain this diagram",

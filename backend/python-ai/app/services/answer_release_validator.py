@@ -222,10 +222,22 @@ _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 # - A model restating the value in a different unit or equivalent form
 #   (75 N vs 0.075 kN) is NOT caught, since the comparison is on the
 #   literal numeric token, not a unit-aware equivalence.
+#
+# Cross-chunk bleed (2026-10-21 production incident, confirmed via live
+# request data): the only other stop condition was "[" or end of string
+# -- with no "[" anywhere (real retrieved evidence rarely uses that
+# convention), a single "Lösung:"/"Solution:" label swept in every
+# chunk joined after it, including entirely UNRELATED exercises'
+# numbers. A blank line (a chunk boundary -- app/routers/stream.py
+# joins retrieved chunks with "\n\n" specifically so this always lines
+# up) now also stops the match, so a short answer-key segment inside
+# one chunk can no longer absorb whatever text happens to follow it
+# from a different chunk. A genuine multi-line solution with no blank
+# line inside the SAME chunk is unaffected.
 # ---------------------------------------------------------------------------
 
 _SOLUTION_LABEL_RE = re.compile(
-    r"(?:l(?:ö|oe)sung|antwort|solution|answer)\s*:\s*(.+?)(?=\[|\Z)",
+    r"(?:l(?:ö|oe)sung|antwort|solution|answer)\s*:\s*(.+?)(?=\[|\n[ \t]*\n|\Z)",
     re.IGNORECASE | re.DOTALL,
 )
 _NUMERIC_TOKEN_RE = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
