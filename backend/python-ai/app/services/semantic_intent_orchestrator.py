@@ -40,7 +40,8 @@ from .dialogue_state import DialogueResolution, TurnRelation
 from .diagnostic_policy import adapt_deterministic_intent, resolve_target_identity
 from .grounding_contract import AccessResolutionReason, ResolvedDocumentAccess
 from .policy_compiler import (
-    ExecutionPolicy, FIELD_NAMES, compile_policy, extract_persistable_restrictions,
+    ExecutionPolicy, FIELD_NAMES, GENERIC_TARGET_PLACEHOLDERS, compile_policy,
+    extract_persistable_restrictions,
 )
 from .resolved_student_intent import (
     Action, Origin, ReleaseConstraints, ResolvedStudentIntent, TurnLedger,
@@ -288,9 +289,20 @@ def _merge_persisted_history(
     # a target the target-identity gate just downgraded to "unresolved"
     # -- that gap is closed separately and must not be reopened by
     # reviving an unrelated target's history for it just because the
-    # label string happens to match).
+    # label string happens to match). GENERIC_TARGET_PLACEHOLDERS is also
+    # excluded here: "current_request"/"unresolved"/"" is what EVERY
+    # turn with no resolvable exercise/document-section label gets, so
+    # it never identifies the same real-world entity across two turns --
+    # looking up or reusing persisted history under that shared literal
+    # string would let one unnumbered exercise's restriction leak onto a
+    # later, completely unrelated unnumbered exercise or ordinary
+    # document explanation in the same durable conversation, purely
+    # because both happened to land on the same placeholder. A genuinely
+    # resolved target (a real label, a real document/section id) is
+    # unaffected.
     current_targets = frozenset(
-        action.target for action in resolved_intent.actions if action.state != "unresolved"
+        action.target for action in resolved_intent.actions
+        if action.state != "unresolved" and action.target not in GENERIC_TARGET_PLACEHOLDERS
     )
     if not current_targets:
         return resolved_intent

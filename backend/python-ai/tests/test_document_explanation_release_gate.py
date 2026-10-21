@@ -119,7 +119,8 @@ def _install_curriculum_document(monkeypatch):
 async def _ask_with_page(
     stream, *, document_id, question, conversation_id="doc-explain-test",
     generation=1, previous_turns=None, visible_page_text=CURRICULUM_TEXT,
-    document_ids=None,
+    document_ids=None, durable=False, client_message_id=None, assistant_message_id=None,
+    request_id=None,
 ):
     """Like test_live_eval_remediation_acceptance._ask, but also sets
     visiblePage/openFileContext -- the shape the frontend actually sends
@@ -133,12 +134,26 @@ async def _ask_with_page(
     through (app/routers/stream.py's own, pre-existing full_document
     pipeline, confirmed separately: it requires an explicit document
     selection and is otherwise unrelated to the intent-layer bug this
-    suite targets)."""
+    suite targets).
+
+    ``durable=True`` sets ``durableConversation`` -- the ONLY way stream.py
+    actually threads ``conversation_id`` into ``interpret_turn_
+    authoritatively`` (see its own ``payload.conversationId if payload.
+    durableConversation else None``), i.e. the only way to exercise the
+    REAL cross-turn persisted-policy merge this suite's generic-target-
+    placeholder test needs -- the shape the production chatbot actually
+    sends (frontend/js/features/chatbot-new/shell.ts passes durableConversation
+    = true on its one real streamFromAskStream call site). Requires
+    _install_persisted_history's conversation_store mocks AND conversation_
+    store.update_tutor_request mocked (see test below) -- otherwise this
+    hits a real, unmocked DB call."""
     payload = stream.AskStreamRequest(
         courseId="course-1", activeDocumentId=document_id, documentIds=document_ids,
         question=question, sourceMode="course_files", conversationId=conversation_id,
         conversationGeneration=generation, previousTurns=previous_turns or [],
         visiblePage=1, openFileContext=visible_page_text,
+        durableConversation=durable, clientMessageId=client_message_id,
+        assistantMessageId=assistant_message_id, requestId=request_id,
     )
     response = await stream.ask_stream_endpoint(payload, {"id": base.USER_ID})
     return b"".join([event async for event in response.body_iterator])
@@ -396,6 +411,132 @@ def test_switching_from_a_restricted_exercise_to_an_unrelated_document_drops_the
 
 
 # ---------------------------------------------------------------------------
+# Test 9 -- generic target-identity collision (2026-10-21, same-day
+# follow-up verification): Test 8 above proves restriction isolation
+# across turns with DISTINCT real target labels ("1" vs "current_request"
+# -- never the same key, so never at risk of this). It does NOT exercise
+# cross-turn PERSISTENCE at all, since it never sets durableConversation
+# (confirmed by reading app/routers/stream.py directly: conversation_id is
+# only ever threaded into interpret_turn_authoritatively "if payload.
+# durableConversation", the default being False -- the actual, real
+# production chatbot always sends True, per frontend/js/features/
+# chatbot-new/shell.ts's one streamFromAskStream call site).
+#
+# With durableConversation genuinely enabled, a SECOND, distinct risk
+# exists that Test 8 cannot see: TWO DIFFERENT, UNRELATED unnumbered
+# requests in the SAME durable conversation both resolve to the exact
+# same generic placeholder target string ("current_request" --
+# diagnostic_policy.adapt_deterministic_intent's own explicit fallback
+# when no label resolves) -- found and confirmed by direct reproduction
+# against the real orchestrator before this test existed. semantic_
+# intent_orchestrator._merge_persisted_history looked up/replayed
+# persisted history BY THAT LITERAL STRING, so an earlier turn's
+# restriction (for an unrelated unnumbered exercise) was replayed into a
+# later, unrelated turn purely because both share the placeholder --
+# never a real target identity collision, since the placeholder means
+# "no identity resolved" by definition. Fixed by excluding
+# GENERIC_TARGET_PLACEHOLDERS from both sides of that lookup.
+# ---------------------------------------------------------------------------
+
+def test_generic_current_request_placeholder_does_not_carry_restrictions_across_turns(monkeypatch):
+    stream, _ = base._setup(monkeypatch)
+    rows = base._install_persisted_history(monkeypatch)
+    from app.services import conversation_store, semantic_intent_orchestrator
+    monkeypatch.setattr(conversation_store, "update_tutor_request", lambda **_k: None)
+    real_interpret = semantic_intent_orchestrator.interpret_turn_authoritatively
+    captured_policies: list[dict] = []
+    captured_actions: list[tuple] = []
+
+    def spy_interpret(**kwargs):
+        result = real_interpret(**kwargs)
+        captured_policies.append(result.compiled_policy_by_target)
+        captured_actions.append(result.execution_policy.actions)
+        return result
+    monkeypatch.setattr(semantic_intent_orchestrator, "interpret_turn_authoritatively", spy_interpret)
+
+    conv = "doc-explain-generic-target-collision"
+
+    # Turn 1: a genuinely restricted, UNNUMBERED exercise (no label to
+    # resolve -> target lands on the generic "current_request" placeholder,
+    # same as turn 2 below) with durableConversation genuinely enabled.
+    exercise_doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text="Think about taking moments about support A first.",
+    )
+    try:
+        body1 = asyncio.run(_ask_with_page(
+            stream, document_id=exercise_doc_id,
+            question="Give me a hint for this, but don't reveal the final result.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id=conv, generation=1, durable=True,
+            client_message_id="gc-t1-user", assistant_message_id="gc-t1-assistant",
+            request_id="gc-t1-request-0001",
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    rows[conv] = [{
+        "client_message_id": "gc-t1-assistant",
+        "request_snapshot": {"policyByTarget": captured_policies[-1]},
+    }]
+    assert "current_request" in captured_policies[-1], (
+        f"turn 1 must have persisted its restriction under the generic placeholder "
+        f"for this test to actually exercise the collision it targets: {captured_policies[-1]!r}"
+    )
+    previous = [
+        {"role": "user", "text": "Give me a hint for this, but don't reveal the final result."},
+        {"role": "assistant", "text": base._rendered_text(body1)},
+    ]
+
+    # Turn 2: a COMPLETELY UNRELATED, ordinary, unnumbered document
+    # explanation -- same conversation, still durableConversation=True,
+    # also lands on target="current_request" (no label here either). Must
+    # NOT inherit turn 1's restriction just because the placeholder matches.
+    # Draft is deliberately the same "Therefore X = Y" leak shape Test 1
+    # uses: a scan-conditioned single-target gate only visibly withholds
+    # when the draft ALSO happens to match a leak pattern, so a leak-free
+    # draft would pass even with a silently contaminated policy
+    # (final_answer wrongly "prohibited") -- confirmed directly: this
+    # exact test, with a leak-free draft and the fix reverted, still
+    # "passed" while the captured policy was already contaminated. The
+    # explicit policy-level assertion right after this call is the one
+    # that actually proves the root cause is fixed; this SSE-level
+    # assertion proves the realistic user-visible consequence is too.
+    doc_id = _install_curriculum_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text=(
+            "This handbook describes three specializations: ESE, SAS, and ASE. "
+            "Therefore ESE = 30 ECTS, SAS = 30 ECTS, and ASE = 30 ECTS, each "
+            "requiring at least four modules."
+        ),
+    )
+    try:
+        body2 = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id, question="explain this to me",
+            conversation_id=conv, generation=2, previous_turns=previous, durable=True,
+            client_message_id="gc-t2-user", assistant_message_id="gc-t2-assistant",
+            request_id="gc-t2-request-0002",
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    turn2_actions = {a.target: a for a in captured_actions[-1]}
+    assert turn2_actions["current_request"].release.final_answer != "prohibited", (
+        "turn 2's compiled policy must not inherit turn 1's unrelated restriction "
+        "just because both share the generic current_request placeholder target"
+    )
+    rendered2 = base._rendered_text(body2)
+    assert b'"code": "answer_release_restricted"' not in body2, (
+        "an earlier, unrelated unnumbered exercise's restriction must not leak into a "
+        "later, unrelated document explanation just because both share the generic "
+        "current_request placeholder"
+    )
+    assert "ESE" in rendered2
+
+
+# ---------------------------------------------------------------------------
 # Boundary case (2026-10-21, same-day follow-up): an unnumbered exercise is
 # still an exercise. The explain/define/... exemption above must not become
 # a general "no number means no restriction" loophole for answer-bearing
@@ -442,6 +583,92 @@ def _install_unnumbered_exercise_document(monkeypatch):
     return doc_id
 
 
+def test_plain_explain_on_an_unnumbered_exercise_gets_a_real_explanation(monkeypatch):
+    """"Explain this to me." (no "don't", no restriction at all) on a
+    genuine but UNNUMBERED exercise must get a real, useful teaching
+    response -- never withheld, never a generic refusal -- exactly like
+    the equivalent request on an ordinary document."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text=(
+            "Start by isolating the beam and identifying the two support reactions. "
+            "Since the load is applied at the midpoint and both supports are simple "
+            "pin/roller supports, take moments about one support to solve for the other."
+        ),
+    )
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id, question="Explain this to me.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id="doc-explain-unnumbered-plain",
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    rendered = base._rendered_text(body)
+    assert b'"code": "answer_release_restricted"' not in body
+    assert "withholding the final result" not in rendered
+    assert "moments" in rendered
+
+
+def test_plain_explain_on_an_unnumbered_exercise_does_not_volunteer_the_result(monkeypatch):
+    """Companion to the test above: the SAME request ("explain this to
+    me", no restriction, no permission) on the SAME unnumbered exercise,
+    but the model's draft volunteers the protected final value anyway,
+    unprompted. Must still be withheld.
+
+    Root cause (2026-10-21, same-day follow-up): compile_policy's
+    explain_objective_fallback (closes final_answer for an "explain"
+    request, added for the AB-02/AB-03 live-eval leak) only applies when
+    the target identifies a RESOLVED exercise label -- by design, so a
+    merely unnumbered exercise's target (the same generic "current_
+    request" placeholder an ORDINARY document explanation also resolves
+    to) compiles final_answer="permitted" by the ordinary tutoring
+    default, and the value-grounded release-gate backstop was, in turn,
+    gated on final_answer already being restricted -- so this exact
+    shape had NO protection of any kind.
+
+    Fixed in answer_release_validator.py (not policy_compiler.py):
+    final_answer itself is deliberately left "permitted" here (changing
+    the compiled policy would risk re-closing it for ordinary document
+    explanations too, since both share the same placeholder target --
+    exactly the 2026-10-20 bug this module exists to fix). Instead, the
+    value-grounded backstop's own gate (scan_generated_answer_for_
+    prohibited_release -> _has_unverified_explain_disclosure) now also
+    runs for this exact combination (objective="explain", target is the
+    generic placeholder, final_answer not explicitly prohibited) --
+    content-grounded, not label-grounded: it only ever matches evidence
+    that already contains a labeled "Lösung:"/"Solution:" value, so an
+    ordinary document (no such label anywhere) is never affected
+    (test_plain_explain_on_an_unnumbered_exercise_gets_a_real_
+    explanation above and test_explain_this_to_me_on_a_non_exercise_
+    document_is_not_withheld both still pass unchanged)."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text=(
+            "Take moments about support A: the reaction force works out to R_A = 75 N."
+        ),
+    )
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id, question="Explain this to me.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id="doc-explain-unnumbered-plain-leak",
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    assert b'"code": "answer_release_restricted"' in body, (
+        f"a voluntary, unprompted disclosure of the protected value must still be "
+        f"caught even though final_answer defaults to permitted for this shape: {body!r}"
+    )
+    assert "75 N" not in base._rendered_text(body)
+
+
 def test_explicit_hint_protection_survives_without_a_numbered_label(monkeypatch):
     """"Explain this to me, but don't reveal the final result." on a real,
     unnumbered exercise must still withhold the protected value -- the
@@ -449,22 +676,29 @@ def test_explicit_hint_protection_survives_without_a_numbered_label(monkeypatch)
     call succeeds or fails; this covers the failure/deterministic-
     fallback path (intent_response_json=None -> invalid escalation
     response -> AB-02 fallback-weakness fix's own existing most-
-    restrictive degrade)."""
+    restrictive degrade). The draft is deliberately answer-bearing (the
+    guard's whole job is to catch exactly this) so the assertion proves
+    the withholding guard actually intercepted it, not merely that a
+    leak-free draft happened not to contain the number."""
     stream, _ = base._setup(monkeypatch)
     doc_id = _install_unnumbered_exercise_document(monkeypatch)
     base._install_capturing_transport(
         monkeypatch, intent_response_json=None,
-        draft_text="The approach is to take moments about support A and solve for the reaction force.",
+        draft_text="The approach is to take moments about support A. The reaction force is R_A = 75 N.",
     )
     try:
         body = asyncio.run(_ask_with_page(
             stream, document_id=doc_id,
             question="Explain this to me, but don't reveal the final result.",
             visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id="doc-explain-hint-fallback",
         ))
     finally:
         from app.config import get_settings
         get_settings.cache_clear()
+    assert b'"code": "answer_release_restricted"' in body, (
+        f"an answer-bearing draft must be caught and withheld by the release gate: {body!r}"
+    )
     assert "75 N" not in base._rendered_text(body)
 
 
@@ -476,7 +710,9 @@ def test_explicit_hint_protection_survives_via_successful_escalation(monkeypatch
     regardless of this suite's has_visible_context trust extension,
     exactly as it already did before this fix (compile_policy only ever
     fills UNSET fields from a fallback; an explicitly-set one is never
-    touched)."""
+    touched). Answer-bearing draft, same reason as the fallback-path
+    sibling test above: proves the guard actually intercepts a leak,
+    not just that a leak-free draft happened not to contain the number."""
     stream, _ = base._setup(monkeypatch)
     doc_id = _install_unnumbered_exercise_document(monkeypatch)
     intent_json = base._fake_intent_response(
@@ -486,17 +722,21 @@ def test_explicit_hint_protection_survives_via_successful_escalation(monkeypatch
     )
     base._install_capturing_transport(
         monkeypatch, intent_response_json=intent_json,
-        draft_text="The approach is to take moments about support A and solve for the reaction force.",
+        draft_text="The approach is to take moments about support A. The reaction force is R_A = 75 N.",
     )
     try:
         body = asyncio.run(_ask_with_page(
             stream, document_id=doc_id,
             question="Explain this to me, but don't reveal the final result.",
             visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id="doc-explain-hint-escalation",
         ))
     finally:
         from app.config import get_settings
         get_settings.cache_clear()
+    assert b'"code": "answer_release_restricted"' in body, (
+        f"an answer-bearing draft must be caught and withheld by the release gate: {body!r}"
+    )
     assert "75 N" not in base._rendered_text(body)
 
 
@@ -518,6 +758,7 @@ def test_explicit_full_solution_permitted_without_a_numbered_label(monkeypatch):
             stream, document_id=doc_id,
             question="Please solve this completely and show me the final answer.",
             visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+            conversation_id="doc-explain-full-solution",
         ))
     finally:
         from app.config import get_settings

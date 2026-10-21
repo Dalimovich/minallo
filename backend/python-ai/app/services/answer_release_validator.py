@@ -105,7 +105,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .policy_compiler import ExecutionPolicy
+from .policy_compiler import ExecutionPolicy, GENERIC_TARGET_PLACEHOLDERS
 
 _LEAK_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("final_answer_phrase", re.compile(
@@ -318,7 +318,7 @@ def _strip_inline_quiz_blocks(text: str) -> str:
 
 def _scan_text(
     text: str, *, final_answer_restricted: bool, official_solution_restricted: bool,
-    evidence_text: str | None = None,
+    evidence_text: str | None = None, value_grounded_check_applies: bool | None = None,
 ) -> ReleaseValidationResult:
     """Shared leak-pattern scan both the whole-response scan and the
     per-target scan delegate to, so the two never drift apart on what
@@ -334,10 +334,18 @@ def _scan_text(
 
     ``evidence_text``, when supplied, adds the second, independent,
     value-grounded signal (see the module's own section docstring above
-    _SOLUTION_LABEL_RE): checked only when final_answer_restricted,
-    since it specifically targets the protected FINAL ANSWER, not the
-    official-solution-key concern."""
-    if not final_answer_restricted and not official_solution_restricted:
+    _SOLUTION_LABEL_RE). ``value_grounded_check_applies`` gates it --
+    defaults to ``final_answer_restricted`` (the original behavior:
+    checked only when final_answer is explicitly prohibited) but the
+    caller may widen it independently of the blunt regex patterns above
+    (see scan_generated_answer_for_prohibited_release's own "unnumbered
+    exercise" extension) -- this value-grounded signal alone is safe to
+    widen because it only ever matches evidence that already contains a
+    labeled solution/answer value; ordinary prose with no such label
+    never has anything for it to match."""
+    if value_grounded_check_applies is None:
+        value_grounded_check_applies = final_answer_restricted
+    if not final_answer_restricted and not official_solution_restricted and not value_grounded_check_applies:
         return ReleaseValidationResult(allowed=True, reason="no_restriction", matched_patterns=())
     scan_text = _strip_inline_quiz_blocks(text)
     matched = tuple(
@@ -348,13 +356,50 @@ def _scan_text(
         )
         and pattern.search(scan_text)
     )
-    if final_answer_restricted and evidence_text:
+    if value_grounded_check_applies and evidence_text:
         protected_values = extract_protected_values_from_evidence(evidence_text)
         if _text_matches_protected_value(scan_text, protected_values):
             matched = matched + ("protected_value_match",)
     if matched:
         return ReleaseValidationResult(allowed=False, reason="matched_leak_pattern", matched_patterns=matched)
     return ReleaseValidationResult(allowed=True, reason="no_match", matched_patterns=())
+
+
+def _has_unverified_explain_disclosure(policy: ExecutionPolicy) -> bool:
+    """Unnumbered-exercise explanation gap (2026-10-21 follow-up): an
+    "explain" request whose target never resolved to a real exercise
+    label — ``diagnostic_policy.py``'s own generic "current_request"
+    placeholder — compiles ``final_answer="permitted"`` by the ordinary
+    tutoring default (see policy_compiler.py's own ``is_explain_
+    objective`` docstring: that fallback deliberately does NOT close
+    final_answer for a generic/no-exercise target, specifically so an
+    ordinary document explanation is never wrongly restricted). But the
+    SAME generic target also covers a genuine exercise that simply has
+    no printed number — there is no document/chunk-type signal
+    available at policy-compilation time to tell the two apart (see
+    this function's caller for why the fix lives here, evidence-
+    grounded, instead of there). This flags that specific, narrow
+    combination so the value-grounded backstop below still runs for it
+    — safe to widen precisely because that backstop only ever matches
+    evidence that already contains a labeled solution/answer value;
+    ordinary prose never does.
+
+    Known, accepted, narrow residual gap: an action that explicitly
+    (via a successful semantic escalation) sets final_answer="permitted"
+    for an "explain" objective on this same generic target — a student
+    asking to both explain AND reveal the result in one escalation-
+    triggering message — is indistinguishable from the defaulted case
+    here and would also re-run this backstop. This is the same class of
+    residual risk this module's own docstring already names elsewhere
+    (a disguised phrasing slipping past a finite pattern list); closing
+    it for real needs per-field provenance plumbed through ExecutionPolicy,
+    out of scope for this targeted fix."""
+    return any(
+        action.objective == "explain"
+        and action.target in GENERIC_TARGET_PLACEHOLDERS
+        and action.release.final_answer != "prohibited"
+        for action in policy.actions
+    )
 
 
 def scan_generated_answer_for_prohibited_release(
@@ -370,11 +415,15 @@ def scan_generated_answer_for_prohibited_release(
     value-grounded detection section above)."""
     if policy is None:
         return ReleaseValidationResult(allowed=True, reason="no_policy", matched_patterns=())
+    final_answer_restricted = _any_action_prohibits(policy, "final_answer")
     return _scan_text(
         text,
-        final_answer_restricted=_any_action_prohibits(policy, "final_answer"),
+        final_answer_restricted=final_answer_restricted,
         official_solution_restricted=_any_action_prohibits(policy, "official_solution"),
         evidence_text=evidence_text,
+        value_grounded_check_applies=(
+            final_answer_restricted or _has_unverified_explain_disclosure(policy)
+        ),
     )
 
 

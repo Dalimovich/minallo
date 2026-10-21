@@ -115,8 +115,10 @@ _MOST_RESTRICTIVE = {
 # Same literal set policy_prompt_rendering.py's _target_label already
 # treats as "no specific target" for rendering purposes -- kept in sync
 # deliberately (both describe the same thing: a target string that was
-# never resolved to an actual exercise/document-section identity).
-_GENERIC_TARGET_PLACEHOLDERS = frozenset({"unresolved", "current_request", ""})
+# never resolved to an actual exercise/document-section identity). Not
+# underscore-private anymore: semantic_intent_orchestrator.py's cross-turn
+# persistence also needs it, for the same reason (see its own docstring).
+GENERIC_TARGET_PLACEHOLDERS = frozenset({"unresolved", "current_request", ""})
 
 _TUTORING_DEFAULT = {
     # final_answer: ordinary tutoring behavior is to answer unless told
@@ -662,7 +664,7 @@ def compile_policy(
         # answer anywhere nearby. Falls through to the ordinary tutoring
         # default (final_answer="permitted") instead -- official_solution
         # is UNCHANGED, still closed by that same default either way.
-        _target_identifies_an_exercise = target not in _GENERIC_TARGET_PLACEHOLDERS
+        _target_identifies_an_exercise = target not in GENERIC_TARGET_PLACEHOLDERS
         is_explain_objective = (
             base_action.objective == "explain" and state == "requested"
             and _target_identifies_an_exercise
