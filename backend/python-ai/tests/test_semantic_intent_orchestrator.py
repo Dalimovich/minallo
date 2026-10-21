@@ -7,7 +7,6 @@ as test_diagnostic_policy.py) — never a real network/database call."""
 
 import json
 
-import pytest
 
 from app import config as config_module
 from app.services import openai_client

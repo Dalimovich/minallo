@@ -30,7 +30,6 @@ import asyncio
 import json
 
 import httpx
-import pytest
 
 import tests.test_semantic_blind_ab_full_corpus_dry_run as harness
 
@@ -217,7 +216,7 @@ def test_ab24_premature_full_disclosure_is_withheld_with_explicit_text_absence(m
     debugging -- that is not a student-visible disclosure and must not
     be conflated with one."""
     stream, _ = _setup(monkeypatch)
-    captured = _install_capturing_transport(
+    _install_capturing_transport(
         monkeypatch, intent_response_json=None,
         draft_text="The support force at A is \\( R_A = 75 \\, \\text{N} \\).",
     )
@@ -248,7 +247,7 @@ def test_ab24_well_formed_quiz_is_delivered_not_withheld(monkeypatch):
         }]})
         + "\n```\n"
     )
-    captured = _install_capturing_transport(
+    _install_capturing_transport(
         monkeypatch, intent_response_json=None, draft_text=quiz_draft,
     )
     try:

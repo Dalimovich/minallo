@@ -12,11 +12,11 @@ import pytest
 from app import config as config_module
 from app.services import openai_client
 from app.services.dialogue_state import (
-    DialogueAct, SpeechAct, TaskFamily, TurnRelation, resolve_dialogue,
+    SpeechAct, TaskFamily, TurnRelation, resolve_dialogue,
 )
 from app.services.resolved_student_intent import Action, ReleaseConstraints
 from app.services.unified_semantic_call import (
-    UnifiedInterpretation, perform_unified_semantic_interpretation, validate_unified_call_output,
+    perform_unified_semantic_interpretation, validate_unified_call_output,
 )
 
 
@@ -358,8 +358,6 @@ def test_same_content_flattened_as_the_fixed_prompt_requires_is_accepted_correct
         **_LIVE_EVAL_HINT_DIRECT_EN_NESTED_RESPONSE["Dialogue fields"],
         **_LIVE_EVAL_HINT_DIRECT_EN_NESTED_RESPONSE["Intent fields"],
     }
-    base = resolve_dialogue("Can you give me a hint for exercise 7, not the full answer?", previous_turns=[])
-
     intent = validate_unified_call_output(
         flat_response, original_message="Can you give me a hint for exercise 7, not the full answer?",
         student_goal_fallback="request_a_hint",

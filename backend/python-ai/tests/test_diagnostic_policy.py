@@ -13,17 +13,14 @@ import pathlib
 
 import pytest
 
-from app.services.answer_intent import AcademicIntent
 from app.services.diagnostic_policy import (
-    DurableHistoryResult,
     adapt_deterministic_intent,
     build_turn_ledger_from_durable_store,
     compile_diagnostic_policy,
     resolve_target_identity,
-    to_diagnostic_record,
 )
-from app.services.dialogue_state import TurnRelation, resolve_dialogue
-from app.services.student_intent import StudentIntent, interpret_student_intent
+from app.services.dialogue_state import resolve_dialogue
+from app.services.student_intent import interpret_student_intent
 from app.services.grounding_contract import ResolvedDocumentAccess
 
 
