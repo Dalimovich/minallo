@@ -88,6 +88,41 @@ from .student_intent import StudentIntent
 DIAGNOSTIC_SCHEMA_VERSION = "1.0.0"
 HistorySource = Literal["durable_store", "history_free", "unavailable"]
 
+# Confirmed production defect (2026-10-21): "explain this to me" on an
+# ordinary, non-exercise document (opened PDF page, no numbered exercise
+# anywhere in sight) produced objective="explain", target="current_request"
+# -- the explicit "no numbered label, never guessed" placeholder from
+# resolve_target_identity's own docstring. That placeholder NEVER resolves
+# against an exercise label (there is none to resolve against), so
+# target_resolved was always False, so state was always "unresolved", so
+# compile_policy's unresolved_fallback forced EVERY field to _MOST_
+# RESTRICTIVE -- final_answer/official_solution prohibited, form="hint",
+# explanation_depth="none", max_steps=1, wait_for_student=True -- for a
+# request that was never about a withheld exercise answer at all. The
+# resulting policy then either got its explanation silently replaced by
+# the release gate's generic withholding text (when the real generation
+# happened to brush a leak pattern) or, independent of that, instructed
+# the model to answer with "explanation_depth=none"/"form=hint" instead
+# of an actual explanation -- wrong regardless of whether the gate fired.
+#
+# Fix, scoped exactly to the mismatch and nothing else: whether failing to
+# resolve a NUMBERED EXERCISE label should make an action "unresolved" (and
+# therefore trigger the most-restrictive exercise-answer-key fallback)
+# depends on whether the objective is even ABOUT a withheld exercise
+# answer. "explain"/"define"/"compare"/"summarize"/"translate" applied to
+# a document the student is already looking at (reference_resolution has
+# ALREADY verified real page/document evidence before this ever runs --
+# see app/routers/stream.py's decide_evidence call, upstream of this
+# function) have no official-answer-key concept to protect in the first
+# place; "current_request" there is a content-scope placeholder, not an
+# unverified exercise-identity claim. Every answer-bearing objective
+# ("solve"/"hint"/"official_solution"/"exam_practice"/"derive"/
+# "answer_subquestion"/"review_student_solution") is UNCHANGED -- still
+# "unresolved" without a grounded exercise label, exactly as before.
+_OBJECTIVES_WITHOUT_EXERCISE_IDENTITY = frozenset({
+    "explain", "define", "compare", "summarize", "translate",
+})
+
 
 # ---------------------------------------------------------------------------
 # 1. Target identity resolution — the demonstrated gap, closed.
@@ -359,7 +394,11 @@ def adapt_deterministic_intent(
             wait_for_student=wait_for_student, form=form,
         ),
         prohibited=prohibited,
-        state="requested" if target_resolved else "unresolved",
+        state=(
+            "requested"
+            if target_resolved or objective in _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY
+            else "unresolved"
+        ),
     )
     conversation = _RELATION_TO_CONVERSATION.get(dialogue.relation, "new")
     return ResolvedStudentIntent(

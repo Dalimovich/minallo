@@ -112,6 +112,12 @@ _MOST_RESTRICTIVE = {
     "max_steps": 1, "max_items": 1, "wait_for_student": True,
 }
 
+# Same literal set policy_prompt_rendering.py's _target_label already
+# treats as "no specific target" for rendering purposes -- kept in sync
+# deliberately (both describe the same thing: a target string that was
+# never resolved to an actual exercise/document-section identity).
+_GENERIC_TARGET_PLACEHOLDERS = frozenset({"unresolved", "current_request", ""})
+
 _TUTORING_DEFAULT = {
     # final_answer: ordinary tutoring behavior is to answer unless told
     # not to. official_solution is more sensitive — handing over the
@@ -640,7 +646,27 @@ def compile_policy(
         # pick up a closed final_answer it was never actually asked to
         # close -- see test_merely_discussing_or_relaying_a_quote_does_
         # not_establish_a_persisted_restriction.
-        is_explain_objective = base_action.objective == "explain" and state == "requested"
+        #
+        # ALSO gated on a real target (not one of the generic "no specific
+        # target" placeholders policy_prompt_rendering.py's _target_label
+        # already treats as non-identifying -- confirmed production
+        # defect, 2026-10-21): this fallback exists to stop "explain"
+        # leaking an EXERCISE's final numeric result ("Aufgabe 1 raff ich
+        # grad nicht so richtig"). An ordinary document/content explanation
+        # with no exercise in play at all (target left at the explicit
+        # "current_request" placeholder -- diagnostic_policy.py's own
+        # "never a guessed label" sentinel) has no exercise final-answer
+        # concept to protect, so closing final_answer there only creates a
+        # false-positive leak-pattern risk against ordinary prose (e.g.
+        # summarizing credit totals as "ESE = 30 ECTS") with no exercise
+        # answer anywhere nearby. Falls through to the ordinary tutoring
+        # default (final_answer="permitted") instead -- official_solution
+        # is UNCHANGED, still closed by that same default either way.
+        _target_identifies_an_exercise = target not in _GENERIC_TARGET_PLACEHOLDERS
+        is_explain_objective = (
+            base_action.objective == "explain" and state == "requested"
+            and _target_identifies_an_exercise
+        )
         # Quiz/hint form contradiction fix (2026-10-20, confirmed via live-
         # eval forensic capture): a quiz request maps to objective="hint"
         # (deliberately -- see diagnostic_policy.py's QUIZ_GENERATION

@@ -202,10 +202,34 @@ def test_adapt_maps_primary_task_to_objective():
     assert resolved.actions[0].objective == "summarize"
 
 
-def test_adapt_unresolved_reference_produces_unresolved_state():
+def test_adapt_unresolved_exercise_reference_produces_unresolved_state():
+    """An answer-bearing objective (here "solve", via a math-shaped
+    message) with no resolvable exercise label must still be
+    "unresolved" -- unchanged by the 2026-10-21 production fix below,
+    which only exempts objectives with no exercise-answer concept at
+    all."""
+    dialogue, intent = _student_intent("Solve this for me.")
+    resolved = adapt_deterministic_intent(message="Solve this for me.", dialogue=dialogue, student_intent=intent)
+    assert resolved.actions[0].objective == "solve"
+    assert resolved.actions[0].state == "unresolved"
+    assert resolved.actions[0].target == "current_request"
+
+
+def test_adapt_unresolved_content_explanation_is_requested_not_unresolved():
+    """Confirmed production defect (2026-10-21): "Explain this to me."
+    on an ordinary, non-exercise document used to come out "unresolved"
+    here (there is no numbered exercise label to resolve against), which
+    forced policy_compiler's most-restrictive exercise-answer fallback
+    (form="hint", explanation_depth="none", final_answer prohibited) onto
+    an ordinary document-explanation request -- see docs/... and this
+    module's own _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY comment. "explain"
+    has no exercise-answer-disclosure concept, so a missing exercise
+    label must not make it "unresolved" -- it is requested, with a
+    content-scope (not exercise-identity) target placeholder."""
     dialogue, intent = _student_intent("Explain this to me.")
     resolved = adapt_deterministic_intent(message="Explain this to me.", dialogue=dialogue, student_intent=intent)
-    assert resolved.actions[0].state == "unresolved"
+    assert resolved.actions[0].objective == "explain"
+    assert resolved.actions[0].state == "requested"
     assert resolved.actions[0].target == "current_request"
 
 

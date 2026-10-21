@@ -3996,6 +3996,28 @@ async def _prepare_ask_stream_response(
                 region_error_code = exc.code
     selected_region_id = verified_region.id if verified_region else None
     selected_text = verified_region.prompt_text() if verified_region else None
+    # New-topic history isolation (same pattern as diagnostic_policy.
+    # adapt_deterministic_intent's own target-discard and semantic_intent_
+    # orchestrator._apply_target_identity_gate's "new-topic history
+    # isolation"): a stale active_question from an EARLIER, unrelated
+    # exchange must not be handed to resolve_question_reference as a
+    # trusted label just because this turn also happens to lack an
+    # explicit one. Confirmed production-adjacent defect (2026-10-21):
+    # without this guard, switching from a restricted exercise to an
+    # unrelated document and asking "explain this to me" carried the old
+    # exercise's label forward, which made resolve_question_reference take
+    # its exact-label-lookup branch instead of its plain visible-page
+    # branch and demote an already-resolvable reference to "not_found" --
+    # wrongly triggering the unrelated "needs page evidence" clarify gate.
+    # A message that DOES literally re-mention that label is unaffected.
+    _carry_active_question = (
+        dialogue.active_question
+        if (
+            dialogue.relation.value != "new_topic"
+            or re.search(rf"\b{re.escape(dialogue.active_question)}\b", resolved_question or "", re.IGNORECASE)
+        )
+        else None
+    ) if dialogue.active_question else None
     reference = resolve_question_reference(
         question=resolved_question,
         course_id=payload.courseId,
@@ -4008,7 +4030,7 @@ async def _prepare_ask_stream_response(
         selected_region_id=selected_region_id,
         visible_text=payload.openFileContext,
         has_visible_image=bool(open_file_images),
-        known_active_question=dialogue.active_question,
+        known_active_question=_carry_active_question,
     )
     evidence_decision = decide_evidence(
         reference,
