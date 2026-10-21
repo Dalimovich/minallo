@@ -115,13 +115,35 @@ HistorySource = Literal["durable_store", "history_free", "unavailable"]
 # see app/routers/stream.py's decide_evidence call, upstream of this
 # function) have no official-answer-key concept to protect in the first
 # place; "current_request" there is a content-scope placeholder, not an
-# unverified exercise-identity claim. Every answer-bearing objective
-# ("solve"/"hint"/"official_solution"/"exam_practice"/"derive"/
-# "answer_subquestion"/"review_student_solution") is UNCHANGED -- still
-# "unresolved" without a grounded exercise label, exactly as before.
+# unverified exercise-identity claim.
 _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY = frozenset({
     "explain", "define", "compare", "summarize", "translate",
 })
+
+# Follow-up correction (2026-10-21): "an unresolved target" and "an
+# ambiguous/unverifiable exercise identity" are NOT the same thing, and
+# the fix above only separated them for objectives with no answer-key
+# concept. "Explain this to me, but don't reveal the final result." /
+# "solve this completely" -- an answer-BEARING objective, on a genuine,
+# unnumbered exercise the student is actually looking at -- must still
+# get a trustworthy "requested" state: an explicit restriction in the
+# SAME message (an explicit model/deterministic release value) already
+# survives regardless of state (compile_policy only ever fills UNSET
+# fields from a fallback), but an explicit PERMISSION ("show me the
+# final answer") does not -- it only works via the ordinary tutoring
+# default, which never runs while state stays "unresolved". ``has_
+# visible_context`` is the same real-page/document-evidence signal
+# ``student_intent.py``'s own ``references_unresolved`` is computed
+# from (and ``reference_resolution.decide_evidence`` already requires,
+# upstream, before this function ever runs) -- not a new, looser bar,
+# just recognizing a signal the architecture already trusts elsewhere.
+# A missing numbered label stops meaning "unverifiable" once a real,
+# singular page/document is actually in view; it only ever meant
+# "unverifiable" as a stand-in for "we don't know what the student is
+# even looking at". Still no bypass for a merely CLAIMED target string
+# (the semantic/escalated path's own identity gate is untouched) or for
+# a stale cross-turn active_question on a new, unrelated topic (the
+# NEW_TOPIC discard above still runs first).
 
 
 # ---------------------------------------------------------------------------
@@ -314,6 +336,7 @@ def adapt_deterministic_intent(
     dialogue: DialogueResolution,
     student_intent: StudentIntent | None,
     authorized_exercise_labels: frozenset[str] = frozenset(),
+    has_visible_context: bool = False,
 ) -> ResolvedStudentIntent:
     """Best-effort, diagnostic-only projection of today's deterministic
     output into the canonical multi-action shape. Does NOT invoke any
@@ -396,7 +419,11 @@ def adapt_deterministic_intent(
         prohibited=prohibited,
         state=(
             "requested"
-            if target_resolved or objective in _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY
+            if (
+                target_resolved
+                or objective in _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY
+                or has_visible_context
+            )
             else "unresolved"
         ),
     )

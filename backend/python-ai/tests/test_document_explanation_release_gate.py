@@ -24,14 +24,29 @@ pattern shapes (e.g. a "Therefore X = Y" style summary of credit totals)
 gets silently replaced by the gate's generic text.
 
 Fix: ``adapt_deterministic_intent`` now treats an action as "requested"
-(trusted, no exercise-identity verification required) whenever its
-objective has no exercise-answer-disclosure concept at all -- "explain",
-"define", "compare", "summarize", "translate" -- regardless of whether a
-numbered exercise label resolved. Every answer-bearing objective ("solve",
-"hint", "official_solution", "exam_practice", "derive",
-"answer_subquestion", "review_student_solution") is UNCHANGED: still
-"unresolved", still maximally restricted, without a grounded exercise
-label, exactly as before this fix.
+(trusted, no exercise-identity verification required) whenever EITHER (a)
+its objective has no exercise-answer-disclosure concept at all --
+"explain", "define", "compare", "summarize", "translate" -- or (b) the
+student has real, visible page/document context open (the same signal
+``student_intent.py``'s own ``references_unresolved`` and
+``reference_resolution.decide_evidence`` already require, upstream,
+before this function ever runs) -- regardless of whether a numbered
+exercise label resolved.
+
+Follow-up correction (2026-10-21, same day): a missing numbered label
+does not mean "nobody knows what this request is about" when the
+student is actually looking at a specific, real, singular exercise --
+only when there is no numbered label AND no real context either. So an
+answer-BEARING objective ("solve"/"hint"/etc.) on a genuine, unnumbered
+exercise with real page context open is ALSO now "requested" -- an
+explicit restriction in the same turn ("don't reveal the final result")
+still wins regardless (an explicit release value always survives
+compile_policy's fallback, with or without this fix), and so does an
+explicit permission ("give me the full solution") now that state isn't
+forced to "unresolved" just because there is no number. A merely CLAIMED
+target string from an unverified model (the semantic/escalated path) and
+a stale cross-turn active_question on a genuinely new, unrelated topic
+are both UNCHANGED -- neither gets any new trust from this.
 
 Design, matching test_live_eval_remediation_acceptance.py's own house
 style: exercises the REAL /ask-stream route, REAL dialogue resolution,
@@ -378,3 +393,134 @@ def test_switching_from_a_restricted_exercise_to_an_unrelated_document_drops_the
         "a later, unrelated document-explanation request in the same conversation"
     )
     assert "ESE" in rendered2
+
+
+# ---------------------------------------------------------------------------
+# Boundary case (2026-10-21, same-day follow-up): an unnumbered exercise is
+# still an exercise. The explain/define/... exemption above must not become
+# a general "no number means no restriction" loophole for answer-bearing
+# objectives too.
+# ---------------------------------------------------------------------------
+
+UNNUMBERED_EXERCISE_TEXT = (
+    "A beam is loaded with a point force at its midpoint. The beam is "
+    "supported at both ends. Find the reaction force at support A. "
+    "Lösung: R_A = 75 N."
+)
+
+
+def _install_unnumbered_exercise_document(monkeypatch):
+    """A genuine exercise with no exercise NUMBER printed anywhere in it
+    (unlike DOC_MECH1's "Aufgabe 1" style labels) -- the shape that must
+    stay fully protected despite this suite's fix, since it IS an actual
+    exercise with a protected result, just an unnumbered one."""
+    import app.routers.stream as stream_mod
+
+    doc_id = str(uuid.uuid4())
+    chunk = retrieval.RetrievedChunk(
+        chunk_id="c-unnumbered", document_id=doc_id, page_start=1, page_end=1,
+        text=UNNUMBERED_EXERCISE_TEXT, score=1.0, similarity=1.0,
+        chunk_type="exercise", section_title="Statics problem",
+    )
+    monkeypatch.setattr(stream_mod, "retrieve_routed_chunks", lambda **kw: [chunk])
+    monkeypatch.setattr(retrieval, "retrieve_routed_chunks", lambda **kw: [chunk])
+    monkeypatch.setattr(retrieval, "retrieve_chunks", lambda **kw: [chunk])
+    monkeypatch.setattr(
+        stream_mod, "retrieve_multi_item_course_evidence",
+        lambda **kw: type("R", (), {
+            "chunks": [chunk], "evidence": [], "to_dict": lambda self: {},
+        })(),
+    )
+    monkeypatch.setattr(stream_mod, "_load_authorized_documents", lambda *_: {
+        doc_id: {
+            "id": doc_id, "user_id": base.USER_ID, "course_id": "course-1",
+            "file_name": "unnumbered_exercise.pdf", "storage_path": "synthetic/unnumbered_exercise.pdf",
+            "document_hash": "rev-1", "processing_status": "ready",
+            "page_count": 1, "chunk_count": 1,
+        },
+    })
+    return doc_id
+
+
+def test_explicit_hint_protection_survives_without_a_numbered_label(monkeypatch):
+    """"Explain this to me, but don't reveal the final result." on a real,
+    unnumbered exercise must still withhold the protected value -- the
+    explicit restriction wins regardless of whether escalation's model
+    call succeeds or fails; this covers the failure/deterministic-
+    fallback path (intent_response_json=None -> invalid escalation
+    response -> AB-02 fallback-weakness fix's own existing most-
+    restrictive degrade)."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text="The approach is to take moments about support A and solve for the reaction force.",
+    )
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id,
+            question="Explain this to me, but don't reveal the final result.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    assert "75 N" not in base._rendered_text(body)
+
+
+def test_explicit_hint_protection_survives_via_successful_escalation(monkeypatch):
+    """Same restriction, but through a VALID, successful semantic-
+    escalation response (the realistic production path for a message
+    containing "don't", which does trigger escalation) -- an explicit
+    final_answer="prohibited" the model itself returns must survive
+    regardless of this suite's has_visible_context trust extension,
+    exactly as it already did before this fix (compile_policy only ever
+    fills UNSET fields from a fallback; an explicitly-set one is never
+    touched)."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    intent_json = base._fake_intent_response(
+        "explain", "current_request",
+        {"final_answer": "prohibited", "official_solution": "unspecified",
+         "explanation_depth": "method", "form": "explanation", "wait_for_student": None},
+    )
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=intent_json,
+        draft_text="The approach is to take moments about support A and solve for the reaction force.",
+    )
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id,
+            question="Explain this to me, but don't reveal the final result.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    assert "75 N" not in base._rendered_text(body)
+
+
+def test_explicit_full_solution_permitted_without_a_numbered_label(monkeypatch):
+    """The complementary case: an explicit full-solution request on the
+    SAME unnumbered exercise must be honored, not blocked just because
+    there is no exercise number -- confirmed regression before this
+    follow-up fix (has_visible_context now also grants "requested" for
+    answer-bearing objectives, not only explain/define/compare/
+    summarize/translate)."""
+    stream, _ = base._setup(monkeypatch)
+    doc_id = _install_unnumbered_exercise_document(monkeypatch)
+    base._install_capturing_transport(
+        monkeypatch, intent_response_json=None,
+        draft_text="The final answer is R_A = 75 N.",
+    )
+    try:
+        body = asyncio.run(_ask_with_page(
+            stream, document_id=doc_id,
+            question="Please solve this completely and show me the final answer.",
+            visible_page_text=UNNUMBERED_EXERCISE_TEXT,
+        ))
+    finally:
+        from app.config import get_settings
+        get_settings.cache_clear()
+    assert b"75 N" in body
+    assert b'"code": "answer_release_restricted"' not in body

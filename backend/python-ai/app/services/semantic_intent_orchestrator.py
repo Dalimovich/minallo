@@ -374,6 +374,7 @@ def interpret_turn_authoritatively(
         resolved_intent = adapt_deterministic_intent(
             message=question, dialogue=dialogue, student_intent=deterministic_intent,
             authorized_exercise_labels=authorized_exercise_labels,
+            has_visible_context=has_visible_context,
         )
         # AB-02 fallback-weakness fix (2026-10-20 live eval, confirmed via
         # forensic prompt capture): when THIS function itself already
