@@ -1,4 +1,8 @@
 // Top-bar + portal-shell UI: night toggle, mobile sidebar, sidebar nav.
+const NIGHT_ICON_SUN =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+const NIGHT_ICON_MOON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
 
 export interface PortalUiOptions {
   getNightOn: () => boolean;
@@ -32,9 +36,9 @@ export function initPortalUi(options: PortalUiOptions): { applyTheme: (toNight: 
       document.body.classList.toggle('night', toNight);
       const nbIcon = document.getElementById('nightIcon');
       if (nbIcon) {
-        nbIcon.textContent = toNight ? '🌙' : '☀️';
+        nbIcon.innerHTML = toNight ? NIGHT_ICON_SUN : NIGHT_ICON_MOON;
         const nbLbl = document.getElementById('nightLabel');
-        if (nbLbl) nbLbl.textContent = toNight ? 'Night' : 'Day';
+        if (nbLbl) nbLbl.textContent = toNight ? 'Light mode' : 'Dark mode';
       }
       const dm = document.getElementById('settingsDarkMode') as HTMLInputElement | null;
       if (dm) dm.checked = toNight;
@@ -42,7 +46,12 @@ export function initPortalUi(options: PortalUiOptions): { applyTheme: (toNight: 
       if (typeof options.saveState === 'function') options.saveState();
     }
 
-    if (typeof document.startViewTransition !== 'function') {
+    // Skip the animated reveal when the API is missing or the user prefers
+    // reduced motion — just swap instantly.
+    const reduceMotion =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (typeof document.startViewTransition !== 'function' || reduceMotion) {
       commitTheme();
       return;
     }
@@ -60,8 +69,10 @@ export function initPortalUi(options: PortalUiOptions): { applyTheme: (toNight: 
           ],
         },
         {
-          duration: 500,
-          easing: 'ease-in-out',
+          // Shorter + ease-out (fast start) reads as snappier and leaves fewer
+          // frames to drop than the old 500ms ease-in-out on a heavy page.
+          duration: 340,
+          easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
           pseudoElement: '::view-transition-new(root)',
         }
       );
@@ -71,9 +82,9 @@ export function initPortalUi(options: PortalUiOptions): { applyTheme: (toNight: 
   (function syncNightButton(): void {
     const isNight = !!options.getNightOn();
     const bIcon = document.getElementById('nightIcon');
-    if (bIcon) bIcon.textContent = isNight ? '🌙' : '☀️';
+    if (bIcon) bIcon.innerHTML = isNight ? NIGHT_ICON_SUN : NIGHT_ICON_MOON;
     const bLbl = document.getElementById('nightLabel');
-    if (bLbl) bLbl.textContent = isNight ? 'Night' : 'Day';
+    if (bLbl) bLbl.textContent = isNight ? 'Light mode' : 'Dark mode';
   })();
 
   bindIf('nightBtn', 'click', function () {

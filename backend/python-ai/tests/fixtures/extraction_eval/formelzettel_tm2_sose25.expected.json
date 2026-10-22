@@ -1,0 +1,5 @@
+{
+  "description": "Handwritten/scanned formula sheet with a GARBAGE baked-in text layer (pdfminer returns 1494 letters of gibberish: 'aeumingingSeit', 'Freib = MaN', 'dot2'). KNOWN GAP: it is NOT currently flagged for OCR (the garble detector misses it) — so expect_ocr_recommended is intentionally NOT asserted here yet. Once the garble detector is improved this should flip to true. We only lock in classification + page count for now.",
+  "document_type": "formula_sheet",
+  "min_pages": 2
+}

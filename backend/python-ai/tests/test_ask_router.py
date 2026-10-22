@@ -54,8 +54,9 @@ def client(monkeypatch) -> TestClient:
         )],
     )
 
-    # Skip cache lookups; force regeneration path.
-    monkeypatch.setattr("app.routers.ask.fetch_document_version_hash", lambda *a, **kw: "vh1")
+    # Skip cache lookups; force regeneration path. (The version-hash helper was
+    # renamed document→course when caching moved to a whole-course version hash.)
+    monkeypatch.setattr("app.routers.ask.fetch_course_version_hash", lambda *a, **kw: "vh1")
     monkeypatch.setattr("app.routers.ask.lookup_answer", lambda **kw: None)
     monkeypatch.setattr("app.routers.ask.save_answer", lambda **kw: None)
 
@@ -110,6 +111,137 @@ def test_ask_rejects_bad_uuid(client: TestClient) -> None:
         json={"userId": "not-a-uuid", "courseId": COURSE, "question": "hi"},
     )
     assert r.status_code == 400
+
+
+def test_ask_generation_failure_does_not_disclose_provider_error(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_generation(**_kwargs):
+        raise RuntimeError("provider api_key=top-secret request details")
+
+    monkeypatch.setattr("app.routers.ask.generate_answer", fail_generation)
+
+    r = client.post(
+        "/ask",
+        headers={"X-Internal-Token": "test-token"},
+        json={
+            "userId": OWNER,
+            "courseId": COURSE,
+            "question": "How do I use Minallo?",
+        },
+    )
+
+    assert r.status_code == 502
+    assert r.json() == {
+        "detail": "Answer generation is temporarily unavailable. Please try again."
+    }
+    assert "top-secret" not in r.text
+
+
+class _HealthQuery:
+    """Chainable stub mimicking supabase-py's fluent query builder — copied
+    from test_document_health.py's fixture pattern for the stale-metadata
+    incident (processing_status='ready' + non-zero cached chunk_count but
+    zero live document_chunks rows under the active revision)."""
+
+    def __init__(self, data=None, count=None):
+        self._data = data
+        self._count = count
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        from types import SimpleNamespace
+        return SimpleNamespace(data=self._data, count=self._count)
+
+
+class _StaleMetadataHealthSupabase:
+    """Reports DOC_A as processing_status='ready'/chunk_count=23 in the
+    cached `documents` row, but zero live `document_chunks` rows under its
+    `active_index_revision` — the exact 2026-08-31 incident class
+    validate_active_document_index exists to catch."""
+
+    def table(self, name: str):
+        if name == "documents":
+            return _HealthQuery(data=[{
+                "id": DOC_A, "processing_status": "ready",
+                "page_count": 2, "chunk_count": 23,
+                "active_index_revision": "r1", "index_revision_status": "ready",
+            }])
+        if name == "document_chunks":
+            return _HealthQuery(count=0)
+        if name == "document_pages":
+            return _HealthQuery(count=2)
+        if name == "document_page_manifests":
+            return _HealthQuery(data=[
+                {"page_number": 1, "source_page_id": "r1:1",
+                 "required_for_processing": True, "status": "indexed", "exclusion_reason": None},
+                {"page_number": 2, "source_page_id": "r1:2",
+                 "required_for_processing": True, "status": "indexed", "exclusion_reason": None},
+            ])
+        raise AssertionError(f"unexpected table: {name}")
+
+
+def test_ask_blocks_when_selected_document_index_is_corrupt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/ask must gate on document_health the same way /ask-stream already
+    does — a document sitting at processing_status='ready' with a stale
+    non-zero chunk_count but zero live chunks must never be silently
+    retrieved against; it must surface a typed DOCUMENT_INDEX_CORRUPT error
+    instead of a degraded/empty answer."""
+    monkeypatch.setattr(
+        "app.services.document_health.get_supabase",
+        lambda: _StaleMetadataHealthSupabase(),
+    )
+
+    r = client.post(
+        "/ask",
+        headers={"X-Internal-Token": "test-token"},
+        json={
+            "userId": OWNER, "courseId": COURSE,
+            "documentIds": [DOC_A],
+            "question": "What is Newton's second law?",
+        },
+    )
+    assert r.status_code == 409
+    body = r.json()["detail"]
+    assert body["code"] == "DOCUMENT_INDEX_CORRUPT"
+    assert body["error"] is True
+    assert body["metadata"]["documentId"] == DOC_A
+
+
+def test_retrieve_context_blocks_when_selected_document_index_is_corrupt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.document_health.get_supabase",
+        lambda: _StaleMetadataHealthSupabase(),
+    )
+
+    r = client.post(
+        "/retrieve-context",
+        headers={"X-Internal-Token": "test-token"},
+        json={
+            "userId": OWNER, "courseId": COURSE,
+            "documentIds": [DOC_A],
+            "query": "Newton's second law",
+        },
+    )
+    assert r.status_code == 409
+    body = r.json()["detail"]
+    assert body["code"] == "DOCUMENT_INDEX_CORRUPT"
 
 
 def test_retrieve_context_returns_chunks(client: TestClient) -> None:

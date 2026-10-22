@@ -1,0 +1,2730 @@
+{
+  "summary": {
+    "total_turns": 64,
+    "target_accuracy": 0.8906,
+    "objective_accuracy": 0.7656,
+    "final_answer_accuracy": 0.6875,
+    "all_fields_accuracy": 0.5625,
+    "total_input_tokens": 40353,
+    "total_output_tokens": 8136,
+    "total_cost_usd": 0.001695,
+    "by_category": {
+      "ambiguous_typo_phrasing": {
+        "turns": 2,
+        "all_fields_accuracy": 0.5
+      },
+      "cache_history_control": {
+        "turns": 3,
+        "all_fields_accuracy": 0.6667
+      },
+      "cache_history_no_replay": {
+        "turns": 4,
+        "all_fields_accuracy": 1.0
+      },
+      "changing_instructions_less_help": {
+        "turns": 5,
+        "all_fields_accuracy": 0.8
+      },
+      "changing_instructions_more_help": {
+        "turns": 5,
+        "all_fields_accuracy": 0.6
+      },
+      "document_vs_exercise_level": {
+        "turns": 2,
+        "all_fields_accuracy": 0.0
+      },
+      "exercise_correction": {
+        "turns": 6,
+        "all_fields_accuracy": 0.5
+      },
+      "full_solution_explicit": {
+        "turns": 3,
+        "all_fields_accuracy": 1.0
+      },
+      "german_multi_quantity_math": {
+        "turns": 2,
+        "all_fields_accuracy": 1.0
+      },
+      "hint_no_reveal": {
+        "turns": 5,
+        "all_fields_accuracy": 0.8
+      },
+      "indirect_reference": {
+        "turns": 6,
+        "all_fields_accuracy": 0.3333
+      },
+      "multi_target_mixed_level": {
+        "turns": 6,
+        "all_fields_accuracy": 0.6667
+      },
+      "natural_informal_no_keyword": {
+        "turns": 8,
+        "all_fields_accuracy": 0.125
+      },
+      "quiz_wait_for_answer": {
+        "turns": 7,
+        "all_fields_accuracy": 0.4286
+      }
+    }
+  },
+  "turns": [
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 1,
+      "student": "hey im stuck on number 4, what am i even supposed to do here",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.15,
+        "target_confidence": 0.97,
+        "objective_confidence": 0.61,
+        "input_tokens": 598,
+        "output_tokens": 125
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 291.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 2,
+      "student": "ok i think i get it, is it 3x=15 next?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.25,
+        "target_confidence": 0.95,
+        "objective_confidence": 0.95,
+        "input_tokens": 618,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 207.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 1,
+      "student": "Aufgabe 1 raff ich grad nicht so richtig",
+      "expected": [
+        {
+          "target": "1",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.17,
+        "target_confidence": 0.93,
+        "objective_confidence": 0.8,
+        "input_tokens": 680,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 235.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 2,
+      "student": "achso, und dann rechne ich einfach die Kr\u00e4fte zusammen?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.14,
+        "target_confidence": 0.74,
+        "objective_confidence": 0.44,
+        "input_tokens": 698,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 260.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 1,
+      "student": "this cutting speed thing makes no sense to me can u explain what's going on",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.12,
+        "target_confidence": 0.8,
+        "objective_confidence": 1.0,
+        "input_tokens": 595,
+        "output_tokens": 122
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 228.7,
+      "error": null
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 2,
+      "student": "oh ok so n is like how fast it spins",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "confirmation",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.11,
+        "target_confidence": 0.47,
+        "objective_confidence": 0.96,
+        "input_tokens": 608,
+        "output_tokens": 122
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 195.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 1,
+      "student": "bei Aufgabe 2 bin ich mir unsicher, klingt komisch irgendwie",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "2",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.19,
+        "target_confidence": 0.97,
+        "objective_confidence": 0.25,
+        "input_tokens": 601,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 204.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 2,
+      "student": "ist es vielleicht Konjunktiv?",
+      "expected": [
+        {
+          "target": "2",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "jev_result": {
+        "target": "2",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.16,
+        "target_confidence": 0.96,
+        "objective_confidence": 0.8,
+        "input_tokens": 612,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 200.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-05",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me a hint for exercise 5, don't tell me the roots.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.04,
+        "target_confidence": 0.97,
+        "objective_confidence": 1.0,
+        "input_tokens": 598,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 223.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 1,
+      "student": "Kannst du mir einen Tipp zu Aufgabe 3 geben, aber bitte nicht das Ergebnis verraten?",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.03,
+        "target_confidence": 0.96,
+        "objective_confidence": 1.0,
+        "input_tokens": 691,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 217.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 2,
+      "student": "Ist das Drehmoment F mal Hebelarm?",
+      "expected": [
+        {
+          "target": "3",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.06,
+        "target_confidence": 0.98,
+        "objective_confidence": 0.45,
+        "input_tokens": 705,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 229.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-07",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "turn": 1,
+      "student": "Nudge me in the right direction for part b, no numbers please.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13b",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.04,
+        "target_confidence": 0.64,
+        "objective_confidence": 1.0,
+        "input_tokens": 594,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13b"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 192.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-08",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 1,
+      "student": "Hinweis zu Aufgabe 6, aber ohne die L\u00f6sung von x und y.",
+      "expected": [
+        {
+          "target": "6",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "6",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.22,
+        "target_confidence": 1.0,
+        "objective_confidence": 1.0,
+        "input_tokens": 597,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "6"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 204.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-09",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "turn": 1,
+      "student": "Just solve exercise 4 completely, show me x.",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.77,
+        "target_confidence": 0.97,
+        "objective_confidence": 1.0,
+        "input_tokens": 593,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 205.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-10",
+      "category": "full_solution_explicit",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 bitte komplett mit beiden Lagerkr\u00e4ften.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.69,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 687,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 220.9,
+      "error": null
+    },
+    {
+      "scenario": "AB-11",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve part a completely, give me n.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.82,
+        "target_confidence": 0.56,
+        "objective_confidence": 1.0,
+        "input_tokens": 588,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 229.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 1,
+      "student": "give me a hint for exercise 5",
+      "expected": [
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.08,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 590,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 229.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 2,
+      "student": "that's not enough, just walk me through the whole method",
+      "expected": [
+        {
+          "target": "5",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.17,
+        "target_confidence": 0.94,
+        "objective_confidence": 0.69,
+        "input_tokens": 605,
+        "output_tokens": 125
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 256.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 3,
+      "student": "ok now just give me the full answer",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.5,
+        "target_confidence": 0.94,
+        "objective_confidence": 1.0,
+        "input_tokens": 616,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 231.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 2a komplett.",
+      "expected": [
+        {
+          "target": "2a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "2a",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.62,
+        "target_confidence": 1.0,
+        "objective_confidence": 1.0,
+        "input_tokens": 680,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "2a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 239.4,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 2,
+      "student": "Und jetzt nur noch ein Tipp zu 2b, nicht die L\u00f6sung.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "2b",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.24,
+        "target_confidence": 1.0,
+        "objective_confidence": 0.92,
+        "input_tokens": 697,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "2b"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 292.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 3,
+      "student": "Eigentlich, gib mir doch die L\u00f6sung von 2b auch.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "2b",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.46,
+        "target_confidence": 1.0,
+        "objective_confidence": 0.99,
+        "input_tokens": 714,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2b"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 276.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 1,
+      "student": "What's the formula for part a? No numbers.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.07,
+        "target_confidence": 0.55,
+        "objective_confidence": 0.21,
+        "input_tokens": 590,
+        "output_tokens": 122
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 313.4,
+      "error": null
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 2,
+      "student": "Still stuck, can you plug in the numbers for me?",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.38,
+        "target_confidence": 0.44,
+        "objective_confidence": 0.95,
+        "input_tokens": 604,
+        "output_tokens": 121
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 249.9,
+      "error": null
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.55,
+        "target_confidence": 0.86,
+        "objective_confidence": 1.0,
+        "input_tokens": 595,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 204.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 2,
+      "student": "F\u00fcr Aufgabe 2 will ich es aber selbst versuchen, gib mir nur einen Hinweis.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "2",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.24,
+        "target_confidence": 0.97,
+        "objective_confidence": 0.84,
+        "input_tokens": 614,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 227.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve Aufgabe 2 for me.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "full_solution",
+          "release": "ambiguous_expect_clarify_or_both"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.33,
+        "target_confidence": 0.58,
+        "objective_confidence": 1.0,
+        "input_tokens": 678,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 218.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 2,
+      "student": "I just meant the second part.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "2b",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.42,
+        "target_confidence": 0.87,
+        "objective_confidence": 0.97,
+        "input_tokens": 687,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2b"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 201.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 5.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.36,
+        "target_confidence": 0.97,
+        "objective_confidence": 1.0,
+        "input_tokens": 589,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 232.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "language": "de",
+      "turn": 2,
+      "student": "Und wie sieht's mit der vorherigen Aufgabe aus, nur ein Tipp?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.18,
+        "target_confidence": 0.46,
+        "objective_confidence": 0.99,
+        "input_tokens": 607,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 203.7,
+      "error": null
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me a hint for 13a.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.08,
+        "target_confidence": 1.0,
+        "objective_confidence": 1.0,
+        "input_tokens": 589,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 207.4,
+      "error": null
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 2,
+      "student": "Can you solve that last one now?",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.33,
+        "target_confidence": 0.16,
+        "objective_confidence": 0.9,
+        "input_tokens": 599,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 234.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve exercise 6.",
+      "expected": [
+        {
+          "target": "6",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "6",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.32,
+        "target_confidence": 0.97,
+        "objective_confidence": 1.0,
+        "input_tokens": 587,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "6"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 196.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 2,
+      "student": "No wait, I meant exercise 5, not 6.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.31,
+        "target_confidence": 1.0,
+        "objective_confidence": 0.85,
+        "input_tokens": 602,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 201.9,
+      "error": null
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "language": "de",
+      "turn": 1,
+      "student": "Gib mir einen Hinweis zu Aufgabe 2.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.07,
+        "target_confidence": 0.62,
+        "objective_confidence": 1.0,
+        "input_tokens": 680,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 194.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "language": "de",
+      "turn": 2,
+      "student": "Ich meinte eigentlich Aufgabe 3, nicht Aufgabe 2.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.1,
+        "target_confidence": 0.96,
+        "objective_confidence": 0.97,
+        "input_tokens": 695,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 219.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 1,
+      "student": "Explain part b to me.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13b",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.21,
+        "target_confidence": 0.49,
+        "objective_confidence": 1.0,
+        "input_tokens": 585,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13b"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 220.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 2,
+      "student": "Actually I think you misunderstood \u2014 I'm asking about part a, not b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.2,
+        "target_confidence": 0.67,
+        "objective_confidence": 0.94,
+        "input_tokens": 603,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 209.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 1,
+      "student": "Kannst du mich zu Aufgabe 3 abfragen? Gib mir nicht gleich die Antwort.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.04,
+        "target_confidence": 0.9,
+        "objective_confidence": 0.99,
+        "input_tokens": 605,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 235.4,
+      "error": null
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 2,
+      "student": "Ich sage 'der'.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.07,
+        "target_confidence": 0.9,
+        "objective_confidence": 0.99,
+        "input_tokens": 612,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 203.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "turn": 1,
+      "student": "Quiz me on exercise 5 \u2014 ask me for the two roots, don't just tell me.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.05,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 602,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 200.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "turn": 2,
+      "student": "x = 2 and x = 3?",
+      "expected": [
+        {
+          "target": "5",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "5",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.31,
+        "target_confidence": 0.99,
+        "objective_confidence": 0.99,
+        "input_tokens": 614,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 212.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 1,
+      "student": "Frag mich die Lagerkraft R_A ab.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.4,
+        "target_confidence": 0.83,
+        "objective_confidence": 0.47,
+        "input_tokens": 682,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 276.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 2,
+      "student": "80 N?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "answer_check",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "other",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.52,
+        "target_confidence": 0.77,
+        "objective_confidence": 0.87,
+        "input_tokens": 689,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 222.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 3,
+      "student": "75 N?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "other",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.58,
+        "target_confidence": 0.72,
+        "objective_confidence": 0.79,
+        "input_tokens": 696,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 198.7,
+      "error": null
+    },
+    {
+      "scenario": "AB-25",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve exercise 4 fully, but just give me a hint for exercise 5 \u2014 don't solve it.",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "other",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.45,
+        "target_confidence": 0.52,
+        "objective_confidence": 0.44,
+        "input_tokens": 604,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "4",
+          "5"
+        ],
+        "expected_objectives": [
+          "hint",
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted",
+          "prohibited"
+        ]
+      },
+      "latency_ms": 195.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.57,
+        "target_confidence": 0.95,
+        "objective_confidence": 1.0,
+        "input_tokens": 679,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 214.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 2,
+      "student": "F\u00fcr Aufgabe 3 reicht ein Tipp.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "3",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.24,
+        "target_confidence": 1.0,
+        "objective_confidence": 0.4,
+        "input_tokens": 689,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 245.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 3,
+      "student": "Was ist mit Aufgabe 1 \u2014 kannst du das nochmal in Worten erkl\u00e4ren, ohne neue Zahlen?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "method_explanation",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.19,
+        "target_confidence": 1.0,
+        "objective_confidence": 0.97,
+        "input_tokens": 710,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 213.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me the full solution for 13a, and a hint only for 13b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.57,
+        "target_confidence": 0.67,
+        "objective_confidence": 0.65,
+        "input_tokens": 600,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "expected_objectives": [
+          "hint",
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted",
+          "prohibited"
+        ]
+      },
+      "latency_ms": 224.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 2,
+      "student": "Now give me the full answer for everything, including b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13b",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.56,
+        "target_confidence": 0.33,
+        "objective_confidence": 1.0,
+        "input_tokens": 614,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 198.1,
+      "error": null
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "turn": 1,
+      "student": "What's the hint for exercise 4?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.11,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 591,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 218.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "turn": 2,
+      "student": "What's the hint for exercise 4?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.09,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 602,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 269.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "language": "de",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.58,
+        "target_confidence": 0.95,
+        "objective_confidence": 1.0,
+        "input_tokens": 679,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 216.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "language": "de",
+      "turn": 2,
+      "student": "Jetzt bitte nur noch mal als Hinweis f\u00fcr jemand anderen, nicht die L\u00f6sung direkt.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "1",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.09,
+        "target_confidence": 0.83,
+        "objective_confidence": 0.99,
+        "input_tokens": 697,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 210.6,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve 13a fully.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "solve",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.49,
+        "target_confidence": 0.99,
+        "objective_confidence": 1.0,
+        "input_tokens": 586,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 213.5,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 2,
+      "student": "Give me a hint for 13b.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "13b",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.19,
+        "target_confidence": 1.0,
+        "objective_confidence": 1.0,
+        "input_tokens": 598,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13b"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 203.8,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 3,
+      "student": "Solve 13a fully again, I lost the number.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13a",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.83,
+        "target_confidence": 1.0,
+        "objective_confidence": 1.0,
+        "input_tokens": 613,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 206.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-31",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "turn": 1,
+      "student": "Berechne f\u00fcr Aufgabe 13 sowohl die Drehzahl n als auch die neue Schnittgeschwindigkeit vc2 aus Teil b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "13b",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.59,
+        "target_confidence": 0.84,
+        "objective_confidence": 1.0,
+        "input_tokens": 611,
+        "output_tokens": 123
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 223.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-32",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "turn": 1,
+      "student": "Gib mir f\u00fcr Aufgabe 2 beide Werte, F_parallel und F_N, aber nur als Tipp, nicht ausgerechnet.",
+      "expected": [
+        {
+          "target": "2a",
+          "form": "hint",
+          "release": "prohibited"
+        },
+        {
+          "target": "2b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "jev_result": {
+        "target": "2a",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.06,
+        "target_confidence": 0.54,
+        "objective_confidence": 1.0,
+        "input_tokens": 697,
+        "output_tokens": 134
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "2a",
+          "2b"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 229.2,
+      "error": null
+    },
+    {
+      "scenario": "AB-33",
+      "category": "ambiguous_typo_phrasing",
+      "language": "en",
+      "turn": 1,
+      "student": "cn u solv exsercise 4 pls jsut give me x alreayd",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "4",
+        "objective": "solve",
+        "final_answer": "permitted",
+        "final_answer_noul": 0.63,
+        "target_confidence": 0.96,
+        "objective_confidence": 1.0,
+        "input_tokens": 600,
+        "output_tokens": 124
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 195.0,
+      "error": null
+    },
+    {
+      "scenario": "AB-34",
+      "category": "ambiguous_typo_phrasing",
+      "language": "de",
+      "turn": 1,
+      "student": "aufgab 2 hilf mir ma, aber nur n tip ni die l\u00f6sung",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "ambiguous_expect_clarify_or_both"
+        }
+      ],
+      "jev_result": {
+        "target": "none",
+        "objective": "hint",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.05,
+        "target_confidence": 0.59,
+        "objective_confidence": 1.0,
+        "input_tokens": 689,
+        "output_tokens": 133
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ]
+      },
+      "latency_ms": 295.7,
+      "error": null
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "turn": 1,
+      "student": "What's this document about?",
+      "expected": [
+        {
+          "target": "document",
+          "form": "summary",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "document",
+        "objective": "summarize",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.12,
+        "target_confidence": 0.93,
+        "objective_confidence": 0.99,
+        "input_tokens": 556,
+        "output_tokens": 128
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "document"
+        ],
+        "expected_objectives": [
+          "summarize"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 215.7,
+      "error": null
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "turn": 2,
+      "student": "Ok now specifically what happens in the Calvin cycle part?",
+      "expected": [
+        {
+          "target": "section:calvin_cycle",
+          "form": "method_explanation",
+          "release": "permitted"
+        }
+      ],
+      "jev_result": {
+        "target": "section:calvin_cycle",
+        "objective": "explain",
+        "final_answer": "prohibited",
+        "final_answer_noul": 0.13,
+        "target_confidence": 0.97,
+        "objective_confidence": 0.97,
+        "input_tokens": 569,
+        "output_tokens": 131
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "section:calvin_cycle"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 219.2,
+      "error": null
+    }
+  ]
+}

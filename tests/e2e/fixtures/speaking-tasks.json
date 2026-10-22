@@ -1,0 +1,304 @@
+[
+  {
+    "part": {
+      "id": "sprechen_1",
+      "taskType": "spoken_advice",
+      "constraints": {
+        "speakingSeconds": 45,
+        "preparationSeconds": 30,
+        "requiredSourceKinds": [],
+        "sourcePages": [
+          29
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": []
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_2",
+      "taskType": "spoken_option_comparison",
+      "constraints": {
+        "speakingSeconds": 90,
+        "preparationSeconds": 45,
+        "requiredSourceKinds": [],
+        "sourcePages": [
+          29
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": []
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_3",
+      "taskType": "spoken_text_summary",
+      "constraints": {
+        "speakingSeconds": 120,
+        "preparationSeconds": 240,
+        "hideSourceAfterPreparation": true,
+        "requiredSourceKinds": [
+          "text"
+        ],
+        "sourcePages": [
+          30
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "text",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_4",
+      "taskType": "spoken_information_comparison",
+      "constraints": {
+        "speakingSeconds": 90,
+        "requiredSourceKinds": [
+          "graphic",
+          "script"
+        ],
+        "sourcePages": [
+          31
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "graphic",
+          "graphic": {
+            "title": "Besuche",
+            "unit": "Personen",
+            "columns": [
+              {
+                "id": "a",
+                "label": "Heute"
+              }
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "label": "Bibliothek",
+                "values": {
+                  "a": 20
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "s1",
+          "kind": "script",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_5",
+      "taskType": "recorded_topic_presentation",
+      "constraints": {
+        "speakingSeconds": 150,
+        "preparationSeconds": 120,
+        "requiredSourceKinds": [
+          "text"
+        ],
+        "sourcePages": [
+          32
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "text",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_6",
+      "taskType": "spoken_argument_response",
+      "constraints": {
+        "speakingSeconds": 120,
+        "preparationSeconds": 90,
+        "requiredSourceKinds": [
+          "script"
+        ],
+        "sourcePages": [
+          33
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "script",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "sprechen_7",
+      "taskType": "spoken_measure_critique",
+      "constraints": {
+        "speakingSeconds": 90,
+        "preparationSeconds": 90,
+        "requiredSourceKinds": [
+          "text"
+        ],
+        "sourcePages": [
+          34
+        ],
+        "recordingPolicy": {
+          "autoStop": true,
+          "manualStopAllowed": true,
+          "retryAllowed": true
+        }
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "situational_appropriateness",
+        "source_fidelity",
+        "fluency",
+        "pronunciation",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "text",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,71 @@
+name: minallo-qwen-tts
+
+services:
+  tts:
+    image: minallo-qwen-tts:${DEPLOY_TAG:-local}
+    build:
+      context: .
+      args:
+        MINALLO_REVISION: ${MINALLO_REVISION:-unknown}
+    env_file:
+      - .env
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - qwen_models:/models
+    ports:
+      - "127.0.0.1:8090:8090"
+    expose:
+      - "8090"
+    networks:
+      - private
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    # Uncomment on an actual GPU host, after confirming the NVIDIA Container
+    # Toolkit is installed there:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      tts:
+        condition: service_healthy
+    environment:
+      TTS_DOMAIN: ${TTS_DOMAIN:?Set TTS_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  private:
+
+volumes:
+  qwen_models:
+  caddy_data:
+  caddy_config:

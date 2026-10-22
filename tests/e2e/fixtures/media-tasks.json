@@ -1,0 +1,854 @@
+[
+  {
+    "part": {
+      "id": "hoeren_1",
+      "taskType": "listening_overview_completion",
+      "constraints": {
+        "itemCount": 5,
+        "mediaType": "audio",
+        "answerWordMax": 2,
+        "answerNormalization": {
+          "ignoreCase": true,
+          "ignorePunctuation": true
+        },
+        "sourcePages": [
+          17
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q4",
+          "prompt": "Notiz 4",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_2",
+      "taskType": "listening_concept_pair_notes",
+      "constraints": {
+        "itemCount": 4,
+        "mediaType": "audio",
+        "answerNormalization": {
+          "ignoreCase": true,
+          "ignorePunctuation": true
+        },
+        "sourcePages": [
+          18
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_3",
+      "taskType": "listening_summary_error_detection",
+      "constraints": {
+        "itemCount": 2,
+        "mediaType": "audio",
+        "revealQuestionsAfterMedia": true,
+        "sourcePages": [
+          19
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ]
+        }
+      ],
+      "correctIds": [
+        "q0",
+        "q1"
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_4",
+      "taskType": "video_speaker_statement_matching",
+      "constraints": {
+        "itemCount": 6,
+        "mediaType": "video",
+        "optionCount": 4,
+        "categoryRoles": [
+          "first",
+          "second",
+          "both",
+          "neither"
+        ],
+        "sourcePages": [
+          20
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q4",
+          "prompt": "Notiz 4",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q5",
+          "prompt": "Notiz 5",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0",
+              "role": "first"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1",
+              "role": "second"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2",
+              "role": "both"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3",
+              "role": "neither"
+            }
+          ],
+          "answerId": "a0"
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_5",
+      "taskType": "video_outline_completion",
+      "constraints": {
+        "itemCount": 4,
+        "mediaType": "video",
+        "answerNormalization": {
+          "ignoreCase": true,
+          "ignorePunctuation": true
+        },
+        "sourcePages": [
+          21
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "acceptedAnswers": [
+            "achtzehn Uhr",
+            "18 Uhr"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_6",
+      "taskType": "listening_multiple_choice",
+      "constraints": {
+        "itemCount": 5,
+        "mediaType": "audio",
+        "optionCount": 4,
+        "sourcePages": [
+          22
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "Die Bibliothek bleibt heute bis achtzehn Uhr ge?ffnet."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "Notiz 0",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q1",
+          "prompt": "Notiz 1",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q2",
+          "prompt": "Notiz 2",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q3",
+          "prompt": "Notiz 3",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3"
+            }
+          ],
+          "answerId": "a0"
+        },
+        {
+          "id": "q4",
+          "prompt": "Notiz 4",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "options": [
+            {
+              "id": "a0",
+              "text": "Aussage 0"
+            },
+            {
+              "id": "a1",
+              "text": "Aussage 1"
+            },
+            {
+              "id": "a2",
+              "text": "Aussage 2"
+            },
+            {
+              "id": "a3",
+              "text": "Aussage 3"
+            }
+          ],
+          "answerId": "a0"
+        }
+      ]
+    }
+  },
+  {
+    "part": {
+      "id": "hoeren_7",
+      "taskType": "sound_script_comparison",
+      "constraints": {
+        "itemCount": 4,
+        "mediaType": "audio",
+        "sourcePages": [
+          23
+        ]
+      }
+    },
+    "content": {
+      "schemaVersion": "media-task-v1",
+      "source": {
+        "segments": [
+          {
+            "id": "s1",
+            "speakerId": "speaker1",
+            "text": "richtig richtig richtig richtig gleich gleich"
+          }
+        ]
+      },
+      "questions": [
+        {
+          "id": "q0",
+          "prompt": "falsch",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "richtig"
+        },
+        {
+          "id": "q1",
+          "prompt": "falsch",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "richtig"
+        },
+        {
+          "id": "q2",
+          "prompt": "falsch",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "richtig"
+        },
+        {
+          "id": "q3",
+          "prompt": "falsch",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "richtig"
+        },
+        {
+          "id": "q4",
+          "prompt": "gleich",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "gleich"
+        },
+        {
+          "id": "q5",
+          "prompt": "gleich",
+          "evidenceIds": [
+            "s1"
+          ],
+          "skillTags": [
+            "detail_fact"
+          ],
+          "spokenText": "gleich"
+        }
+      ],
+      "correctIds": [
+        "q0",
+        "q1",
+        "q2",
+        "q3"
+      ]
+    }
+  }
+]

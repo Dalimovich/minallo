@@ -9,30 +9,173 @@ Wraps the OpenAI client with:
 from __future__ import annotations
 
 import json
+import logging
 import re
+import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
-
 from ..config import get_settings
+from .concurrency import llm_fanout_slot
+from . import gen_timing
+from .openai_client import get_openai_client
+from .usage_meter import reasoning_tokens_from_response, record_usage, usage_from_response
+
+
+log = logging.getLogger(__name__)
 
 
 _FENCE_OPEN = re.compile(r"^\s*```(?:json)?\s*", re.IGNORECASE)
 _FENCE_CLOSE = re.compile(r"\s*```\s*$")
+
+# Backslashes that, after a backslash, form a JSON escape we must never touch.
+_JSON_KEEP_AFTER_BS = set('"\\/u')
+
+
+def _repair_json_backslashes(s: str) -> str:
+    r"""Re-escape under-escaped LaTeX backslashes so json.loads keeps them.
+
+    Models asked for JSON routinely emit LaTeX with single backslashes
+    (``\frac``, ``\triangle``, ``\rho``) instead of the doubled ``\\frac`` valid
+    JSON requires. ``json.loads`` then silently decodes the collisions —
+    ``\f``→form-feed, ``\t``→tab, ``\b``→backspace — so ``\frac`` becomes
+    ``rac`` and the math renders as garbage.
+
+    This walks the raw model text and doubles any backslash that is clearly the
+    start of a LaTeX command, while preserving genuine JSON escapes:
+
+      * ``\" \\ \/ \uXXXX``                  → always kept (unambiguous escapes)
+      * ``\f \t \r \b`` + a letter            → LaTeX (``\frac``…) → doubled
+      * ``\n`` + a lowercase letter           → LaTeX (``\nabla``, ``\nu``) → doubled
+      * ``\n \t \r \b \f`` + non-letter       → real whitespace escape → kept
+      * ``\`` + anything else (``\D \alpha``) → invalid escape → doubled
+
+    Real form-feed/tab/backspace never legitimately appear in this generated
+    content, and real newlines (``\n``) before markdown/sentence text run into a
+    non-lowercase character, so the heuristic preserves them.
+    """
+    out: list[str] = []
+    i, n = 0, len(s)
+    while i < n:
+        ch = s[i]
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+        nxt = s[i + 1] if i + 1 < n else ""
+        nxt2 = s[i + 2] if i + 2 < n else ""
+        if nxt in _JSON_KEEP_AFTER_BS:
+            out.append(ch + nxt)
+            i += 2
+            continue
+        if nxt in "ntrbf":
+            is_latex = nxt2.islower() if nxt == "n" else nxt2.isalpha()
+            out.append(("\\\\" + nxt) if is_latex else (ch + nxt))
+            i += 2
+            continue
+        # Any other char: an invalid JSON escape — the model meant a literal
+        # backslash (start of a LaTeX command). Double it; re-read nxt normally.
+        out.append("\\\\")
+        i += 1
+    return "".join(out)
+
+
+# Control chars that only appear in a parsed value when JSON decoded an
+# under-escaped LaTeX command (\frac→form-feed, \beta→backspace, \rho→CR).
+# They never legitimately occur in this generated content. Newline (\n) stays
+# excluded — a real line break before a word is common prose — but a TAB GLUED
+# TO A LOWERCASE LETTER is caught below: that is almost always an eaten command
+# (\theta→TAB+heta, \times→TAB+imes, \tau→TAB+au), not a real tab.
+_EATEN_LATEX_CHARS = ("\x0c", "\x08", "\x0b", "\x0d")
+_EATEN_TAB_LATEX_RE = re.compile(r"\t[a-z]")
+
+
+def _has_eaten_latex(obj: Any) -> bool:
+    if isinstance(obj, str):
+        return any(c in obj for c in _EATEN_LATEX_CHARS) or bool(_EATEN_TAB_LATEX_RE.search(obj))
+    if isinstance(obj, dict):
+        return any(_has_eaten_latex(v) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_has_eaten_latex(v) for v in obj)
+    return False
 
 
 def _parse_json_lenient(text: str) -> Any:
     s = (text or "").strip()
     s = _FENCE_OPEN.sub("", s)
     s = _FENCE_CLOSE.sub("", s)
+
+    # Strict parse first. If it succeeds cleanly (no LaTeX backslashes eaten by
+    # JSON escaping), the model escaped correctly — return it untouched so valid
+    # output is never altered.
+    strict: Any = None
+    strict_ok = False
     try:
-        return json.loads(s)
-    except Exception:
-        m = re.search(r"\{[\s\S]*\}", s)
-        if not m:
-            raise
-        return json.loads(m.group(0))
+        strict = json.loads(s)
+        strict_ok = True
+        if not _has_eaten_latex(strict):
+            return strict
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Parse failed, or LaTeX was eaten — re-escape under-escaped backslashes.
+    repaired = _repair_json_backslashes(s)
+    for cand in (repaired, s):
+        try:
+            return json.loads(cand)
+        except Exception:  # noqa: BLE001
+            m = re.search(r"\{[\s\S]*\}", cand)
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except Exception:  # noqa: BLE001
+                    continue
+    if strict_ok:
+        return strict  # fall back to the strict parse (LaTeX imperfect but usable)
+    raise ValueError("could not parse model JSON")
+
+
+def _salvage_string_value(raw: str, key: str) -> str | None:
+    r"""Best-effort extraction of one top-level JSON string value, tolerant of
+    TRUNCATION (no closing quote/brace) — used when a long single-field response
+    (e.g. a whole cheatsheet in ``{"text": "..."}``) is cut off at the token cap
+    and ``json.loads`` can't parse it. A truncated markdown body still renders.
+
+    Decodes JSON escapes manually so LaTeX backslashes survive: ``\n``→newline,
+    ``\"``→quote, ``\\``→backslash, but ``\frac``/``\mu`` (no JSON meaning) are
+    kept verbatim instead of being eaten.
+    """
+    m = re.search(r'"' + re.escape(key) + r'"\s*:\s*"', raw)
+    if not m:
+        return None
+    body = raw[m.end():]
+    out: list[str] = []
+    i = 0
+    decode = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "\\": "\\", "/": "/"}
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            out.append(decode.get(nxt, "\\" + nxt))  # keep \frac etc. verbatim
+            i += 2
+            continue
+        if ch == '"':  # unescaped closing quote → end of value
+            break
+        out.append(ch)
+        i += 1
+    salvaged = "".join(out).strip()
+    return salvaged or None
+
+
+_MAX_COMPLETION_TOKENS_PREFIXES = ("o1", "o3", "o4", "gpt-4.1", "gpt-4.5", "gpt-5")
+
+
+def _token_limit_param(model: str, limit: int) -> dict:
+    """Return the correct token-limit kwarg for the given model."""
+    if any(model.startswith(p) for p in _MAX_COMPLETION_TOKENS_PREFIXES):
+        return {"max_completion_tokens": limit}
+    return {"max_tokens": limit}
 
 
 @dataclass
@@ -41,6 +184,48 @@ class LlmResult:
     model: str
     prompt_tokens: int | None
     completion_tokens: int | None
+    reasoning_tokens: int | None = None
+
+
+def _caller_label() -> str:
+    """'module.function' of chat_json's caller, e.g.
+    german_exam_language_elements._call_stage_b. Finer than _caller_feature() so
+    per-stage time and cost are separable in timing diagnostics; the usage-meter
+    feature label is deliberately unchanged."""
+    try:
+        frame = sys._getframe(2)
+        module = (frame.f_globals.get("__name__", "") or "").rsplit(".", 1)[-1] or "llm_json"
+        return f"{module}.{frame.f_code.co_name}"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _caller_feature() -> str:
+    """Usage-meter feature label from the calling module's name, so every
+    chat_json user (cheatsheet, quiz, flashcards, deep_learn, planner, …) is
+    attributed without threading a label through each call site."""
+    try:
+        name = sys._getframe(2).f_globals.get("__name__", "") or ""
+        return name.rsplit(".", 1)[-1] or "llm_json"
+    except Exception:  # noqa: BLE001
+        return "llm_json"
+
+
+def _usage_kwargs(resp: Any) -> dict[str, int]:
+    """Token counts for the per-request timer (counts only, never content).
+
+    Diagnostics must never break a generation, so anything unexpected yields {}.
+    """
+    try:
+        u = usage_from_response(resp) or {}
+        return {
+            "prompt_tokens": int(u.get("prompt_tokens", 0) or 0),
+            "cached_tokens": int(u.get("cached_tokens", 0) or 0),
+            "completion_tokens": int(u.get("completion_tokens", 0) or 0),
+            "reasoning_tokens": reasoning_tokens_from_response(resp),
+        }
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def chat_json(
@@ -49,25 +234,96 @@ def chat_json(
     user: str,
     model: str | None = None,
     max_tokens: int = 2000,
+    salvage_key: str | None = None,
+    json_schema: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
 ) -> LlmResult:
     settings = get_settings()
     chosen = model or settings.openai_generate_model
-    client = OpenAI(api_key=settings.openai_api_key)
-    resp = client.chat.completions.create(
-        model=chosen,
-        max_tokens=max_tokens,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user},
-        ],
-    )
+    client = get_openai_client()
+    token_param = _token_limit_param(chosen, max_tokens)
+    # Bound total concurrent generation LLM calls per worker so fan-out shards
+    # (cheatsheet/quiz/flashcards/…) can't saturate the OpenAI quota or the box.
+    # The interactive stream path doesn't use chat_json, so it's never blocked.
+    resp = None
+    timer = gen_timing.current()
+    caller = _caller_label() if timer is not None else ""
+    for attempt in range(6):
+        try:
+            if timer is not None and timer.remaining_s() <= 1:
+                raise gen_timing.GenerationBudgetExceeded("generation time budget exhausted")
+            t_wait = time.perf_counter()
+            with llm_fanout_slot():
+                t_call = time.perf_counter()
+                call_ok = False
+                call_resp = None
+                extra_timeout: dict[str, Any] = {}
+                if timer is not None:
+                    remaining = timer.remaining_s()
+                    if remaining <= 1:
+                        raise gen_timing.GenerationBudgetExceeded("generation time budget exhausted")
+                    # A single provider call may never outlive the request.
+                    extra_timeout = {"timeout": remaining}
+                try:
+                    # Under a request budget the SDK's own retries (max_retries=2) would
+                    # multiply the per-call timeout to 3x the remaining budget, so they are
+                    # off; rate limits are still retried by the loop below, within budget.
+                    call_client = client.with_options(max_retries=0) if timer is not None else client
+                    resp = call_client.chat.completions.create(
+                        **extra_timeout,
+                        model=chosen,
+                        **token_param,
+                        **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
+                        response_format=({"type": "json_schema", "json_schema": {
+                            "name": "structured_result", "strict": True, "schema": json_schema,
+                        }} if json_schema is not None else {"type": "json_object"}),
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user",   "content": user},
+                        ],
+                    )
+                    call_resp = resp
+                    call_ok = True
+                finally:
+                    if timer is not None:
+                        timer.record_call(
+                            caller=caller, model=chosen, effort=reasoning_effort,
+                            slot_wait_ms=(t_call - t_wait) * 1000,
+                            provider_ms=(time.perf_counter() - t_call) * 1000, ok=call_ok,
+                            **(_usage_kwargs(call_resp) if call_ok else {}),
+                        )
+            break
+        except Exception as exc:
+            if getattr(exc, "status_code", None) != 429 or attempt == 5:
+                raise
+            delay = min(8.0, 1.5 * (attempt + 1))
+            log.warning(
+                "structured_json_rate_limited model=%s attempt=%s delay=%.2f",
+                chosen, attempt + 1, delay,
+            )
+            time.sleep(delay)
+    if resp is None:
+        raise RuntimeError("structured JSON generation returned no response")
+    record_usage(feature=_caller_feature(), model=chosen, **usage_from_response(resp))
     choice = resp.choices[0] if resp.choices else None
     text = (choice.message.content if choice and choice.message else "") or ""
-    parsed = _parse_json_lenient(text)
+    try:
+        parsed = _parse_json_lenient(text)
+    except ValueError:
+        # Likely truncated at max_tokens. If the caller named a salvage key,
+        # recover its (possibly partial) string value instead of failing.
+        if salvage_key:
+            salvaged = _salvage_string_value(text, salvage_key)
+            if salvaged:
+                parsed = {salvage_key: salvaged}
+            else:
+                raise
+        else:
+            raise
     return LlmResult(
         data=parsed,
         model=chosen,
         prompt_tokens=resp.usage.prompt_tokens if resp.usage else None,
         completion_tokens=resp.usage.completion_tokens if resp.usage else None,
+        reasoning_tokens=reasoning_tokens_from_response(resp),
     )

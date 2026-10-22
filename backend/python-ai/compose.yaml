@@ -1,0 +1,71 @@
+name: minallo-ai
+
+services:
+  api:
+    image: minallo-ai:${DEPLOY_TAG:-local}
+    build:
+      context: .
+      args:
+        MINALLO_REVISION: ${MINALLO_REVISION:-unknown}
+    env_file:
+      - .env
+    environment:
+      # Start conservatively on a 4 GB host; raise only after observing OCR RAM.
+      INDEXING_MAX_CONCURRENCY: ${INDEXING_MAX_CONCURRENCY:-1}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 150s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    ports:
+      # Optional host-local diagnostics; never exposed on the public interface.
+      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
+    networks:
+      - private
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 3200M
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      AI_DOMAIN: ${AI_DOMAIN:?Set AI_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  private:
+
+volumes:
+  caddy_data:
+  caddy_config:

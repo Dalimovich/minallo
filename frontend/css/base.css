@@ -1,3 +1,12 @@
+/* Global stacking layers. This is the ONE place overlay bands are defined.
+   Modals and notifications are body-level roots, so they compete only with each other:
+   drawer/popover < modal (backdrop + dialog share one root) < notification (toast).
+   Components reference these tokens instead of inventing z-index values. */
+:root {
+  --layer-drawer: 9000;
+  --layer-modal: 12000;
+  --layer-notification: 20000;
+}
 *,
 *::before,
 *::after {
@@ -49,15 +58,17 @@
   --card: #fff;
   --text: #2d2d2d;
   --muted: #888;
-  --sb-w: 240px;
+  --sb-w: 200px;
   --sb-collapsed: 58px;
   --ai-w: 340px;
   --topbar-h: 54px;
   --shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
   --border: #dbeafe;
-  --dp-bg: linear-gradient(135deg, #eff6ff 0%, #f8fafc 48%, #e0f2fe 100%);
-  --dp-solid: #eff6ff;
+  --minallo-page-bg: #f8fafc;
+  --dp-bg: var(--minallo-page-bg);
+  --dp-solid: var(--minallo-page-bg);
   --dp-modal: linear-gradient(135deg, #ffffff, #eff6ff);
+  --app-bg: var(--minallo-page-bg);
   /* adaptive semantic tokens */
   --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-border: rgba(37, 99, 235, 0.2);

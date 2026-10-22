@@ -36,6 +36,42 @@ function _ufKey(course) {
   return (course.id || course.short || course.name).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// Long-lived tabs burn through the 1-hour Supabase JWT; calls that read
+// _sbToken directly (upload/list/fetch-bytes) then 403 with "exp claim
+// timestamp check failed". restoreSession refreshes at boot but not later,
+// so we re-check here right before any authed storage call.
+async function _ufEnsureFreshToken() {
+  if (window._sbSessionReady) {
+    // 5s timeout: _sbSessionReady wraps _sb.auth.refreshSession() / getUser()
+    // which have no built-in timeout. If those Supabase SDK calls hang
+    // (slow auth endpoint, degraded network), every storage operation
+    // queues behind them indefinitely — and worse, their in-flight HTTP
+    // requests occupy connection-pool slots so ai.js never gets to load.
+    // Race the await against a timeout so we proceed with whatever token
+    // we have rather than block the entire app forever.
+    try {
+      await Promise.race([
+        window._sbSessionReady,
+        new Promise(function (_resolve, reject) {
+          setTimeout(function () { reject(new Error('sbSessionReady timeout')); }, 5000);
+        })
+      ]);
+    } catch (e) {}
+  }
+  if (typeof _jwtAliveEnough === 'function' && _sbToken && !_jwtAliveEnough(_sbToken)) {
+    // Same problem here — refreshSession is the same SDK call with no
+    // built-in timeout. Race it too.
+    try {
+      await Promise.race([
+        _sb.auth.refreshSession(),
+        new Promise(function (_resolve, reject) {
+          setTimeout(function () { reject(new Error('refreshSession timeout')); }, 5000);
+        })
+      ]);
+    } catch (e) {}
+  }
+}
+
 function _ssFileExt(name) {
   var lower = String(name || '').toLowerCase();
   var idx = lower.lastIndexOf('.');
@@ -107,6 +143,28 @@ function _ufEncodeStoragePath(path) {
     .join('/');
 }
 
+function _ufFetchJsonWithTimeout(url, options, timeoutMs) {
+  var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  var timer = ctrl
+    ? setTimeout(function () {
+        ctrl.abort();
+      }, timeoutMs || 10000)
+    : null;
+  return fetch(url, Object.assign({}, options || {}, { signal: ctrl ? ctrl.signal : undefined }))
+    .then(function (r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) return null;
+      return r.json().catch(function () {
+        return null;
+      });
+    })
+    .catch(function (err) {
+      if (timer) clearTimeout(timer);
+      console.warn('[storage] list request failed/timed out:', err && (err.name || err.message));
+      return null;
+    });
+}
+
 // ── User folders (persisted in localStorage) ─────────────────────────────
 function _ufFolderKey(uid, course) {
   return 'ss_ufolders_' + uid + '_' + _ufKey(course);
@@ -143,24 +201,30 @@ async function _ufListFolder(uid, course, folder) {
   var fe = encodeURIComponent(folder);
   if (/[^\x00-\x7F]/.test(folder)) fe = fe.replace(/%/g, '%25');
   var prefix = uid + '/' + _ufKey(course) + '/' + fe + '/';
-  var r = await fetch(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
+  var items = await _ufFetchJsonWithTimeout(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
     method: 'POST',
     headers: {
       apikey: SUPA_KEY,
       Authorization: 'Bearer ' + (_sbToken || SUPA_KEY),
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ prefix: prefix, limit: 200, offset: 0 })
-  });
-  if (!r.ok) return [];
-  var items = await r.json();
+    // sortBy is required by current Supabase Storage validation — older
+    // versions accepted just { prefix, limit, offset }, newer ones 400.
+    body: JSON.stringify({
+      prefix: prefix,
+      limit: 200,
+      offset: 0,
+      sortBy: { column: 'name', order: 'asc' }
+    })
+  }, 10000);
   return Array.isArray(items) ? items : [];
 }
 
 // Upload one file with XHR so we get progress events
 // onProgress(pct 0-100) is called as data uploads
-function _ufUpload(uid, course, file, onProgress, folder) {
+async function _ufUpload(uid, course, file, onProgress, folder) {
   _ssValidateUploadFile(file);
+  await _ufEnsureFreshToken();
   return new Promise(function (resolve, reject) {
     var path = _ufStoragePath(uid, course, file.name, folder || null);
     var url = SUPA_URL + '/storage/v1/object/' + _UF_BUCKET + '/' + path;
@@ -194,28 +258,54 @@ async function _ufList(uid, course) {
   // Wait for session restore so the request uses the real token, not anon.
   // Without this, prewarm-on-boot lists with SUPA_KEY → empty results → cards
   // show 0 files until the user reopens the course.
-  if (window._sbSessionReady) await window._sbSessionReady;
+  await _ufEnsureFreshToken();
 
   var prefix = uid + '/' + _ufKey(course) + '/';
-  var r = await fetch(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
+  var items = await _ufFetchJsonWithTimeout(SUPA_URL + '/storage/v1/object/list/' + _UF_BUCKET, {
     method: 'POST',
     headers: {
       apikey: SUPA_KEY,
       Authorization: 'Bearer ' + (_sbToken || SUPA_KEY),
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ prefix: prefix, limit: 200, offset: 0 })
-  });
-  if (!r.ok) return [];
-  var items = await r.json();
-  return Array.isArray(items) ? items : [];
+    // sortBy is required by current Supabase Storage validation — older
+    // versions accepted just { prefix, limit, offset }, newer ones 400.
+    body: JSON.stringify({
+      prefix: prefix,
+      limit: 200,
+      offset: 0,
+      sortBy: { column: 'name', order: 'asc' }
+    })
+  }, 10000);
+  if (!Array.isArray(items)) return null;
+  return items;
 }
 
-// Fetch an uploaded file's bytes directly using the authenticated endpoint
+// Fetch an uploaded file's bytes directly using the authenticated endpoint.
+// Public entry — wraps the multi-fallback impl in a hard 45s overall cap so
+// the cascade of (3 endpoints + signed URL) × (4 name fallbacks) can never
+// keep the PDF viewer's "Loading…" overlay open forever. Each per-request
+// timeout inside is shorter; this is the last-line safety against the worst
+// total elapsed time.
 async function _ufFetchBytes(uid, course, name, folder) {
+  var overallTimeout = new Promise(function (_resolve, reject) {
+    setTimeout(function () { reject(new Error('_ufFetchBytes overall timeout')); }, 45000);
+  });
+  try {
+    return await Promise.race([_ufFetchBytesImpl(uid, course, name, folder), overallTimeout]);
+  } catch (e) {
+    if (e && e.message === '_ufFetchBytes overall timeout') {
+      console.warn('[storage] _ufFetchBytes timed out after 45s for', name);
+    }
+    return null;
+  }
+}
+
+async function _ufFetchBytesImpl(uid, course, name, folder) {
   // Wait for session restore to finish (fixes race on page refresh where restoreState
-  // calls openFile before restoreSession has set _sbToken)
-  if (window._sbSessionReady) await window._sbSessionReady;
+  // calls openFile before restoreSession has set _sbToken) and refresh the JWT
+  // if it has expired during a long-lived tab.
+  await _ufEnsureFreshToken();
 
   var courseKey = _ufKey(course);
   var token = _sbToken || SUPA_KEY;
@@ -383,14 +473,73 @@ async function _ufDeleteRemote(uid, course, name, folder, storageName) {
 // firing a duplicate Supabase storage list.
 var _ufMergeInFlight = {};
 
+function _ufCloneMergedFile(f, course, folder) {
+  var copy = Object.assign({}, f);
+  copy._course = course;
+  if (folder) copy._folder = folder;
+  else delete copy._folder;
+  return copy;
+}
+
+function _ufCopyMergedState(fromCourse, toCourse) {
+  if (!fromCourse || !toCourse || fromCourse === toCourse) return;
+  var localFiles = (toCourse.files || []).filter(function (f) {
+    return !f._uploaded;
+  });
+  var uploadedRoot = (fromCourse.files || []).filter(function (f) {
+    return f._uploaded && !f._folder;
+  }).map(function (f) {
+    return _ufCloneMergedFile(f, toCourse, null);
+  });
+  toCourse.files = localFiles.concat(uploadedRoot);
+  if (Array.isArray(fromCourse.userFolders)) {
+    toCourse.userFolders = fromCourse.userFolders.map(function (fd) {
+      return {
+        name: fd.name,
+        files: (fd.files || []).map(function (f) {
+          return _ufCloneMergedFile(f, toCourse, fd.name);
+        })
+      };
+    });
+  }
+  toCourse._filesLoading = false;
+}
+
 // Merge remote file list into course.files + course.userFolders (called on openCourse)
 function _ufMerge(course) {
   if (!course || !course.id) return Promise.resolve();
-  if (_ufMergeInFlight[course.id]) return _ufMergeInFlight[course.id];
+  var inFlight = _ufMergeInFlight[course.id];
+  if (inFlight) {
+    if (inFlight.course === course) return inFlight.promise;
+    var copyRootBeforeViewRenders = function (ev) {
+      var detail = ev && ev.detail;
+      if (!detail || detail.courseId !== course.id) return;
+      _ufCopyMergedState(inFlight.course, course);
+      window.removeEventListener('uf-merge-root-done', copyRootBeforeViewRenders, true);
+    };
+    window.addEventListener('uf-merge-root-done', copyRootBeforeViewRenders, true);
+    if (
+      (inFlight.course.files || []).some(function (f) { return f._uploaded; }) ||
+      (inFlight.course.userFolders || []).some(function (fd) { return fd.files && fd.files.length; })
+    ) {
+      _ufCopyMergedState(inFlight.course, course);
+      setTimeout(function () {
+        try {
+          window.dispatchEvent(new CustomEvent('uf-merge-root-done', {
+            detail: { courseId: course.id, course: course }
+          }));
+        } catch (e) {}
+      }, 0);
+    }
+    return inFlight.promise.then(function () {
+      window.removeEventListener('uf-merge-root-done', copyRootBeforeViewRenders, true);
+      _ufCopyMergedState(inFlight.course, course);
+    });
+  }
   var p = _ufMergeImpl(course).finally(function () {
     delete _ufMergeInFlight[course.id];
   });
-  _ufMergeInFlight[course.id] = p;
+  _ufMergeInFlight[course.id] = { promise: p, course: course };
   return p;
 }
 
@@ -419,12 +568,15 @@ async function _ufMergeImpl(course) {
       : '';
     return { name: displayName, storageName: fname, size: size, date: date };
   }
+  // Root listing — files have an id, folder entries have id: null.
+  // Fetch BEFORE clearing cached files: if the listing fails (null), keep
+  // whatever the user already has so files don't vanish on transient errors.
+  var items = await _ufList(uid, course);
+  if (items === null) return;
   // Clear previously uploaded files so stale entries don't persist after moves/deletes
   course.files = (course.files || []).filter(function (f) {
     return !f._uploaded;
   });
-  // Root listing — files have an id, folder entries have id: null
-  var items = await _ufList(uid, course);
   var discoveredFolders = [];
   items.forEach(function (item) {
     if (!item.id && item.name && !item.name.endsWith('/')) {
@@ -470,16 +622,24 @@ async function _ufMergeImpl(course) {
   });
   if (allFolders.length !== savedFolders.length) _ufSaveFolders(uid, course, allFolders);
 
-  // Fan out folder listings in parallel — N folders previously cost N round-trips
-  // serialized, which dominated open latency on courses with many folders.
-  var folderResults = await Promise.all(
-    allFolders.map(function (folderName) {
-      return _ufListFolder(uid, course, folderName).then(
-        function (folderItems) { return { name: folderName, items: folderItems }; },
-        function () { return { name: folderName, items: [] }; }
-      );
-    })
-  );
+  // Limit folder-list fanout. Fully parallel folder listing made refreshes feel
+  // frozen on accounts with many folders because each course merge could start
+  // a burst of Supabase requests while the UI was still settling.
+  var folderResults = [];
+  var folderCursor = 0;
+  function _nextFolder() {
+    if (folderCursor >= allFolders.length) return Promise.resolve();
+    var folderName = allFolders[folderCursor++];
+    return _ufListFolder(uid, course, folderName)
+      .then(
+        function (folderItems) { folderResults.push({ name: folderName, items: folderItems }); },
+        function () { folderResults.push({ name: folderName, items: [] }); }
+      )
+      .then(_nextFolder);
+  }
+  var folderLanes = [];
+  for (var fi = 0; fi < Math.min(2, allFolders.length); fi++) folderLanes.push(_nextFolder());
+  await Promise.all(folderLanes);
   course.userFolders = folderResults.map(function (fr) {
     var folderFiles = [];
     fr.items.forEach(function (item) {
@@ -582,7 +742,7 @@ function _ssClearRestoredFileState(course, message) {
     );
     _ssReplaceHistory(
       { view: 'course', courseId: course.id, section: 'files' },
-      '#course=' + encodeURIComponent(course.id || '')
+      '#portal=courses&course=' + encodeURIComponent(course.id || '') + '&section=files'
     );
   } catch (e) {}
   if (message && typeof showToast === 'function') showToast('File not reopened', message);
@@ -631,4 +791,29 @@ async function _ufMoveFile(uid, course, fname, fromFolder, toFolder) {
   });
   if (!r.ok) throw new Error('Copy failed: ' + r.status);
   await _ufDeleteRemote(uid, course, fname, fromFolder || null);
+}
+
+// Rename a folder. The cross-device source of truth for folder names is the
+// Supabase storage path prefix (_ufMerge derives the folder list from it), so
+// we move every file in the folder from the old prefix to the new one. The
+// localStorage folder list is updated too so empty folders (no storage objects
+// yet) also rename. File open/download builds paths from the live folder name,
+// so it keeps working after the rename.
+async function _ufRenameFolder(uid, course, oldName, newName) {
+  oldName = (oldName || '').trim();
+  newName = (newName || '').trim();
+  if (!uid || !oldName || !newName || oldName === newName) return;
+  var fd = (course.userFolders || []).find(function (x) {
+    return x.name === oldName;
+  });
+  var files = fd ? fd.files || [] : [];
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    await _ufMoveFileTo(uid, course, course, f.name, oldName, newName, f._storageName || null);
+  }
+  var list = _ufGetFolders(uid, course).map(function (n) {
+    return n === oldName ? newName : n;
+  });
+  if (list.indexOf(newName) === -1) list.push(newName);
+  _ufSaveFolders(uid, course, list);
 }

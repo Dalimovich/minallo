@@ -1,0 +1,90 @@
+[
+  {
+    "part": {
+      "id": "schreiben_1",
+      "taskType": "argumentative_essay",
+      "constraints": {
+        "wordCountMin": 200,
+        "requiredSourceKinds": [],
+        "practiceTimeLimitSeconds": 1800,
+        "sourcePages": [
+          25
+        ]
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "source_fidelity",
+        "coherence",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": []
+    }
+  },
+  {
+    "part": {
+      "id": "schreiben_2",
+      "taskType": "text_graph_summary",
+      "constraints": {
+        "wordCountMinApprox": 100,
+        "wordCountMaxApprox": 150,
+        "requiredSourceKinds": [
+          "text",
+          "graphic"
+        ],
+        "practiceTimeLimitSeconds": 1800,
+        "sourcePages": [
+          26,
+          27
+        ]
+      },
+      "gradingDimensions": [
+        "task_fulfilment",
+        "source_fidelity",
+        "coherence",
+        "linguistic_range",
+        "comprehensibility"
+      ]
+    },
+    "content": {
+      "schemaVersion": "productive-task-v1",
+      "id": "fixture-task",
+      "prompt": "Begr?nden Sie Ihre Position anhand der Materialien.",
+      "sources": [
+        {
+          "id": "s0",
+          "kind": "text",
+          "text": "Die Bibliothek hat heute zwanzig Besucher."
+        },
+        {
+          "id": "s1",
+          "kind": "graphic",
+          "graphic": {
+            "title": "Besuche",
+            "unit": "Personen",
+            "columns": [
+              {
+                "id": "a",
+                "label": "Heute"
+              }
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "label": "Bibliothek",
+                "values": {
+                  "a": 20
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+]

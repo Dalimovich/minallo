@@ -1,0 +1,962 @@
+{
+  "profileId": "testdaf_digital",
+  "partId": "lesen_3",
+  "attempts": [
+    {
+      "stage": "generation_or_deterministic_repair",
+      "data": {
+        "text": {
+          "title": "Wie Städte die Kühlwirkung von Grünflächen sinnvoll bewerten können",
+          "paragraphs": [
+            {
+              "paragraphId": "p1",
+              "text": "An heißen Sommertagen gilt der Park oft als selbstverständlich angenehmer als die umliegende Straße. Doch die Frage, wie stark eine städtische Grünfläche tatsächlich kühlt, ist schwieriger, als sie auf den ersten Blick wirkt. Eine Wiese, eine Baumreihe oder ein Innenhofgarten kann die Lufttemperatur senken, die gefühlte Wärme reduzieren oder einfach nur einen kurzfristigen Schatteneffekt erzeugen. Für die Planung ist deshalb nicht nur entscheidend, ob ein Ort grün aussieht, sondern wie seine Wirkung gemessen wird. Genau an dieser Stelle beginnt die Debatte: Soll man die Temperatur direkt vergleichen, den Komfort der Menschen erfassen oder die Wirkung über längere Zeiträume bewerten?"
+            },
+            {
+              "paragraphId": "p2",
+              "text": "In der Forschung wurden lange vor allem Lufttemperaturen an festen Messpunkten verglichen. Dieses Verfahren hat jedoch einen Haken: Es zeigt zwar Unterschiede zwischen einem Platz mit wenig Vegetation und einem schattigen Bereich, aber es erklärt kaum, warum diese Unterschiede entstehen. Außerdem reagieren Sensoren sehr empfindlich auf Wind, Sonneneinstrahlung und den genauen Standort. Ein Messpunkt unter einem Baum liefert daher nicht automatisch ein Bild für den gesamten Park. Wer nur solche Einzelwerte betrachtet, kann leicht überschätzen, wie einheitlich eine Grünfläche wirkt. Für Städte, die ihre Maßnahmen planen wollen, ist das ein Problem, weil sie dann vielleicht an der falschen Stelle investieren."
+            },
+            {
+              "paragraphId": "p3",
+              "text": "Deshalb setzen neuere Ansätze auf mehrere Indikatoren zugleich. Dazu gehören nicht nur die Lufttemperatur, sondern auch Oberflächentemperaturen, Luftfeuchtigkeit, Strahlungsbedingungen und manchmal sogar Befragungen zum subjektiven Wärmeempfinden. Der Vorteil liegt darin, dass die Kühlwirkung nicht nur als Zahl erscheint, sondern als Zusammenspiel verschiedener Faktoren. Eine Baumgruppe kann beispielsweise die direkte Sonneneinstrahlung deutlich verringern, obwohl die Lufttemperatur im Schatten nur wenig anders ist als ein paar Meter weiter. Für Passanten kann der Unterschied trotzdem erheblich sein. Gerade in dicht bebauten Vierteln zeigt sich so, dass Messungen, die nur auf einem einzigen Wert beruhen, die tatsächliche Nutzungserfahrung oft verfehlen."
+            },
+            {
+              "paragraphId": "p4",
+              "text": "Allerdings reicht auch ein komplexer Messapparat nicht aus, wenn man die räumliche Verteilung ignoriert. Grünflächen wirken nicht überall gleich: Ein offen gestalteter Platz mit einigen Bäumen kühlt anders als ein dichter Stadtpark mit Wasserfläche, und beide unterscheiden sich wiederum von begrünten Straßenräumen. Hinzu kommt, dass ihre Wirkung mit der Tageszeit wechselt. Mittags kann Schatten besonders wichtig sein, während am Abend gespeicherte Wärme aus Boden und Fassaden stärker ins Gewicht fällt. Wer nur einen einzigen Zeitpunkt untersucht, bekommt daher leicht ein verzerrtes Bild. Das erklärt, weshalb manche Projekte trotz guter Einzelwerte im Alltag enttäuschende Ergebnisse liefern."
+            },
+            {
+              "paragraphId": "p5",
+              "text": "Aus diesen Gründen plädieren viele Fachleute dafür, Kühlwirkung nicht als isolierte Eigenschaft zu behandeln, sondern als Beziehung zwischen Ort, Wetterlage und Nutzung. Ein kleiner Platz kann an einem windstillen Tag in einer verdichteten Innenstadt sehr wertvoll sein, obwohl er in einer Gesamtstatistik kaum auffällt. Umgekehrt kann eine große Grünanlage mit schwacher Zugänglichkeit für Anwohner wenig bringen, wenn sie weit entfernt liegt oder nur selten genutzt wird. Die Bewertung sollte deshalb auch die Frage einschließen, für wen eine Fläche kühlend wirkt und unter welchen Bedingungen. Gerade dieser Perspektivwechsel hilft, Investitionen realistischer zu priorisieren."
+            },
+            {
+              "paragraphId": "p6",
+              "text": "Am Ende spricht vieles für ein mehrschichtiges Bewertungsverfahren: objektive Messungen, räumliche Vergleiche und Hinweise zur tatsächlichen Nutzung sollten zusammengeführt werden. Solche Verfahren machen die Kühlleistung nicht einfacher, aber verlässlicher. Für die Stadtplanung ist das wichtig, weil sich aus einer präziseren Bewertung auch klügere Entscheidungen ableiten lassen: Wo braucht es zusätzlichen Baumbestand? Wo genügt Verschattung? Und wo ist eine Grünfläche vor allem aus sozialen Gründen sinnvoll, obwohl ihr unmittelbarer Kühleffekt begrenzt ist? Die eigentliche Botschaft lautet daher nicht, dass Grün immer gleich stark kühlt, sondern dass gute Planung nur auf einer differenzierten Bewertung aufbauen kann."
+            }
+          ]
+        },
+        "questions": [
+          {
+            "questionId": "q1",
+            "skillTags": [
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Worin liegt nach dem ersten Abschnitt das grundlegende Problem der Bewertung städtischer Grünflächen?",
+              "options": [
+                "Man muss zwischen äußerer Wirkung und messbarer Kühlung unterscheiden.",
+                "Man kann die Temperatur nur in großen Parks zuverlässig erfassen.",
+                "Man darf bei Grünflächen keine technischen Messungen verwenden.",
+                "Man sollte die Planung ausschließlich nach dem Aussehen eines Ortes richten."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1"
+              ]
+            }
+          },
+          {
+            "questionId": "q2",
+            "skillTags": [
+              "argument_structure",
+              "paraphrase_mapping"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Aussage beschreibt den zweiten Abschnitt am treffendsten?",
+              "options": [
+                "Einzelmessungen können Unterschiede zeigen, erklären aber die Ursachen nur unzureichend.",
+                "Messpunkte unter Bäumen liefern grundsätzlich verlässliche Werte für ganze Parks.",
+                "Wind und Sonne beeinflussen die Temperaturmessung kaum, wenn der Standort passend gewählt ist.",
+                "Für städtische Planung sind Lufttemperaturen allein meist schon ausreichend."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p2"
+              ]
+            }
+          },
+          {
+            "questionId": "q3",
+            "skillTags": [
+              "inference",
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was lässt sich aus dem dritten Abschnitt folgern?",
+              "options": [
+                "Eine geringere Lufttemperatur ist nicht immer nötig, damit Menschen eine Fläche als angenehm erleben.",
+                "Subjektive Befragungen ersetzen alle technischen Messungen vollständig.",
+                "Baumgruppen wirken nur dann, wenn die Lufttemperatur deutlich sinkt.",
+                "Oberflächentemperaturen sind für die Kühlwirkung weniger relevant als Schatten."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p3"
+              ]
+            }
+          },
+          {
+            "questionId": "q4",
+            "skillTags": [
+              "text_structure",
+              "inference"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Wozu dient das Beispiel im vierten Abschnitt vor allem?",
+              "options": [
+                "Es zeigt, dass Kühlwirkung je nach Ort und Tageszeit sehr unterschiedlich ausfallen kann.",
+                "Es belegt, dass Wasserflächen grundsätzlich stärker kühlen als Bäume.",
+                "Es verdeutlicht, dass offene Plätze für jede Stadt die beste Lösung sind.",
+                "Es erklärt, dass Messungen am Abend grundsätzlich unbrauchbar sind."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p4"
+              ]
+            }
+          },
+          {
+            "questionId": "q5",
+            "skillTags": [
+              "paraphrase_mapping",
+              "author_intention"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Welche Formulierung gibt die Position des Autors im fünften Abschnitt am besten wieder?",
+              "options": [
+                "Die Wirkung von Grünflächen sollte immer im Zusammenhang mit Nutzung und Umfeld beurteilt werden.",
+                "Die Größe einer Grünfläche ist wichtiger als ihre Lage oder Erreichbarkeit.",
+                "Nur Orte mit hoher Nutzungsfrequenz verdienen eine Untersuchung ihrer Kühlleistung.",
+                "Die Bewertung sollte sich vor allem auf statistisch große Flächen konzentrieren."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p5"
+              ]
+            }
+          },
+          {
+            "questionId": "q6",
+            "skillTags": [
+              "argument_structure",
+              "detail_comprehension"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was fordert der letzte Abschnitt für die Praxis der Stadtplanung?",
+              "options": [
+                "Mehrere Arten von Informationen sollen gemeinsam ausgewertet werden.",
+                "Nur direkte Temperaturmessungen sollen künftig verwendet werden.",
+                "Grünflächen sollen vor allem nach ihrem ästhetischen Eindruck bewertet werden.",
+                "Soziale Gründe sollen grundsätzlich über jede Messung gestellt werden."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p6"
+              ]
+            }
+          },
+          {
+            "questionId": "q7",
+            "skillTags": [
+              "author_intention",
+              "text_structure"
+            ],
+            "difficulty": "c1",
+            "mc3": {
+              "stem": "Was ist die hauptsächliche kommunikative Absicht des gesamten Textes?",
+              "options": [
+                "Er will zeigen, warum eine differenzierte Bewertung der Kühlwirkung für Städte nötig ist.",
+                "Er will beweisen, dass Parks immer die wirksamste Form der Abkühlung darstellen.",
+                "Er will vor allem neue Messgeräte für die Klimaforschung vorstellen.",
+                "Er will die gesundheitlichen Folgen von Hitze in Großstädten ausführlich beschreiben."
+              ],
+              "correctIndex": 0,
+              "evidenceParagraphIds": [
+                "p1",
+                "p2",
+                "p3",
+                "p4",
+                "p5",
+                "p6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": true,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "implausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          }
+        ]
+      }
+    },
+    {
+      "stage": "semantic_repair",
+      "data": {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Worin liegt nach dem ersten Abschnitt das grundlegende Problem der Bewertung städtischer Grünflächen?",
+          "options": [
+            "Man sollte die Planung ausschließlich nach dem Aussehen eines Ortes richten.",
+            "Man kann die Kühlwirkung nicht allein am äußeren Eindruck erkennen.",
+            "Man darf bei Grünflächen keine technischen Messungen verwenden.",
+            "Man muss zwischen äußerer Wirkung und messbarer Kühlung unterscheiden."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      }
+    },
+    {
+      "stage": "semantic_verification",
+      "data": {
+        "passed": true,
+        "partWideIssues": [],
+        "items": [
+          {
+            "questionId": "q1",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q2",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q3",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q4",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q5",
+            "audit": {
+              "optionVerdicts": [
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q6",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          },
+          {
+            "questionId": "q7",
+            "audit": {
+              "optionVerdicts": [
+                "plausible_wrong",
+                "supported",
+                "plausible_wrong",
+                "plausible_wrong"
+              ]
+            },
+            "passed": true,
+            "issues": []
+          }
+        ]
+      }
+    }
+  ],
+  "status": "pass",
+  "content": {
+    "text": {
+      "title": "Wie Städte die Kühlwirkung von Grünflächen sinnvoll bewerten können",
+      "paragraphs": [
+        {
+          "paragraphId": "p1",
+          "text": "An heißen Sommertagen gilt der Park oft als selbstverständlich angenehmer als die umliegende Straße. Doch die Frage, wie stark eine städtische Grünfläche tatsächlich kühlt, ist schwieriger, als sie auf den ersten Blick wirkt. Eine Wiese, eine Baumreihe oder ein Innenhofgarten kann die Lufttemperatur senken, die gefühlte Wärme reduzieren oder einfach nur einen kurzfristigen Schatteneffekt erzeugen. Für die Planung ist deshalb nicht nur entscheidend, ob ein Ort grün aussieht, sondern wie seine Wirkung gemessen wird. Genau an dieser Stelle beginnt die Debatte: Soll man die Temperatur direkt vergleichen, den Komfort der Menschen erfassen oder die Wirkung über längere Zeiträume bewerten?"
+        },
+        {
+          "paragraphId": "p2",
+          "text": "In der Forschung wurden lange vor allem Lufttemperaturen an festen Messpunkten verglichen. Dieses Verfahren hat jedoch einen Haken: Es zeigt zwar Unterschiede zwischen einem Platz mit wenig Vegetation und einem schattigen Bereich, aber es erklärt kaum, warum diese Unterschiede entstehen. Außerdem reagieren Sensoren sehr empfindlich auf Wind, Sonneneinstrahlung und den genauen Standort. Ein Messpunkt unter einem Baum liefert daher nicht automatisch ein Bild für den gesamten Park. Wer nur solche Einzelwerte betrachtet, kann leicht überschätzen, wie einheitlich eine Grünfläche wirkt. Für Städte, die ihre Maßnahmen planen wollen, ist das ein Problem, weil sie dann vielleicht an der falschen Stelle investieren."
+        },
+        {
+          "paragraphId": "p3",
+          "text": "Deshalb setzen neuere Ansätze auf mehrere Indikatoren zugleich. Dazu gehören nicht nur die Lufttemperatur, sondern auch Oberflächentemperaturen, Luftfeuchtigkeit, Strahlungsbedingungen und manchmal sogar Befragungen zum subjektiven Wärmeempfinden. Der Vorteil liegt darin, dass die Kühlwirkung nicht nur als Zahl erscheint, sondern als Zusammenspiel verschiedener Faktoren. Eine Baumgruppe kann beispielsweise die direkte Sonneneinstrahlung deutlich verringern, obwohl die Lufttemperatur im Schatten nur wenig anders ist als ein paar Meter weiter. Für Passanten kann der Unterschied trotzdem erheblich sein. Gerade in dicht bebauten Vierteln zeigt sich so, dass Messungen, die nur auf einem einzigen Wert beruhen, die tatsächliche Nutzungserfahrung oft verfehlen."
+        },
+        {
+          "paragraphId": "p4",
+          "text": "Allerdings reicht auch ein komplexer Messapparat nicht aus, wenn man die räumliche Verteilung ignoriert. Grünflächen wirken nicht überall gleich: Ein offen gestalteter Platz mit einigen Bäumen kühlt anders als ein dichter Stadtpark mit Wasserfläche, und beide unterscheiden sich wiederum von begrünten Straßenräumen. Hinzu kommt, dass ihre Wirkung mit der Tageszeit wechselt. Mittags kann Schatten besonders wichtig sein, während am Abend gespeicherte Wärme aus Boden und Fassaden stärker ins Gewicht fällt. Wer nur einen einzigen Zeitpunkt untersucht, bekommt daher leicht ein verzerrtes Bild. Das erklärt, weshalb manche Projekte trotz guter Einzelwerte im Alltag enttäuschende Ergebnisse liefern."
+        },
+        {
+          "paragraphId": "p5",
+          "text": "Aus diesen Gründen plädieren viele Fachleute dafür, Kühlwirkung nicht als isolierte Eigenschaft zu behandeln, sondern als Beziehung zwischen Ort, Wetterlage und Nutzung. Ein kleiner Platz kann an einem windstillen Tag in einer verdichteten Innenstadt sehr wertvoll sein, obwohl er in einer Gesamtstatistik kaum auffällt. Umgekehrt kann eine große Grünanlage mit schwacher Zugänglichkeit für Anwohner wenig bringen, wenn sie weit entfernt liegt oder nur selten genutzt wird. Die Bewertung sollte deshalb auch die Frage einschließen, für wen eine Fläche kühlend wirkt und unter welchen Bedingungen. Gerade dieser Perspektivwechsel hilft, Investitionen realistischer zu priorisieren."
+        },
+        {
+          "paragraphId": "p6",
+          "text": "Am Ende spricht vieles für ein mehrschichtiges Bewertungsverfahren: objektive Messungen, räumliche Vergleiche und Hinweise zur tatsächlichen Nutzung sollten zusammengeführt werden. Solche Verfahren machen die Kühlleistung nicht einfacher, aber verlässlicher. Für die Stadtplanung ist das wichtig, weil sich aus einer präziseren Bewertung auch klügere Entscheidungen ableiten lassen: Wo braucht es zusätzlichen Baumbestand? Wo genügt Verschattung? Und wo ist eine Grünfläche vor allem aus sozialen Gründen sinnvoll, obwohl ihr unmittelbarer Kühleffekt begrenzt ist? Die eigentliche Botschaft lautet daher nicht, dass Grün immer gleich stark kühlt, sondern dass gute Planung nur auf einer differenzierten Bewertung aufbauen kann."
+        }
+      ]
+    },
+    "questions": [
+      {
+        "questionId": "q1",
+        "skillTags": [
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Worin liegt nach dem ersten Abschnitt das grundlegende Problem der Bewertung städtischer Grünflächen?",
+          "options": [
+            "Man sollte die Planung ausschließlich nach dem Aussehen eines Ortes richten.",
+            "Man muss zwischen äußerer Wirkung und messbarer Kühlung unterscheiden.",
+            "Man darf bei Grünflächen keine technischen Messungen verwenden.",
+            "Man kann die Kühlwirkung nicht allein am äußeren Eindruck erkennen."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p1"
+          ]
+        }
+      },
+      {
+        "questionId": "q2",
+        "skillTags": [
+          "argument_structure",
+          "paraphrase_mapping"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Aussage beschreibt den zweiten Abschnitt am treffendsten?",
+          "options": [
+            "Wind und Sonne beeinflussen die Temperaturmessung kaum, wenn der Standort passend gewählt ist.",
+            "Messpunkte unter Bäumen liefern grundsätzlich verlässliche Werte für ganze Parks.",
+            "Einzelmessungen können Unterschiede zeigen, erklären aber die Ursachen nur unzureichend.",
+            "Für städtische Planung sind Lufttemperaturen allein meist schon ausreichend."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p2"
+          ]
+        }
+      },
+      {
+        "questionId": "q3",
+        "skillTags": [
+          "inference",
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was lässt sich aus dem dritten Abschnitt folgern?",
+          "options": [
+            "Eine geringere Lufttemperatur ist nicht immer nötig, damit Menschen eine Fläche als angenehm erleben.",
+            "Subjektive Befragungen ersetzen alle technischen Messungen vollständig.",
+            "Baumgruppen wirken nur dann, wenn die Lufttemperatur deutlich sinkt.",
+            "Oberflächentemperaturen sind für die Kühlwirkung weniger relevant als Schatten."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p3"
+          ]
+        }
+      },
+      {
+        "questionId": "q4",
+        "skillTags": [
+          "text_structure",
+          "inference"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Wozu dient das Beispiel im vierten Abschnitt vor allem?",
+          "options": [
+            "Es verdeutlicht, dass offene Plätze für jede Stadt die beste Lösung sind.",
+            "Es belegt, dass Wasserflächen grundsätzlich stärker kühlen als Bäume.",
+            "Es erklärt, dass Messungen am Abend grundsätzlich unbrauchbar sind.",
+            "Es zeigt, dass Kühlwirkung je nach Ort und Tageszeit sehr unterschiedlich ausfallen kann."
+          ],
+          "correctIndex": 3,
+          "evidenceParagraphIds": [
+            "p4"
+          ]
+        }
+      },
+      {
+        "questionId": "q5",
+        "skillTags": [
+          "paraphrase_mapping",
+          "author_intention"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Welche Formulierung gibt die Position des Autors im fünften Abschnitt am besten wieder?",
+          "options": [
+            "Die Wirkung von Grünflächen sollte immer im Zusammenhang mit Nutzung und Umfeld beurteilt werden.",
+            "Die Größe einer Grünfläche ist wichtiger als ihre Lage oder Erreichbarkeit.",
+            "Nur Orte mit hoher Nutzungsfrequenz verdienen eine Untersuchung ihrer Kühlleistung.",
+            "Die Bewertung sollte sich vor allem auf statistisch große Flächen konzentrieren."
+          ],
+          "correctIndex": 0,
+          "evidenceParagraphIds": [
+            "p5"
+          ]
+        }
+      },
+      {
+        "questionId": "q6",
+        "skillTags": [
+          "argument_structure",
+          "detail_comprehension"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was fordert der letzte Abschnitt für die Praxis der Stadtplanung?",
+          "options": [
+            "Nur direkte Temperaturmessungen sollen künftig verwendet werden.",
+            "Grünflächen sollen vor allem nach ihrem ästhetischen Eindruck bewertet werden.",
+            "Mehrere Arten von Informationen sollen gemeinsam ausgewertet werden.",
+            "Soziale Gründe sollen grundsätzlich über jede Messung gestellt werden."
+          ],
+          "correctIndex": 2,
+          "evidenceParagraphIds": [
+            "p6"
+          ]
+        }
+      },
+      {
+        "questionId": "q7",
+        "skillTags": [
+          "author_intention",
+          "text_structure"
+        ],
+        "difficulty": "c1",
+        "mc3": {
+          "stem": "Was ist die hauptsächliche kommunikative Absicht des gesamten Textes?",
+          "options": [
+            "Er will beweisen, dass Parks immer die wirksamste Form der Abkühlung darstellen.",
+            "Er will zeigen, warum eine differenzierte Bewertung der Kühlwirkung für Städte nötig ist.",
+            "Er will vor allem neue Messgeräte für die Klimaforschung vorstellen.",
+            "Er will die gesundheitlichen Folgen von Hitze in Großstädten ausführlich beschreiben."
+          ],
+          "correctIndex": 1,
+          "evidenceParagraphIds": [
+            "p1",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ]
+        }
+      }
+    ],
+    "presentation": {
+      "numberParagraphs": true,
+      "optionLabels": false,
+      "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+    }
+  },
+  "validation": {
+    "deterministicPassed": true,
+    "deterministicRepairCount": 0,
+    "semantic": {
+      "passed": true,
+      "verificationCount": 2,
+      "repairCount": 1,
+      "issuesResolved": [
+        {
+          "itemId": "q1",
+          "code": "IMPLAUSIBLE_DISTRACTOR"
+        }
+      ],
+      "issueCounts": {
+        "IMPLAUSIBLE_DISTRACTOR": 1
+      },
+      "durationMs": 16864,
+      "regenerationCount": 0
+    }
+  },
+  "envelope": {
+    "schemaVersion": "german-exam-v1",
+    "generationId": "fc1a99a7e19b4fefab88a030f7c44236",
+    "exam": {
+      "family": "TestDaF",
+      "variant": "Digital",
+      "cefrLevel": null,
+      "profileId": "testdaf_digital",
+      "profileVersion": 2
+    },
+    "module": "reading",
+    "part": {
+      "id": "lesen_3",
+      "title": "Multiple-Choice",
+      "taskType": "reading_multiple_choice",
+      "approxDurationSeconds": null
+    },
+    "mode": "adaptive_practice",
+    "topic": {
+      "topicId": "qa_2",
+      "label": "Städtische Grünflächen und die Bewertung ihrer Kühlwirkung"
+    },
+    "adaptation": {
+      "weaknessConfidence": "cold_start",
+      "instructionsApplied": []
+    },
+    "content": {
+      "text": {
+        "title": "Wie Städte die Kühlwirkung von Grünflächen sinnvoll bewerten können",
+        "paragraphs": [
+          {
+            "paragraphId": "p1",
+            "text": "An heißen Sommertagen gilt der Park oft als selbstverständlich angenehmer als die umliegende Straße. Doch die Frage, wie stark eine städtische Grünfläche tatsächlich kühlt, ist schwieriger, als sie auf den ersten Blick wirkt. Eine Wiese, eine Baumreihe oder ein Innenhofgarten kann die Lufttemperatur senken, die gefühlte Wärme reduzieren oder einfach nur einen kurzfristigen Schatteneffekt erzeugen. Für die Planung ist deshalb nicht nur entscheidend, ob ein Ort grün aussieht, sondern wie seine Wirkung gemessen wird. Genau an dieser Stelle beginnt die Debatte: Soll man die Temperatur direkt vergleichen, den Komfort der Menschen erfassen oder die Wirkung über längere Zeiträume bewerten?"
+          },
+          {
+            "paragraphId": "p2",
+            "text": "In der Forschung wurden lange vor allem Lufttemperaturen an festen Messpunkten verglichen. Dieses Verfahren hat jedoch einen Haken: Es zeigt zwar Unterschiede zwischen einem Platz mit wenig Vegetation und einem schattigen Bereich, aber es erklärt kaum, warum diese Unterschiede entstehen. Außerdem reagieren Sensoren sehr empfindlich auf Wind, Sonneneinstrahlung und den genauen Standort. Ein Messpunkt unter einem Baum liefert daher nicht automatisch ein Bild für den gesamten Park. Wer nur solche Einzelwerte betrachtet, kann leicht überschätzen, wie einheitlich eine Grünfläche wirkt. Für Städte, die ihre Maßnahmen planen wollen, ist das ein Problem, weil sie dann vielleicht an der falschen Stelle investieren."
+          },
+          {
+            "paragraphId": "p3",
+            "text": "Deshalb setzen neuere Ansätze auf mehrere Indikatoren zugleich. Dazu gehören nicht nur die Lufttemperatur, sondern auch Oberflächentemperaturen, Luftfeuchtigkeit, Strahlungsbedingungen und manchmal sogar Befragungen zum subjektiven Wärmeempfinden. Der Vorteil liegt darin, dass die Kühlwirkung nicht nur als Zahl erscheint, sondern als Zusammenspiel verschiedener Faktoren. Eine Baumgruppe kann beispielsweise die direkte Sonneneinstrahlung deutlich verringern, obwohl die Lufttemperatur im Schatten nur wenig anders ist als ein paar Meter weiter. Für Passanten kann der Unterschied trotzdem erheblich sein. Gerade in dicht bebauten Vierteln zeigt sich so, dass Messungen, die nur auf einem einzigen Wert beruhen, die tatsächliche Nutzungserfahrung oft verfehlen."
+          },
+          {
+            "paragraphId": "p4",
+            "text": "Allerdings reicht auch ein komplexer Messapparat nicht aus, wenn man die räumliche Verteilung ignoriert. Grünflächen wirken nicht überall gleich: Ein offen gestalteter Platz mit einigen Bäumen kühlt anders als ein dichter Stadtpark mit Wasserfläche, und beide unterscheiden sich wiederum von begrünten Straßenräumen. Hinzu kommt, dass ihre Wirkung mit der Tageszeit wechselt. Mittags kann Schatten besonders wichtig sein, während am Abend gespeicherte Wärme aus Boden und Fassaden stärker ins Gewicht fällt. Wer nur einen einzigen Zeitpunkt untersucht, bekommt daher leicht ein verzerrtes Bild. Das erklärt, weshalb manche Projekte trotz guter Einzelwerte im Alltag enttäuschende Ergebnisse liefern."
+          },
+          {
+            "paragraphId": "p5",
+            "text": "Aus diesen Gründen plädieren viele Fachleute dafür, Kühlwirkung nicht als isolierte Eigenschaft zu behandeln, sondern als Beziehung zwischen Ort, Wetterlage und Nutzung. Ein kleiner Platz kann an einem windstillen Tag in einer verdichteten Innenstadt sehr wertvoll sein, obwohl er in einer Gesamtstatistik kaum auffällt. Umgekehrt kann eine große Grünanlage mit schwacher Zugänglichkeit für Anwohner wenig bringen, wenn sie weit entfernt liegt oder nur selten genutzt wird. Die Bewertung sollte deshalb auch die Frage einschließen, für wen eine Fläche kühlend wirkt und unter welchen Bedingungen. Gerade dieser Perspektivwechsel hilft, Investitionen realistischer zu priorisieren."
+          },
+          {
+            "paragraphId": "p6",
+            "text": "Am Ende spricht vieles für ein mehrschichtiges Bewertungsverfahren: objektive Messungen, räumliche Vergleiche und Hinweise zur tatsächlichen Nutzung sollten zusammengeführt werden. Solche Verfahren machen die Kühlleistung nicht einfacher, aber verlässlicher. Für die Stadtplanung ist das wichtig, weil sich aus einer präziseren Bewertung auch klügere Entscheidungen ableiten lassen: Wo braucht es zusätzlichen Baumbestand? Wo genügt Verschattung? Und wo ist eine Grünfläche vor allem aus sozialen Gründen sinnvoll, obwohl ihr unmittelbarer Kühleffekt begrenzt ist? Die eigentliche Botschaft lautet daher nicht, dass Grün immer gleich stark kühlt, sondern dass gute Planung nur auf einer differenzierten Bewertung aufbauen kann."
+          }
+        ]
+      },
+      "questions": [
+        {
+          "questionId": "q1",
+          "skillTags": [
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Worin liegt nach dem ersten Abschnitt das grundlegende Problem der Bewertung städtischer Grünflächen?",
+            "options": [
+              "Man sollte die Planung ausschließlich nach dem Aussehen eines Ortes richten.",
+              "Man muss zwischen äußerer Wirkung und messbarer Kühlung unterscheiden.",
+              "Man darf bei Grünflächen keine technischen Messungen verwenden.",
+              "Man kann die Kühlwirkung nicht allein am äußeren Eindruck erkennen."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p1"
+            ]
+          }
+        },
+        {
+          "questionId": "q2",
+          "skillTags": [
+            "argument_structure",
+            "paraphrase_mapping"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Aussage beschreibt den zweiten Abschnitt am treffendsten?",
+            "options": [
+              "Wind und Sonne beeinflussen die Temperaturmessung kaum, wenn der Standort passend gewählt ist.",
+              "Messpunkte unter Bäumen liefern grundsätzlich verlässliche Werte für ganze Parks.",
+              "Einzelmessungen können Unterschiede zeigen, erklären aber die Ursachen nur unzureichend.",
+              "Für städtische Planung sind Lufttemperaturen allein meist schon ausreichend."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p2"
+            ]
+          }
+        },
+        {
+          "questionId": "q3",
+          "skillTags": [
+            "inference",
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was lässt sich aus dem dritten Abschnitt folgern?",
+            "options": [
+              "Eine geringere Lufttemperatur ist nicht immer nötig, damit Menschen eine Fläche als angenehm erleben.",
+              "Subjektive Befragungen ersetzen alle technischen Messungen vollständig.",
+              "Baumgruppen wirken nur dann, wenn die Lufttemperatur deutlich sinkt.",
+              "Oberflächentemperaturen sind für die Kühlwirkung weniger relevant als Schatten."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p3"
+            ]
+          }
+        },
+        {
+          "questionId": "q4",
+          "skillTags": [
+            "text_structure",
+            "inference"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Wozu dient das Beispiel im vierten Abschnitt vor allem?",
+            "options": [
+              "Es verdeutlicht, dass offene Plätze für jede Stadt die beste Lösung sind.",
+              "Es belegt, dass Wasserflächen grundsätzlich stärker kühlen als Bäume.",
+              "Es erklärt, dass Messungen am Abend grundsätzlich unbrauchbar sind.",
+              "Es zeigt, dass Kühlwirkung je nach Ort und Tageszeit sehr unterschiedlich ausfallen kann."
+            ],
+            "correctIndex": 3,
+            "evidenceParagraphIds": [
+              "p4"
+            ]
+          }
+        },
+        {
+          "questionId": "q5",
+          "skillTags": [
+            "paraphrase_mapping",
+            "author_intention"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Welche Formulierung gibt die Position des Autors im fünften Abschnitt am besten wieder?",
+            "options": [
+              "Die Wirkung von Grünflächen sollte immer im Zusammenhang mit Nutzung und Umfeld beurteilt werden.",
+              "Die Größe einer Grünfläche ist wichtiger als ihre Lage oder Erreichbarkeit.",
+              "Nur Orte mit hoher Nutzungsfrequenz verdienen eine Untersuchung ihrer Kühlleistung.",
+              "Die Bewertung sollte sich vor allem auf statistisch große Flächen konzentrieren."
+            ],
+            "correctIndex": 0,
+            "evidenceParagraphIds": [
+              "p5"
+            ]
+          }
+        },
+        {
+          "questionId": "q6",
+          "skillTags": [
+            "argument_structure",
+            "detail_comprehension"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was fordert der letzte Abschnitt für die Praxis der Stadtplanung?",
+            "options": [
+              "Nur direkte Temperaturmessungen sollen künftig verwendet werden.",
+              "Grünflächen sollen vor allem nach ihrem ästhetischen Eindruck bewertet werden.",
+              "Mehrere Arten von Informationen sollen gemeinsam ausgewertet werden.",
+              "Soziale Gründe sollen grundsätzlich über jede Messung gestellt werden."
+            ],
+            "correctIndex": 2,
+            "evidenceParagraphIds": [
+              "p6"
+            ]
+          }
+        },
+        {
+          "questionId": "q7",
+          "skillTags": [
+            "author_intention",
+            "text_structure"
+          ],
+          "difficulty": "c1",
+          "mc3": {
+            "stem": "Was ist die hauptsächliche kommunikative Absicht des gesamten Textes?",
+            "options": [
+              "Er will beweisen, dass Parks immer die wirksamste Form der Abkühlung darstellen.",
+              "Er will zeigen, warum eine differenzierte Bewertung der Kühlwirkung für Städte nötig ist.",
+              "Er will vor allem neue Messgeräte für die Klimaforschung vorstellen.",
+              "Er will die gesundheitlichen Folgen von Hitze in Großstädten ausführlich beschreiben."
+            ],
+            "correctIndex": 1,
+            "evidenceParagraphIds": [
+              "p1",
+              "p2",
+              "p3",
+              "p4",
+              "p5",
+              "p6"
+            ]
+          }
+        }
+      ],
+      "presentation": {
+        "numberParagraphs": true,
+        "optionLabels": false,
+        "instructions": "Lesen Sie den Artikel und bearbeiten Sie alle sieben Fragen. W?hlen Sie jeweils eine Antwort. Sie k?nnen Ihre Auswahl bis zur Abgabe ?ndern. ?bungszeit: 15 Minuten."
+      }
+    },
+    "validation": {
+      "deterministicPassed": true,
+      "deterministicRepairCount": 0,
+      "semantic": {
+        "passed": true,
+        "verificationCount": 2,
+        "repairCount": 1,
+        "issuesResolved": [
+          {
+            "itemId": "q1",
+            "code": "IMPLAUSIBLE_DISTRACTOR"
+          }
+        ],
+        "issueCounts": {
+          "IMPLAUSIBLE_DISTRACTOR": 1
+        },
+        "durationMs": 16864,
+        "regenerationCount": 0
+      }
+    }
+  },
+  "diagnostics": {
+    "requestId": "a2f75d4a0156",
+    "module": "reading",
+    "partId": "lesen_3",
+    "outcome": "pass",
+    "totalMs": 26407,
+    "budgetS": 95.0,
+    "llmCalls": 4,
+    "providerMsSum": 26400,
+    "slotWaitMsSum": 0,
+    "longestCallMs": 9541,
+    "promptTokens": 10521,
+    "cachedTokens": 2304,
+    "completionTokens": 5376,
+    "reasoningTokens": 2517,
+    "estimatedCostUsd": 0.030528,
+    "unpricedModels": [],
+    "validation": [],
+    "byCaller": {
+      "__main__.wrapped": {
+        "calls": 4,
+        "models": [
+          "gpt-5.4-mini:default",
+          "gpt-5.4-mini:medium"
+        ],
+        "providerMs": 26400,
+        "slotWaitMs": 0,
+        "promptTokens": 10521,
+        "cachedTokens": 2304,
+        "completionTokens": 5376,
+        "reasoningTokens": 2517,
+        "estimatedCostUsd": 0.030528
+      }
+    },
+    "calls": [
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 9541,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 835,
+        "cachedTokens": 0,
+        "completionTokens": 2141,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.01026075
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": "medium",
+        "providerMs": 8197,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3732,
+        "cachedTokens": 0,
+        "completionTokens": 1568,
+        "reasoningTokens": 1269,
+        "estimatedCostUsd": 0.009855000000000001
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": null,
+        "providerMs": 1279,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 2220,
+        "cachedTokens": 0,
+        "completionTokens": 121,
+        "reasoningTokens": 0,
+        "estimatedCostUsd": 0.0022095
+      },
+      {
+        "caller": "__main__.wrapped",
+        "model": "gpt-5.4-mini",
+        "effort": "medium",
+        "providerMs": 7383,
+        "slotWaitMs": 0,
+        "ok": true,
+        "promptTokens": 3734,
+        "cachedTokens": 2304,
+        "completionTokens": 1546,
+        "reasoningTokens": 1248,
+        "estimatedCostUsd": 0.008202300000000001
+      }
+    ],
+    "models": [
+      "gpt-5.4-mini:default",
+      "gpt-5.4-mini:medium"
+    ],
+    "stagesMs": {},
+    "fanoutAtStart": {
+      "limit": 16,
+      "in_use": 0
+    },
+    "backendRevision": "unknown"
+  },
+  "wallSeconds": 26.407
+}

@@ -1,8 +1,8 @@
 /* ── Notes Panel — split-screen AI notes inside PDF viewer ──────────────────── */
 
-/* Split layout */
-#pdfView.pdf-split {
-  flex: 0 0 55%;
+/* Split layout — centreContent is the flex child of pdfViewerWrap */
+#centreContent.pdf-split {
+  flex: 0 0 55% !important;
   min-width: 0;
 }
 
@@ -438,6 +438,34 @@
   scrollbar-color: rgba(37,99,235,0.3) transparent;
 }
 
+.np-saved-group { display: flex; flex-direction: column; }
+.np-saved-group + .np-saved-group { margin-top: 6px; }
+
+.np-saved-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.4);
+  position: sticky;
+  top: 0;
+  background: #12112a;
+  z-index: 1;
+}
+
+.np-saved-group-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.5);
+}
+
 .np-saved-item {
   display: flex;
   align-items: center;
@@ -514,4 +542,16 @@
 .pdf-notes-toggle-btn.active {
   background: rgba(37, 99, 235, 0.25) !important;
   border-color: rgba(37, 99, 235, 0.55) !important;
+}
+
+/* ── Content-light banner ─────────────────────────────────────────────────── */
+.np-content-light-banner {
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.5;
 }

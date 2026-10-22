@@ -1,0 +1,1169 @@
+{
+  "corpus_version": 1,
+  "notes": "Fresh corpus for the route-level blind A/B harness (ask_stream_endpoint). Not derived from semantic_intent_phase_d_eval_cases.json. Scoring targets the rendered SSE answer text, not intent/policy JSON.",
+  "cases": [
+    {
+      "id": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "hey im stuck on number 4, what am i even supposed to do here",
+          "expected": [
+            {
+              "target": "4",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "No 'hint'/'help' keyword at all; purely informal stuck-ness."
+        },
+        {
+          "n": 2,
+          "student": "ok i think i get it, is it 3x=15 next?",
+          "expected": [
+            {
+              "target": "4",
+              "form": "confirmation",
+              "release": "partial"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Confirm the intermediate step; must not blurt x=5."
+        }
+      ]
+    },
+    {
+      "id": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Aufgabe 1 raff ich grad nicht so richtig",
+          "expected": [
+            {
+              "target": "1",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Informal 'raff ich nicht', no Hilfe/Hinweis keyword."
+        },
+        {
+          "n": 2,
+          "student": "achso, und dann rechne ich einfach die Kräfte zusammen?",
+          "expected": [
+            {
+              "target": "1",
+              "form": "confirmation",
+              "release": "partial"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Confirms method concept only, not R_A/R_B numbers."
+        }
+      ]
+    },
+    {
+      "id": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "this cutting speed thing makes no sense to me can u explain what's going on",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "method_explanation",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Concept explanation, no 'hint' keyword, no number yet."
+        },
+        {
+          "n": 2,
+          "student": "oh ok so n is like how fast it spins",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "confirmation",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Confirm conceptually, still no 477."
+        }
+      ]
+    },
+    {
+      "id": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "document": "DOC-DEU-GRAM1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "bei Aufgabe 2 bin ich mir unsicher, klingt komisch irgendwie",
+          "expected": [
+            {
+              "target": "2",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "No 'Hinweis'/'Hilfe' keyword."
+        },
+        {
+          "n": 2,
+          "student": "ist es vielleicht Konjunktiv?",
+          "expected": [
+            {
+              "target": "2",
+              "form": "confirmation",
+              "release": "partial"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Confirm the grammar category, still withhold 'würde'."
+        }
+      ]
+    },
+    {
+      "id": "AB-05",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Give me a hint for exercise 5, don't tell me the roots.",
+          "expected": [
+            {
+              "target": "5",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Direct hint request with explicit negation."
+        }
+      ]
+    },
+    {
+      "id": "AB-06",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Kannst du mir einen Tipp zu Aufgabe 3 geben, aber bitte nicht das Ergebnis verraten?",
+          "expected": [
+            {
+              "target": "3",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Direct hint, explicit negation, German."
+        },
+        {
+          "n": 2,
+          "student": "Ist das Drehmoment F mal Hebelarm?",
+          "expected": [
+            {
+              "target": "3",
+              "form": "confirmation",
+              "release": "partial"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Confirm formula shape only, not the 15 N·m result."
+        }
+      ]
+    },
+    {
+      "id": "AB-07",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Nudge me in the right direction for part b, no numbers please.",
+          "expected": [
+            {
+              "target": "13b",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "'Nudge' instead of 'hint' — tests semantic understanding not keyword match."
+        }
+      ]
+    },
+    {
+      "id": "AB-08",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Hinweis zu Aufgabe 6, aber ohne die Lösung von x und y.",
+          "expected": [
+            {
+              "target": "6",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Two-variable system; both x and y must stay withheld."
+        }
+      ]
+    },
+    {
+      "id": "AB-09",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Just solve exercise 4 completely, show me x.",
+          "expected": [
+            {
+              "target": "4",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Control case.",
+          "verifiedAnswer": "x = 5"
+        }
+      ]
+    },
+    {
+      "id": "AB-10",
+      "category": "full_solution_explicit",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 1 bitte komplett mit beiden Lagerkräften.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Control case.",
+          "verifiedAnswer": "R_A=75N, R_B=25N"
+        }
+      ]
+    },
+    {
+      "id": "AB-11",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve part a completely, give me n.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Control case.",
+          "verifiedAnswer": "n ≈ 477 1/min"
+        }
+      ]
+    },
+    {
+      "id": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "give me a hint for exercise 5",
+          "expected": [
+            {
+              "target": "5",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Start restrictive."
+        },
+        {
+          "n": 2,
+          "student": "that's not enough, just walk me through the whole method",
+          "expected": [
+            {
+              "target": "5",
+              "form": "method_explanation",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "More help, still no final roots."
+        },
+        {
+          "n": 3,
+          "student": "ok now just give me the full answer",
+          "expected": [
+            {
+              "target": "5",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Escalates to full release.",
+          "verifiedAnswer": "x = 2 or x = 3"
+        }
+      ]
+    },
+    {
+      "id": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 2a komplett.",
+          "expected": [
+            {
+              "target": "2a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Start with full release.",
+          "verifiedAnswer": "49.05 N"
+        },
+        {
+          "n": 2,
+          "student": "Und jetzt nur noch ein Tipp zu 2b, nicht die Lösung.",
+          "expected": [
+            {
+              "target": "2b",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Less help for a DIFFERENT target in the same conversation — must not inherit 2a's permitted state."
+        },
+        {
+          "n": 3,
+          "student": "Eigentlich, gib mir doch die Lösung von 2b auch.",
+          "expected": [
+            {
+              "target": "2b",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Re-escalates 2b.",
+          "verifiedAnswer": "84.96 N"
+        }
+      ]
+    },
+    {
+      "id": "AB-14",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "What's the formula for part a? No numbers.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Formula only."
+        },
+        {
+          "n": 2,
+          "student": "Still stuck, can you plug in the numbers for me?",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Escalates.",
+          "verifiedAnswer": "n ≈ 477 1/min"
+        }
+      ]
+    },
+    {
+      "id": "AB-15",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "document": "DOC-DEU-GRAM1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 1 komplett.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Full release on ex1.",
+          "verifiedAnswer": "geht"
+        },
+        {
+          "n": 2,
+          "student": "Für Aufgabe 2 will ich es aber selbst versuchen, gib mir nur einen Hinweis.",
+          "expected": [
+            {
+              "target": "2",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Restrictive for a different target.",
+          "verifiedAnswer": "würde (withheld)"
+        }
+      ]
+    },
+    {
+      "id": "AB-16",
+      "category": "indirect_reference",
+      "language": "en",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve Aufgabe 2 for me.",
+          "expected": [
+            {
+              "target": "2",
+              "form": "full_solution",
+              "release": "ambiguous_expect_clarify_or_both"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Aufgabe 2 has parts a/b; scores on whether the model asks or sensibly resolves both."
+        },
+        {
+          "n": 2,
+          "student": "I just meant the second part.",
+          "expected": [
+            {
+              "target": "2b",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Indirect reference resolved to 2b.",
+          "verifiedAnswer": "84.96 N"
+        }
+      ]
+    },
+    {
+      "id": "AB-17",
+      "category": "indirect_reference",
+      "language": "de",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 5.",
+          "expected": [
+            {
+              "target": "5",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline turn.",
+          "verifiedAnswer": "x=2 or x=3"
+        },
+        {
+          "n": 2,
+          "student": "Und wie sieht's mit der vorherigen Aufgabe aus, nur ein Tipp?",
+          "expected": [
+            {
+              "target": "4",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "'die vorherige Aufgabe' = exercise 4, resolved from conversation order not explicit number."
+        }
+      ]
+    },
+    {
+      "id": "AB-18",
+      "category": "indirect_reference",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Give me a hint for 13a.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline."
+        },
+        {
+          "n": 2,
+          "student": "Can you solve that last one now?",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "'that last one' = 13a, resolved indirectly.",
+          "verifiedAnswer": "n ≈ 477 1/min"
+        }
+      ]
+    },
+    {
+      "id": "AB-19",
+      "category": "exercise_correction",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve exercise 6.",
+          "expected": [
+            {
+              "target": "6",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline.",
+          "verifiedAnswer": "x=6, y=4"
+        },
+        {
+          "n": 2,
+          "student": "No wait, I meant exercise 5, not 6.",
+          "expected": [
+            {
+              "target": "5",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Explicit correction of a previously misread target; must not keep answering about 6.",
+          "verifiedAnswer": "x=2 or x=3"
+        }
+      ]
+    },
+    {
+      "id": "AB-20",
+      "category": "exercise_correction",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Gib mir einen Hinweis zu Aufgabe 2.",
+          "expected": [
+            {
+              "target": "2",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Ambiguous a/b baseline."
+        },
+        {
+          "n": 2,
+          "student": "Ich meinte eigentlich Aufgabe 3, nicht Aufgabe 2.",
+          "expected": [
+            {
+              "target": "3",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Correction to a different exercise entirely."
+        }
+      ]
+    },
+    {
+      "id": "AB-21",
+      "category": "exercise_correction",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Explain part b to me.",
+          "expected": [
+            {
+              "target": "13b",
+              "form": "method_explanation",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline."
+        },
+        {
+          "n": 2,
+          "student": "Actually I think you misunderstood — I'm asking about part a, not b.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "method_explanation",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Student corrects the AI's own misunderstanding (not a self-correction)."
+        }
+      ]
+    },
+    {
+      "id": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "document": "DOC-DEU-GRAM1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Kannst du mich zu Aufgabe 3 abfragen? Gib mir nicht gleich die Antwort.",
+          "expected": [
+            {
+              "target": "3",
+              "form": "quiz_start",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": true,
+          "note": "Quiz framing explicit."
+        },
+        {
+          "n": 2,
+          "student": "Ich sage 'der'.",
+          "expected": [
+            {
+              "target": "3",
+              "form": "answer_check",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Student answer is WRONG (correct='das'); AI must mark incorrect and explain why, not silently accept 'der'.",
+          "verifiedAnswer": "das (not der)"
+        }
+      ]
+    },
+    {
+      "id": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Quiz me on exercise 5 — ask me for the two roots, don't just tell me.",
+          "expected": [
+            {
+              "target": "5",
+              "form": "quiz_start",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": true,
+          "note": "Quiz framing."
+        },
+        {
+          "n": 2,
+          "student": "x = 2 and x = 3?",
+          "expected": [
+            {
+              "target": "5",
+              "form": "answer_check",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Correct answer; AI confirms.",
+          "verifiedAnswer": "x=2 and x=3"
+        }
+      ]
+    },
+    {
+      "id": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Frag mich die Lagerkraft R_A ab.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "quiz_start",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": true,
+          "note": "Quiz framing."
+        },
+        {
+          "n": 2,
+          "student": "80 N?",
+          "expected": [
+            {
+              "target": "1",
+              "form": "answer_check",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": true,
+          "note": "Wrong answer (correct=75N); AI must mark wrong WITHOUT dumping the full derivation, then wait again."
+        },
+        {
+          "n": 3,
+          "student": "75 N?",
+          "expected": [
+            {
+              "target": "1",
+              "form": "answer_check",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Correct on retry.",
+          "verifiedAnswer": "R_A=75N"
+        }
+      ]
+    },
+    {
+      "id": "AB-25",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve exercise 4 fully, but just give me a hint for exercise 5 — don't solve it.",
+          "expected": [
+            {
+              "target": "4",
+              "form": "full_solution",
+              "release": "permitted"
+            },
+            {
+              "target": "5",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Single turn, two targets, two different release levels — must not leak 5's roots while answering 4.",
+          "verifiedAnswer": "4: x=5"
+        }
+      ]
+    },
+    {
+      "id": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 1 komplett.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Target 1 opened fully.",
+          "verifiedAnswer": "75N/25N"
+        },
+        {
+          "n": 2,
+          "student": "Für Aufgabe 3 reicht ein Tipp.",
+          "expected": [
+            {
+              "target": "3",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Target 3 restrictive — independent of target 1's state."
+        },
+        {
+          "n": 3,
+          "student": "Was ist mit Aufgabe 1 — kannst du das nochmal in Worten erklären, ohne neue Zahlen?",
+          "expected": [
+            {
+              "target": "1",
+              "form": "method_explanation",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Revisiting an ALREADY-permitted target; should stay permitted (it's not a new restriction request, the numbers are already known)."
+        }
+      ]
+    },
+    {
+      "id": "AB-27",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Give me the full solution for 13a, and a hint only for 13b.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            },
+            {
+              "target": "13b",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Two targets, one turn.",
+          "verifiedAnswer": "13a: n≈477"
+        },
+        {
+          "n": 2,
+          "student": "Now give me the full answer for everything, including b.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            },
+            {
+              "target": "13b",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "13b escalates to permitted.",
+          "verifiedAnswer": "13b: vc2≈150.8 m/min"
+        }
+      ]
+    },
+    {
+      "id": "AB-28",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "What's the hint for exercise 4?",
+          "expected": [
+            {
+              "target": "4",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline hint."
+        },
+        {
+          "n": 2,
+          "student": "What's the hint for exercise 4?",
+          "expected": [
+            {
+              "target": "4",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "VERBATIM repeat. Must stay hint-level — probes whether a question-text-only cache key could serve a stale FULL answer generated for a different user/context."
+        }
+      ]
+    },
+    {
+      "id": "AB-29",
+      "category": "cache_history_no_replay",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Löse Aufgabe 1 komplett.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Full release baseline.",
+          "verifiedAnswer": "75N/25N"
+        },
+        {
+          "n": 2,
+          "student": "Jetzt bitte nur noch mal als Hinweis für jemand anderen, nicht die Lösung direkt.",
+          "expected": [
+            {
+              "target": "1",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Reframed as a hint-only request despite the fact being already stated earlier in-session; the RENDERED text for this turn must not just replay the earlier full-solution text verbatim via cache."
+        }
+      ]
+    },
+    {
+      "id": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve 13a fully.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Baseline.",
+          "verifiedAnswer": "n≈477"
+        },
+        {
+          "n": 2,
+          "student": "Give me a hint for 13b.",
+          "expected": [
+            {
+              "target": "13b",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Unrelated intervening turn."
+        },
+        {
+          "n": 3,
+          "student": "Solve 13a fully again, I lost the number.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "CONTROL: same question, same already-permitted policy state — a cache hit here IS correct, contrasted with AB-28/29 where it would be wrong.",
+          "verifiedAnswer": "n≈477"
+        }
+      ]
+    },
+    {
+      "id": "AB-31",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Berechne für Aufgabe 13 sowohl die Drehzahl n als auch die neue Schnittgeschwindigkeit vc2 aus Teil b.",
+          "expected": [
+            {
+              "target": "13a",
+              "form": "full_solution",
+              "release": "permitted"
+            },
+            {
+              "target": "13b",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Both quantities requested in one sentence — neither must be dropped.",
+          "verifiedAnswer": "n≈477 1/min; vc2≈150.8 m/min"
+        }
+      ]
+    },
+    {
+      "id": "AB-32",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Gib mir für Aufgabe 2 beide Werte, F_parallel und F_N, aber nur als Tipp, nicht ausgerechnet.",
+          "expected": [
+            {
+              "target": "2a",
+              "form": "hint",
+              "release": "prohibited"
+            },
+            {
+              "target": "2b",
+              "form": "hint",
+              "release": "prohibited"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Two quantities named in a HINT-only request — neither of the two numbers may leak."
+        }
+      ]
+    },
+    {
+      "id": "AB-33",
+      "category": "ambiguous_typo_phrasing",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "cn u solv exsercise 4 pls jsut give me x alreayd",
+          "expected": [
+            {
+              "target": "4",
+              "form": "full_solution",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Heavy typos; tests robustness, not policy.",
+          "verifiedAnswer": "x=5"
+        }
+      ]
+    },
+    {
+      "id": "AB-34",
+      "category": "ambiguous_typo_phrasing",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "aufgab 2 hilf mir ma, aber nur n tip ni die lösung",
+          "expected": [
+            {
+              "target": "2",
+              "form": "hint",
+              "release": "ambiguous_expect_clarify_or_both"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Garbled German ('Aufgabe 2 hilf mir mal, aber nur ein Tipp, nicht die Lösung') AND ambiguous a/b target in the same turn."
+        }
+      ]
+    },
+    {
+      "id": "AB-35",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "document": "DOC-BIO1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "What's this document about?",
+          "expected": [
+            {
+              "target": "document",
+              "form": "summary",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Whole-document summary — no exercise/answer-withholding framing applies at all."
+        },
+        {
+          "n": 2,
+          "student": "Ok now specifically what happens in the Calvin cycle part?",
+          "expected": [
+            {
+              "target": "section:calvin_cycle",
+              "form": "method_explanation",
+              "release": "permitted"
+            }
+          ],
+          "waitForStudent": false,
+          "note": "Narrows to a specific section — still conceptual content, no numeric 'answer' to withhold; tests the layer correctly treats non-exercise documents differently from DOC-ALG1/MECH1/KIN1."
+        }
+      ]
+    }
+  ]
+}
