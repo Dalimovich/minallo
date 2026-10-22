@@ -73,7 +73,8 @@ def test_all_three_request_id_channels_must_match():
 def test_cross_page_numbered_sections_retrieve_before_identity_refusal():
     assert "retrieve_numbered_section_chunks" in STREAM
     assert "previous_turns=previous_turns_payload" in STREAM
-    assert "exercise_hit, chunks, formula_hits, section_chunks = await asyncio.gather" in STREAM
+    assert "exercise_hit, chunks, formula_hits, section_chunks = await _await_bounded(" in STREAM
+    assert "asyncio.gather(exercise_task, chunks_task, formula_task, section_task)" in STREAM
     assert "chunks = section_chunks +" in STREAM
     assert "and page_bound_request\n            and (" in STREAM
     assert "Answer and explain every explicitly requested numbered subpart" in STREAM

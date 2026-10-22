@@ -136,6 +136,23 @@ from ..supabase_client import get_supabase
 _ASK_STREAM_RATE_LIMIT_MAX = 30
 _ASK_STREAM_RATE_LIMIT_WINDOW_SECONDS = 60 * 60
 _MAX_STREAM_QUESTION_CHARS = 8000
+# Production incident, 2026-10-21: a single request's primary retrieval ran
+# unbounded for 100+ seconds during a transient Supabase slowdown (the
+# PostgREST client itself caps each individual call at 30s --
+# app/supabase_client.py -- but retrieval can make several such calls in
+# sequence/parallel, so the UNBOUNDED total kept climbing well past any one
+# call's own cap) before something else -- a client disconnect, unrelated to
+# this -- finally cancelled the request with no error ever shown to the
+# student (app/routers/stream.py's own asyncio.CancelledError handler
+# assumes a cancellation means the client already left, so it never yields
+# anything). Bounding the retrieval awaits directly means a genuine Supabase
+# slowdown now fails fast with an honest, retryable error instead of hanging
+# until something else notices. Generous relative to the ~5-15s normal case
+# (see ai_stream_timing's own retrieval_ms logs) without ever approaching
+# gunicorn's own 200s worker timeout (Dockerfile) or Caddy's upstream
+# response_header_timeout (130s, already satisfied by the time retrieval
+# runs -- this is a second, independent bound, not a replacement for either).
+_RETRIEVAL_TIMEOUT_SECONDS = 45.0
 # _run_semantic_intent_diagnostic_policy runs as a bounded background task
 # (never awaited on the student's response path — see
 # _schedule_semantic_intent_diagnostic_policy), so this no longer protects
@@ -826,6 +843,34 @@ class TutorPipelineError(Exception):
         self.retryable = retryable
         self.recoverable = recoverable
         self.metadata = metadata or {}
+
+
+async def _await_bounded(awaitable: Any, *, stage: str, timeout: float | None = None) -> Any:
+    """Bounds an otherwise-unbounded await (see _RETRIEVAL_TIMEOUT_SECONDS's
+    own docstring for the production incident this closes) -- a genuine
+    timeout becomes the SAME honest, retryable, student-visible error every
+    other TutorPipelineError already produces (caught by ask_stream_
+    endpoint's own `except TutorPipelineError` handler), instead of hanging
+    until something unrelated eventually tears the request down with no
+    error shown at all.
+
+    ``timeout`` defaults to None, resolved to ``_RETRIEVAL_TIMEOUT_SECONDS``
+    INSIDE the function body rather than as a parameter default -- a
+    parameter default is evaluated once, at function-definition time (module
+    import), so monkeypatching the module-level constant afterward (tests
+    shrinking it to avoid a real 45s wait) would silently have no effect
+    with a bound default; reading the module global at call time respects
+    that."""
+    if timeout is None:
+        timeout = _RETRIEVAL_TIMEOUT_SECONDS
+    try:
+        return await asyncio.wait_for(awaitable, timeout=timeout)
+    except TimeoutError as exc:
+        raise TutorPipelineError(
+            code="retrieval_timed_out", stage=stage,
+            message="Minallo's document search took too long and was stopped. Please try again.",
+            retryable=True, recoverable=True,
+        ) from exc
 
 
 def _error_sse(*, code: str, message: str, retryable: bool, request_id: str,
@@ -5973,14 +6018,14 @@ async def _prepare_ask_stream_response(
             )
             if fast_grounded:
                 exercise_hit, formula_hits, section_chunks = None, [], []
-                chunks = await run_in_threadpool(lambda: retrieve_routed_chunks(
+                chunks = await _await_bounded(run_in_threadpool(lambda: retrieve_routed_chunks(
                     user_id=user_id, course_id=payload.courseId,
                     query=retrieval_query, document_ids=retrieval_document_ids,
                     preferred_document_ids=retrieval_document_ids,
                     active_document_id=payload.activeDocumentId,
                     document_name_query=question, top_k=4,
                     guarantee_documents=False, request_id=request_id,
-                ))
+                )), stage="retrieval")
             else:
                 exercise_task = run_in_threadpool(
                 lambda: retrieve_exercise_block(
@@ -6027,8 +6072,9 @@ async def _prepare_ask_stream_response(
                     previous_turns=previous_turns_payload,
                 )
             )
-                exercise_hit, chunks, formula_hits, section_chunks = await asyncio.gather(
-                    exercise_task, chunks_task, formula_task, section_task,
+                exercise_hit, chunks, formula_hits, section_chunks = await _await_bounded(
+                    asyncio.gather(exercise_task, chunks_task, formula_task, section_task),
+                    stage="retrieval",
                 )
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -6085,20 +6131,20 @@ async def _prepare_ask_stream_response(
             # A failed fast probe is only a routing attempt, never the final
             # evidence set. Re-run the normal broad hybrid retrieval before
             # continuing so escalation genuinely moves upward in quality.
-            standard_chunks = await run_in_threadpool(lambda: retrieve_routed_chunks(
+            standard_chunks = await _await_bounded(run_in_threadpool(lambda: retrieve_routed_chunks(
                 user_id=user_id, course_id=payload.courseId,
                 query=retrieval_query, document_ids=retrieval_document_ids,
                 preferred_document_ids=retrieval_document_ids,
                 active_document_id=payload.activeDocumentId,
                 document_name_query=question, top_k=stream_top_k,
                 guarantee_documents=generative_request, request_id=request_id,
-            ))
+            )), stage="retrieval")
             chunks = _deduplicate_chunks([*standard_chunks, *chunks])
-        multi_item_result = await run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
+        multi_item_result = await _await_bounded(run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
             user_id=user_id, course_id=payload.courseId, question=question,
             document_ids=retrieval_document_ids,
             active_document_id=payload.activeDocumentId, initial_chunks=chunks,
-        ))
+        )), stage="retrieval")
         chunks = multi_item_result.chunks
 
     retrieved_doc_ids = list(dict.fromkeys(
