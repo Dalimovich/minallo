@@ -143,6 +143,17 @@ class Settings(BaseSettings):
         False, alias="SEMANTIC_INTENT_POLICY_ENFORCEMENT_ENABLED",
     )
 
+    # --- Jev (TypeSafe AI's System One decision model, api.typesafe.ai) --
+    # experimental, EVALUATION ONLY. app/services/jev_client.py is a disabled-
+    # by-default adapter with no caller in the router yet; the eval harness
+    # calls it directly while Jev is measured against the existing
+    # deterministic + LLM-escalation semantic-intent baselines. "off" (default)
+    # never attempts a network call at all. jev_model is pinned to a specific
+    # version deliberately -- never "jev-latest" (see jev_client.py docstring).
+    semantic_intent_jev_mode: str = Field("off", alias="SEMANTIC_INTENT_JEV_MODE")
+    jev_api_key: str | None = Field(None, alias="TYPESAFE_API_KEY")
+    jev_model: str = Field("jev-1.13.0", alias="SEMANTIC_INTENT_JEV_MODEL")
+
     # --- Transactional email (welcome mail on first login). Same Zoho account
     # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
     # rejects account passwords on SMTP). Endpoint 503s while these are unset.
