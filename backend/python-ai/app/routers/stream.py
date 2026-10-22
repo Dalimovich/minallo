@@ -845,7 +845,9 @@ class TutorPipelineError(Exception):
         self.metadata = metadata or {}
 
 
-async def _await_bounded(awaitable: Any, *, stage: str, timeout: float | None = None) -> Any:
+async def _await_bounded(
+    awaitable: Any, *, stage: str, timeout: float | None = None, deadline: float | None = None,
+) -> Any:
     """Bounds an otherwise-unbounded await (see _RETRIEVAL_TIMEOUT_SECONDS's
     own docstring for the production incident this closes) -- a genuine
     timeout becomes the SAME honest, retryable, student-visible error every
@@ -860,8 +862,27 @@ async def _await_bounded(awaitable: Any, *, stage: str, timeout: float | None = 
     import), so monkeypatching the module-level constant afterward (tests
     shrinking it to avoid a real 45s wait) would silently have no effect
     with a bound default; reading the module global at call time respects
-    that."""
-    if timeout is None:
+    that.
+
+    ``deadline`` (a ``time.monotonic()`` timestamp), when given, takes
+    priority over ``timeout`` and bounds the REMAINING time until that
+    shared deadline instead of handing this one call a fresh full budget --
+    a single retrieval phase can call this more than once in sequence (the
+    FAST_GROUNDED probe followed by its own standard-retrieval escalation,
+    then the multi-item evidence call), and each one independently getting
+    its own fresh _RETRIEVAL_TIMEOUT_SECONDS would let the TOTAL bound
+    silently climb to 2-3x the configured value -- exactly the kind of gap
+    a single per-call timeout looks like it closes but doesn't. Already
+    past the deadline -> fails immediately, no new wait at all."""
+    if deadline is not None:
+        # Clamped to >= 0, never negative -- asyncio.wait_for(timeout=0)
+        # still properly wraps and cancels the awaitable (no "coroutine
+        # was never awaited" warning, no orphaned gather() children left
+        # un-awaited), it just times out on the very next loop tick
+        # instead of spinning up a new multi-second call with nothing
+        # left of the shared budget to give it.
+        timeout = max(0.0, deadline - time.monotonic())
+    elif timeout is None:
         timeout = _RETRIEVAL_TIMEOUT_SECONDS
     try:
         return await asyncio.wait_for(awaitable, timeout=timeout)
@@ -5777,6 +5798,18 @@ async def _prepare_ask_stream_response(
     # still gets routed to the FAST_GROUNDED lane hit an UnboundLocalError
     # here before this fix.
     stream_top_k = _retrieval_limit(question, len(retrieval_document_ids or []), generative_request)
+    # One shared deadline for the whole "ensure we have evidence" phase
+    # below (set unconditionally, even on the reused-grounding/no-retrieval
+    # branch, since the later FAST_GROUNDED escalation + multi-item-
+    # evidence calls run regardless of which branch sets `chunks`) -- not a
+    # fresh _RETRIEVAL_TIMEOUT_SECONDS per call. A single turn can call
+    # _await_bounded up to 3 times in sequence (a FAST_GROUNDED probe, its
+    # own escalation re-retrieval, then the multi-item evidence call), and
+    # each one independently getting its own full budget would let the
+    # TOTAL student-visible wait silently climb to up to 3x the configured
+    # bound -- exactly the gap a single per-call timeout looks like it
+    # closes but doesn't.
+    retrieval_deadline = time.monotonic() + _RETRIEVAL_TIMEOUT_SECONDS
 
     # App/product questions ("how do I upload", "where is settings", "what
     # features does Minallo have") should not trigger course-document
@@ -6025,7 +6058,7 @@ async def _prepare_ask_stream_response(
                     active_document_id=payload.activeDocumentId,
                     document_name_query=question, top_k=4,
                     guarantee_documents=False, request_id=request_id,
-                )), stage="retrieval")
+                )), stage="retrieval", deadline=retrieval_deadline)
             else:
                 exercise_task = run_in_threadpool(
                 lambda: retrieve_exercise_block(
@@ -6074,7 +6107,7 @@ async def _prepare_ask_stream_response(
             )
                 exercise_hit, chunks, formula_hits, section_chunks = await _await_bounded(
                     asyncio.gather(exercise_task, chunks_task, formula_task, section_task),
-                    stage="retrieval",
+                    stage="retrieval", deadline=retrieval_deadline,
                 )
         except EmbeddingServiceUnavailable as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
@@ -6138,13 +6171,13 @@ async def _prepare_ask_stream_response(
                 active_document_id=payload.activeDocumentId,
                 document_name_query=question, top_k=stream_top_k,
                 guarantee_documents=generative_request, request_id=request_id,
-            )), stage="retrieval")
+            )), stage="retrieval", deadline=retrieval_deadline)
             chunks = _deduplicate_chunks([*standard_chunks, *chunks])
         multi_item_result = await _await_bounded(run_in_threadpool(lambda: retrieve_multi_item_course_evidence(
             user_id=user_id, course_id=payload.courseId, question=question,
             document_ids=retrieval_document_ids,
             active_document_id=payload.activeDocumentId, initial_chunks=chunks,
-        )), stage="retrieval")
+        )), stage="retrieval", deadline=retrieval_deadline)
         chunks = multi_item_result.chunks
 
     retrieved_doc_ids = list(dict.fromkeys(
