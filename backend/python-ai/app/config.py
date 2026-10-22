@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -151,7 +151,12 @@ class Settings(BaseSettings):
     # willing to construct a real client. No production wiring exists yet
     # and none is authorized without separate, explicit approval.
     jev_adapter_enabled: bool = Field(False, alias="JEV_ADAPTER_ENABLED")
-    typesafe_api_key: str = Field("", alias="TYPESAFE_API_KEY")
+    # TypeSafe's own SDK/docs name this TYPESAFE_API_KEY; JEV_API_KEY
+    # accepted too since that's what was actually set up in this repo's
+    # own .env -- whichever is present wins, TYPESAFE_API_KEY first.
+    typesafe_api_key: str = Field(
+        "", validation_alias=AliasChoices("TYPESAFE_API_KEY", "JEV_API_KEY"),
+    )
 
     # --- Transactional email (welcome mail on first login). Same Zoho account
     # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho

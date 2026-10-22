@@ -74,11 +74,19 @@ class NoulQuestion:
 
 @dataclass(frozen=True)
 class ChoiceQuestion:
+    """``options`` maps option name -> a plain-language description (or
+    None when the name is self-explanatory) -- confirmed against
+    docs.typesafe.ai/primitives/choice.md directly: ``criteria`` for a
+    choice question is an OBJECT (name -> description), never a bare
+    array of option names. A first live call against a bare array of
+    names (this module's original, docs-misread shape) was rejected with
+    a 422 before this was corrected -- see the 2026-10-22 report for
+    that real, confirmed trace."""
     instructions: str
-    options: tuple[str, ...]
+    options: dict[str, str | None]
 
     def to_payload(self) -> dict[str, Any]:
-        return {"type": "choice", "instructions": self.instructions, "criteria": list(self.options)}
+        return {"type": "choice", "instructions": self.instructions, "criteria": dict(self.options)}
 
 
 @dataclass(frozen=True)
@@ -98,9 +106,15 @@ class JevAnswer:
     type: QuestionType
     noul: float | None = None
     choice: str | None = None
-    score: str | None = None
+    # A numeric position on the rubric (e.g. 1.2 for a 0-2 scale), NOT a
+    # label -- confirmed against docs.typesafe.ai/primitives/score.md's
+    # own example response.
+    score: float | None = None
     confidence: float | None = None
     probabilities: dict[str, float] | None = None
+    # Score-only: level number (as a string, e.g. "0"/"1"/"2") -> the
+    # description sent for that level in the request's own criteria.
+    legend: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -156,7 +170,7 @@ class JevClient:
             answers[name] = JevAnswer(
                 type=raw["type"], noul=raw.get("noul"), choice=raw.get("choice"),
                 score=raw.get("score"), confidence=raw.get("confidence"),
-                probabilities=raw.get("probabilities"),
+                probabilities=raw.get("probabilities"), legend=raw.get("legend"),
             )
         usage = data.get("usage") or {}
         return JevResponse(

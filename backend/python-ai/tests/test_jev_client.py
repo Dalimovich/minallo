@@ -18,11 +18,20 @@ def _install_network_tripwire(monkeypatch):
 
 
 def test_disabled_by_default_refuses_to_construct_a_client(monkeypatch):
+    """setenv to explicit "off" values, not delenv: a local .env file with
+    real credentials configured (this repo's own worktree, once an
+    evaluation key is set up) is itself a valid pydantic-settings source
+    independent of process env vars -- delenv only clears a process-level
+    override, it can't suppress a value coming from the .env file, so it
+    silently fails to simulate "disabled" whenever a real key happens to
+    be configured locally. Explicit overrides are the only way this test
+    is still meaningful once that's true."""
     from app.config import get_settings
     from app.services import jev_client
 
-    monkeypatch.delenv("JEV_ADAPTER_ENABLED", raising=False)
-    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("JEV_ADAPTER_ENABLED", "false")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    monkeypatch.setenv("JEV_API_KEY", "")
     get_settings.cache_clear()
     try:
         with pytest.raises(jev_client.JevNotEnabledError):
@@ -36,7 +45,8 @@ def test_enabled_without_api_key_still_refuses(monkeypatch):
     from app.services import jev_client
 
     monkeypatch.setenv("JEV_ADAPTER_ENABLED", "true")
-    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    monkeypatch.setenv("JEV_API_KEY", "")
     get_settings.cache_clear()
     try:
         with pytest.raises(jev_client.JevNotEnabledError):
@@ -87,7 +97,7 @@ def test_enabled_with_key_constructs_and_round_trips_a_mocked_response(monkeypat
                     "is_urgent": jev_client.NoulQuestion(instructions="The student sounds stuck or confused"),
                     "target_exercise": jev_client.ChoiceQuestion(
                         instructions="Which exercise is the student referring to?",
-                        options=("4", "5", "none"),
+                        options={"4": "Exercise 4", "5": "Exercise 5", "none": None},
                     ),
                 },
             )
@@ -98,7 +108,9 @@ def test_enabled_with_key_constructs_and_round_trips_a_mocked_response(monkeypat
 
     assert len(captured) == 1
     assert captured[0]["questions"]["is_urgent"]["type"] == "noul"
-    assert captured[0]["questions"]["target_exercise"]["criteria"] == ["4", "5", "none"]
+    assert captured[0]["questions"]["target_exercise"]["criteria"] == {
+        "4": "Exercise 4", "5": "Exercise 5", "none": None,
+    }
     assert result.model == "jev-1.14.0"
     assert result.answers["is_urgent"].noul == 0.87
     assert result.answers["target_exercise"].choice == "4"
