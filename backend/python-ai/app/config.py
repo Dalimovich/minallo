@@ -143,6 +143,16 @@ class Settings(BaseSettings):
         False, alias="SEMANTIC_INTENT_POLICY_ENFORCEMENT_ENABLED",
     )
 
+    # --- Jev (TypeSafe AI) evaluation adapter (2026-10-22). Disabled by
+    # default and isolated: app/services/jev_client.py is not imported by
+    # any live consumer (/ask-stream, generation, grounding, cache,
+    # persistence) -- see that module's own docstring. Flipping this on
+    # alone does nothing; it only gates whether an EVALUATION HARNESS is
+    # willing to construct a real client. No production wiring exists yet
+    # and none is authorized without separate, explicit approval.
+    jev_adapter_enabled: bool = Field(False, alias="JEV_ADAPTER_ENABLED")
+    typesafe_api_key: str = Field("", alias="TYPESAFE_API_KEY")
+
     # --- Transactional email (welcome mail on first login). Same Zoho account
     # the Supabase auth mailer uses; SMTP_PASSWORD is a Zoho APP password (Zoho
     # rejects account passwords on SMTP). Endpoint 503s while these are unset.
