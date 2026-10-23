@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "notes": "FROZEN HOLDOUT (2026-10-23). Written independently of semantic_blind_ab_corpus.json -- new wording, new turn sequences, same five existing documents (reused for their real exercise/section labels only, never their existing scenarios or phrasing). Gold labels authored by the reviewer, NOT derived from any interpreter's output. Rules: never run through any interpreter for the purpose of choosing a hybrid confidence threshold or tuning any heuristic; never edit expected labels after seeing a model's answer on this file; any future addition to this file must be written before being run against Jev/Milestone 4/the deterministic baseline, not after seeing their mistakes. Covers 13 of the 14 categories in the main corpus (missing: cache_history_control) across English and German, single- and multi-turn, single- and multi-target.",
+  "cases": [
+    {
+      "id": "HOLD-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "yo i have no clue what to do with number 5 lol",
+          "expected": [{"target": "5", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false,
+          "note": "No 'hint' keyword; casual/slang phrasing."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-02",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Kannst du mir bei Aufgabe 1 helfen, aber sag mir nicht gleich die Loesung?",
+          "expected": [{"target": "1", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false
+        }
+      ]
+    },
+    {
+      "id": "HOLD-03",
+      "category": "indirect_reference",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Walk me through part b conceptually, no numbers yet.",
+          "expected": [{"target": "13b", "form": "method_explanation", "release": "prohibited"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "And the one before that?",
+          "expected": [{"target": "13a", "form": "method_explanation", "release": "prohibited"}],
+          "waitForStudent": false,
+          "note": "'the one before' = 13a; never stated by number."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-04",
+      "category": "exercise_correction",
+      "language": "de",
+      "document": "DOC-DEU-GRAM1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Erklaer mir bitte Aufgabe 3.",
+          "expected": [{"target": "3", "form": "method_explanation", "release": "prohibited"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "Nein, ich meinte eigentlich Aufgabe 1.",
+          "expected": [{"target": "1", "form": "method_explanation", "release": "prohibited"}],
+          "waitForStudent": false
+        }
+      ]
+    },
+    {
+      "id": "HOLD-05",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Test me on exercise 6, don't just give it away.",
+          "expected": [{"target": "6", "form": "quiz_start", "release": "prohibited"}],
+          "waitForStudent": true
+        },
+        {
+          "n": 2,
+          "student": "x = 5 and y = 3?",
+          "expected": [{"target": "6", "form": "answer_check", "release": "prohibited"}],
+          "waitForStudent": true,
+          "note": "Wrong guess (correct is x=6, y=4); must not dump the derivation."
+        },
+        {
+          "n": 3,
+          "student": "ok, x = 6 and y = 4?",
+          "expected": [{"target": "6", "form": "answer_check", "release": "permitted"}],
+          "waitForStudent": false,
+          "verifiedAnswer": "x=6, y=4"
+        }
+      ]
+    },
+    {
+      "id": "HOLD-06",
+      "category": "changing_instructions_more_help",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Nur die Formel fuer Aufgabe 3, bitte, noch ohne Zahlen.",
+          "expected": [{"target": "3", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "Jetzt rechne es doch bitte komplett durch.",
+          "expected": [{"target": "3", "form": "full_solution", "release": "permitted"}],
+          "waitForStudent": false
+        }
+      ]
+    },
+    {
+      "id": "HOLD-07",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "document": "DOC-KIN1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Explain part a in words, and just give me a hint for part b.",
+          "expected": [
+            {"target": "13a", "form": "method_explanation", "release": "permitted"},
+            {"target": "13b", "form": "hint", "release": "prohibited"}
+          ],
+          "waitForStudent": false,
+          "note": "Single turn, two targets, two different release levels."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-08",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "document": "DOC-BIO1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Can you summarize the light-dependent reactions part?",
+          "expected": [{"target": "section:light_dependent", "form": "summary", "release": "permitted"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "And how does that connect to the next stage?",
+          "expected": [{"target": "section:calvin_cycle", "form": "method_explanation", "release": "permitted"}],
+          "waitForStudent": false,
+          "note": "'the next stage' is never named; must infer Calvin cycle from document structure."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-09",
+      "category": "ambiguous_typo_phrasing",
+      "language": "de",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "aufg4 hinweiss bitte",
+          "expected": [{"target": "4", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false,
+          "note": "Typo'd 'Aufgabe 4 Hinweis bitte'."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-10",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "What's a hint for exercise 2a?",
+          "expected": [{"target": "2a", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "What's a hint for exercise 2a?",
+          "expected": [{"target": "2a", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false,
+          "note": "Exact repeat; must answer consistently, not skip or change release level."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-11",
+      "category": "full_solution_explicit",
+      "language": "de",
+      "document": "DOC-DEU-GRAM1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Gib mir bitte die komplette Loesung fuer Aufgabe 2.",
+          "expected": [{"target": "2", "form": "full_solution", "release": "permitted"}],
+          "waitForStudent": false
+        }
+      ]
+    },
+    {
+      "id": "HOLD-12",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "document": "DOC-MECH1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Berechne fuer Aufgabe 1 sowohl die Kraft als auch den Winkel komplett.",
+          "expected": [{"target": "1", "form": "full_solution", "release": "permitted"}],
+          "waitForStudent": false,
+          "note": "Two quantities requested within one exercise; single target/form/release at this granularity."
+        }
+      ]
+    },
+    {
+      "id": "HOLD-13",
+      "category": "changing_instructions_less_help",
+      "language": "en",
+      "document": "DOC-ALG1",
+      "turns": [
+        {
+          "n": 1,
+          "student": "Solve exercise 4 completely.",
+          "expected": [{"target": "4", "form": "full_solution", "release": "permitted"}],
+          "waitForStudent": false
+        },
+        {
+          "n": 2,
+          "student": "Actually, just give me a hint instead, don't solve it.",
+          "expected": [{"target": "4", "form": "hint", "release": "prohibited"}],
+          "waitForStudent": false
+        }
+      ]
+    }
+  ]
+}
