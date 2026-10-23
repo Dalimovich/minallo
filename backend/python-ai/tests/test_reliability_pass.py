@@ -480,6 +480,108 @@ def test_visual_denial_repair_is_bounded_and_returns_repaired_answer() -> None:
     assert result == "The formula shows V = 191 cm³."
 
 
+def test_repair_prompt_omits_exercise_checklist_for_descriptive_tasks() -> None:
+    """FACTORY BWL-01: a plain 'explain the illustration' question has no
+    exercise number or requested quantity. The exercise-shaped checklist gave
+    the model literal headers it could (and did) echo back as answer content
+    instead of reading the image. Descriptive tasks must get a different,
+    non-exercise prompt; exercise-like tasks (checkbox/mapping/calculation)
+    keep the original checklist."""
+    from app.services.visual_repair import _repair_prompt
+
+    descriptive_prompt = _repair_prompt(
+        question="Explain the illustration on this page.",
+        draft="I cannot see the illustration.",
+        visible_page=13,
+        open_context="Aufbau des Planspiels",
+        needs_exercise_identification=False,
+    )
+    assert "exercise number" not in descriptive_prompt.casefold()
+    assert "requested quantity" not in descriptive_prompt.casefold()
+    assert "visible sections or components" in descriptive_prompt.casefold()
+
+    exercise_prompt = _repair_prompt(
+        question="Which labels 1 to 9 are correct?",
+        draft="I cannot see the diagram.",
+        visible_page=38,
+        open_context="Anguss/Angusskanal",
+        needs_exercise_identification=True,
+    )
+    assert "the exercise number" in exercise_prompt.casefold()
+    assert "the requested quantity or object" in exercise_prompt.casefold()
+
+
+def test_ungrounded_description_detects_real_factory_failure() -> None:
+    """The actual text captured from the FACTORY BWL-01 live acceptance test
+    (2026-10-16): structurally well-formed, passes every existing identity/
+    obligation check for a descriptive task (nothing to compare against), but
+    is a template echo of the old repair prompt's own checklist headers, not
+    a real reading of the page."""
+    from app.services.visual_repair import repair_reads_as_ungrounded_description
+
+    real_failure_text = (
+        "The illustration on page 13 of the document titled \"Das Planspiel "
+        "Factory\" depicts the layout and components of a business "
+        "simulation game. Here's a breakdown of the key elements:\n\n"
+        "Exercise Number: This is part of a larger educational framework, "
+        "likely related to business management or production techniques.\n"
+        "Requested Quantity or Object: The illustration outlines the "
+        "structure of the factory simulation, including various departments "
+        "and their functions.\n"
+        "Relevant Diagram: The diagram shows different sections of the "
+        "factory, including production areas, storage, and administrative "
+        "functions.\n"
+        "Visible Labels, Values, Symbols: numbers indicating quantities, "
+        "such as \"20\" for certain resources or capacities."
+    )
+    assert repair_reads_as_ungrounded_description(real_failure_text)
+
+
+def test_ungrounded_description_generalizes_to_an_unrelated_illustration() -> None:
+    """Must not be keyed to FACTORY's own wording: a different lecture
+    illustration (a biology cell diagram), with the same two failure shapes
+    (instruction echo, vague hedging) in different words, must also be
+    caught — proving the detector generalizes rather than hardcoding the
+    FACTORY fixture's specific labels."""
+    from app.services.visual_repair import repair_reads_as_ungrounded_description
+
+    hedging_only = (
+        "The diagram likely represents the internal structure of a cell, "
+        "and the labelled arrows probably indicate the direction of "
+        "material transport between organelles. The numbers shown appear "
+        "to indicate relative sizes, and the colours seem to indicate "
+        "different cell types."
+    )
+    assert repair_reads_as_ungrounded_description(hedging_only)
+
+    echo_only = (
+        "Before answering, identify internally the visible sections or "
+        "components, any labels or captions actually printed on the page: "
+        "this diagram shows a cell with a nucleus and mitochondria."
+    )
+    assert repair_reads_as_ungrounded_description(echo_only)
+
+
+def test_ungrounded_description_does_not_flag_a_genuine_grounded_answer() -> None:
+    """A specific, concrete description naming real visible content must not
+    be rejected just because it sounds confident — this isn't a ban on any
+    particular words, only on instruction-echoing and heavy hedging."""
+    from app.services.visual_repair import repair_reads_as_ungrounded_description
+
+    grounded_answer = (
+        "The diagram shows the Planspiel Factory board. On the left, a "
+        "Bilanz panel lists Aktiva (Anlagevermögen, Umlaufvermögen) and "
+        "Passiva (Eigenkapital, Fremdkapital). The centre shows the "
+        "production flow: Materiallager, then Fertigungsstufe 1, then "
+        "Fertigungsstufe 2, then Fertigwarenlager, with Lieferanten feeding "
+        "in on the left and Kunden receiving output on the right. The right "
+        "side shows a GuV panel: Umsatzerlöse minus Herstellungskosten gives "
+        "Bruttoergebnis, then Gemeinkosten and Abschreibung are subtracted to "
+        "reach Betriebsergebnis."
+    )
+    assert not repair_reads_as_ungrounded_description(grounded_answer)
+
+
 def test_visual_repair_must_satisfy_identity_and_mapping_obligations() -> None:
     traits = classify_task_traits("Which labels 1 to 9 are correct?")
     validation = validate_repaired_answer(
