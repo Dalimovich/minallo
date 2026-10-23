@@ -24,11 +24,18 @@ deterministic-fallback branch, not a special test-only mode). Zero
 OpenAI/model calls -- no httpx.Client.send mock is even needed because
 nothing in this call path can reach one.
 
-Multi-turn history is approximated: prior user turns use the corpus's
-own text; prior assistant turns use a short synthetic placeholder
-naming the expected target (the harness has no real generated answer to
-replay). This is an honest approximation, not a claim of exactness --
-documented here rather than hidden.
+Multi-turn history (2026-10-23 fix): built by ``scripts.semantic_blind_ab_
+transcript.build_history_turns``, shared with every other eval arm, instead
+of this script's own original ``_placeholder_assistant_text``, which
+literally wrote the gold ``expected`` target into the synthetic assistant
+reply (e.g. ``"[placeholder prior answer about 4]"``) -- handing turn 2+ of
+24 of the corpus's 35 scenarios the correct exercise identity for free,
+before the interpreter under test ever had to resolve it. The shared builder
+never reads ``expected``/``verifiedAnswer`` at all; see its own docstring.
+The original 2026-10-22 report (same filename without "-fixed-transcript")
+is left in place, not deleted, and must not be cited as this corpus's
+single-turn-interpretation accuracy -- only turn-1-of-each-scenario numbers
+from it were ever unaffected by this leak.
 
 Usage: run from backend/python-ai/ with the project's venv:
     py -3.12 scripts/semantic_intent_deterministic_baseline.py
@@ -51,6 +58,7 @@ from app.services.diagnostic_policy import adapt_deterministic_intent  # noqa: E
 from app.services.policy_compiler import compile_policy  # noqa: E402
 from app.services.semantic_call_support import needs_semantic_escalation  # noqa: E402
 from app.services.student_intent import interpret_student_intent  # noqa: E402
+from scripts.semantic_blind_ab_transcript import build_history_turns  # noqa: E402
 
 CORPUS = json.loads((ROOT / "tests/fixtures/semantic_blind_ab_corpus.json").read_text(encoding="utf-8"))
 DOCUMENTS = json.loads((ROOT / "tests/fixtures/semantic_blind_ab_documents.json").read_text(encoding="utf-8"))
@@ -73,11 +81,6 @@ _FORM_TO_OBJECTIVE = {
 
 def _authorized_labels(document: dict) -> frozenset[str]:
     return frozenset((document.get("exercises") or {}).keys())
-
-
-def _placeholder_assistant_text(turn: dict) -> str:
-    targets = ", ".join(str(e["target"]) for e in turn["expected"])
-    return f"[placeholder prior answer about {targets}]"
 
 
 def _run_turn(question: str, *, previous_turns: list[dict], document: dict) -> dict:
@@ -158,8 +161,13 @@ def main() -> None:
         document = DOCUMENTS[scenario["document"]]
         category = scenario["category"]
         category_totals.setdefault(category, {"turns": 0, "all_match": 0})
-        previous_turns: list[dict] = []
-        for turn in scenario["turns"]:
+        for turn_index, turn in enumerate(scenario["turns"]):
+            # Gold-independent, shared across every eval arm -- see
+            # scripts/semantic_blind_ab_transcript.py's module docstring for
+            # the leak this replaces (that module never reads this turn's
+            # own `expected`/`verifiedAnswer`, only (form, release) pairs
+            # from turns STRICTLY BEFORE this one).
+            previous_turns = build_history_turns(scenario, turn_index)
             started = time.perf_counter()
             try:
                 result = _run_turn(turn["student"], previous_turns=previous_turns, document=document)
@@ -192,9 +200,6 @@ def main() -> None:
                     overall.setdefault("wrong_turns_that_would_escalate", 0)
                     overall["wrong_turns_that_would_escalate"] += 1
 
-            previous_turns.append({"role": "user", "text": turn["student"]})
-            previous_turns.append({"role": "assistant", "text": _placeholder_assistant_text(turn)})
-
     latencies_ms.sort()
     p50 = latencies_ms[len(latencies_ms) // 2] if latencies_ms else 0.0
     p95 = latencies_ms[int(len(latencies_ms) * 0.95)] if latencies_ms else 0.0
@@ -224,7 +229,7 @@ def main() -> None:
         },
     }
 
-    out_path = ROOT / "reports" / "semantic-intent-deterministic-baseline-2026-10-22.json"
+    out_path = ROOT / "reports" / "semantic-intent-deterministic-baseline-2026-10-23-fixed-transcript.json"
     out_path.write_text(json.dumps({"summary": summary, "turns": results}, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
