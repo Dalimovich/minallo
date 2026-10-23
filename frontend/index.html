@@ -1,134 +1,172 @@
 <!doctype html>
 <html lang="en">
- <head>
-  <meta charset="UTF-8" />
+  <head>
+    <meta charset="UTF-8" />
 
-  <!-- Returning-session shim: must be the very first thing in <head>, before
+    <!-- Returning-session shim: must be the very first thing in <head>, before
        any stylesheet or other script, so a logged-in visitor never paints
        the marketing page at all. Synchronous/local only (no network), same
        checks auth-bootstrap.js uses, so stale/old links (email confirm,
        OAuth callback, Stripe/PayPal return) that still target / keep
        working by forwarding straight to /app/ with the query/hash intact. -->
-  <script>
-  (function () {
-    try {
-      var loggedIn = false;
-      try { loggedIn = sessionStorage.getItem('ss_logged_in') === 'true'; } catch (e) {}
-      if (!loggedIn && location.hash && location.hash.indexOf('access_token') !== -1) loggedIn = true;
-      if (!loggedIn) {
+    <script>
+      (function () {
         try {
-          var qp = new URLSearchParams(location.search);
-          if (qp.get('token') || qp.get('token_hash') || qp.get('confirmation_token') || qp.get('code')) loggedIn = true;
+          var loggedIn = false;
+          try {
+            loggedIn = sessionStorage.getItem('ss_logged_in') === 'true';
+          } catch (e) {}
+          if (!loggedIn && location.hash && location.hash.indexOf('access_token') !== -1)
+            loggedIn = true;
+          if (!loggedIn) {
+            try {
+              var qp = new URLSearchParams(location.search);
+              if (
+                qp.get('token') ||
+                qp.get('token_hash') ||
+                qp.get('confirmation_token') ||
+                qp.get('code')
+              )
+                loggedIn = true;
+            } catch (e) {}
+          }
+          if (!loggedIn) {
+            try {
+              if (sessionStorage.getItem('ss_force_app') === 'true') loggedIn = true;
+            } catch (e) {}
+          }
+          if (!loggedIn) {
+            try {
+              if (
+                localStorage.getItem('sb_sess_token') ||
+                sessionStorage.getItem('sb_sess_token') ||
+                localStorage.getItem('sb_sess_refresh')
+              )
+                loggedIn = true;
+            } catch (e) {}
+          }
+          if (loggedIn) {
+            location.replace('/app/' + location.search + location.hash);
+          }
         } catch (e) {}
-      }
-      if (!loggedIn) {
-        try { if (sessionStorage.getItem('ss_force_app') === 'true') loggedIn = true; } catch (e) {}
-      }
-      if (!loggedIn) {
-        try {
-          if (localStorage.getItem('sb_sess_token') || sessionStorage.getItem('sb_sess_token') || localStorage.getItem('sb_sess_refresh')) loggedIn = true;
-        } catch (e) {}
-      }
-      if (loggedIn) {
-        location.replace('/app/' + location.search + location.hash);
-      }
-    } catch (e) {}
-  })();
-  </script>
+      })();
+    </script>
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Minallo - AI Exam Prep From Your Real Course Material</title>
-  <meta name="description" content="Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material.">
-  <link rel="canonical" href="https://minallo.de/">
-  <!-- Tell Google we want the full description used as the snippet and a
+    <title>Minallo — Your Learning. Reimagined.</title>
+    <meta
+      name="description"
+      content="Minallo helps university students prepare from course PDFs and German learners practice grammar, vocabulary and writing. Two journeys, one learning workspace."
+    />
+    <link rel="canonical" href="https://minallo.de/" />
+    <!-- Tell Google we want the full description used as the snippet and a
        large image preview. Without max-snippet:-1 Google often truncates
        or omits the meta description in favor of an auto-generated one. -->
-  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+    <meta
+      name="robots"
+      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"
+    />
 
-  <!-- Open Graph (Facebook, LinkedIn, Slack, Discord previews) -->
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Minallo">
-  <meta property="og:title" content="Minallo - AI Exam Prep From Your Real Course Material">
-  <meta property="og:description" content="Turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on your real course material.">
-  <meta property="og:url" content="https://minallo.de/">
-  <meta property="og:image" content="https://minallo.de/assets/favicon.png">
-  <meta property="og:locale" content="en_US">
+    <!-- Open Graph (Facebook, LinkedIn, Slack, Discord previews) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Minallo" />
+    <meta property="og:title" content="Minallo — Your Learning. Reimagined." />
+    <meta
+      property="og:description"
+      content="Minallo helps university students prepare from course PDFs and German learners practice grammar, vocabulary and writing. Two journeys, one learning workspace."
+    />
+    <meta property="og:url" content="https://minallo.de/" />
+    <meta property="og:image" content="https://minallo.de/assets/favicon.png" />
+    <meta property="og:locale" content="en_US" />
 
-  <!-- Twitter / X card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Minallo - AI Exam Prep From Your Real Course Material">
-  <meta name="twitter:description" content="Turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on your real course material.">
-  <meta name="twitter:image" content="https://minallo.de/assets/favicon.png">
+    <!-- Twitter / X card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Minallo — Your Learning. Reimagined." />
+    <meta
+      name="twitter:description"
+      content="Minallo helps university students prepare from course PDFs and German learners practice grammar, vocabulary and writing. Two journeys, one learning workspace."
+    />
+    <meta name="twitter:image" content="https://minallo.de/assets/favicon.png" />
 
-  <!-- Structured data: tells Google this site is the Minallo AI study product,
+    <!-- Structured data: tells Google this site is the Minallo AI study product,
        distinct from the unrelated "Minallo Camping Farm Resort" listings. -->
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "Minallo",
-    "alternateName": "Minallo AI",
-    "url": "https://minallo.de/",
-    "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": "Minallo",
-    "url": "https://minallo.de/",
-    "logo": "https://minallo.de/assets/favicon.png",
-    "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
-  }
-  </script>
-  <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Minallo",
-    "applicationCategory": "EducationalApplication",
-    "operatingSystem": "Web",
-    "url": "https://minallo.de/",
-    "description": "AI exam-prep platform that turns real course material into summaries, quizzes, flashcards, cheatsheets, step-by-step explanations, and exam-style practice."
-  }
-  </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Minallo",
+        "alternateName": "Minallo AI",
+        "url": "https://minallo.de/",
+        "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Minallo",
+        "url": "https://minallo.de/",
+        "logo": "https://minallo.de/assets/favicon.png",
+        "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Minallo",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web",
+        "url": "https://minallo.de/",
+        "description": "Minallo helps university students prepare from course PDFs and German learners practice grammar, vocabulary and writing. Two journeys, one learning workspace."
+      }
+    </script>
 
-  <!-- Favicons. Google's SERP favicon picker wants at least 48x48; our
+    <!-- Favicons. Google's SERP favicon picker wants at least 48x48; our
        /assets/favicon.png is 128x128 which qualifies. Declaring sizes="any"
        lets Google pick the file without us pre-committing to a single size. -->
-  <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
-  <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
-  <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
-  <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
-  <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
-  <meta name="theme-color" content="#0b1220" />
+    <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
+    <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
+    <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
+    <meta name="theme-color" content="#0b1220" />
 
-  <!-- Manrope served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
+    <!-- Manrope served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
        GDPR-friendly drop-in replacement for Google Fonts that does not log
        IPs — the privacy-conscious workaround for LG Muenchen I
        (3 O 17493/20). One narrow domain in the CSP. -->
-  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
-  <link
-    rel="stylesheet"
-    href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
-  />
-  <link rel="preload" as="font" type="font/woff2" crossorigin
-        href="https://fonts.bunny.net/manrope/files/manrope-latin-400-normal.woff2" />
-  <link rel="preload" as="font" type="font/woff2" crossorigin
-        href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2" />
+    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin="" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin=""
+      href="https://fonts.bunny.net/manrope/files/manrope-latin-400-normal.woff2"
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin=""
+      href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2"
+    />
 
-  <!-- Google Identity Services loads independently of the landing content —
+    <!-- Google Identity Services loads independently of the landing content —
        auth is infrastructure, not a landing-page feature. -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
-  <link rel="stylesheet" href="/css/typography.css?v=2" />
-  <link rel="stylesheet" href="/css/new-landing.css?v=23" />
-  <link rel="stylesheet" href="/css/performance.css?v=4" />
+    <link rel="stylesheet" href="/css/typography.css?v=2" />
+    <link rel="stylesheet" href="/css/cinematic-landing.css?v=1" />
+    <link rel="stylesheet" href="/css/cinematic-accessibility.css?v=1" />
   </head>
-  <body class="nl-body">
+  <body class="cinematic">
     <!-- MINALLO_LANDING_CONTENT: scripts/build-production.mjs splices the
          real content of frontend/pages/new_landing.html in here at build
          time (dist/index.html only — this source file keeps the marker so
@@ -138,11 +176,13 @@
          fetching or injecting it. -->
     <!-- MINALLO_LANDING_CONTENT -->
 
+    <!-- Deferred, non-blocking: restores the automatic Google One Tap offer
+         (auth-bootstrap.js's _initOneTap) on page load. openAuth() in
+         cinematic/auth.js skips re-loading these when already present. -->
     <script src="/js/minallo.js?v=2" defer></script>
     <script src="/js/runtime-config.js" defer></script>
     <script src="/js/config.js?v=20261015-qa2-cachebust" defer></script>
     <script src="/js/auth-bootstrap.js?v=13" defer></script>
-    <script src="/js/supabase.js?v=11" defer></script>
-    <script src="/js/pages/new-landing.js?v=22" defer></script>
+    <script type="module" src="/js/pages/cinematic/index.js"></script>
   </body>
 </html>

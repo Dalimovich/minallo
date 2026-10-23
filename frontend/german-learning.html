@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <!-- Returning-session shim: must be the very first thing in <head>, before
+       any stylesheet or other script, so a logged-in visitor never paints
+       the marketing page at all. Synchronous/local only (no network), same
+       checks auth-bootstrap.js uses, so stale/old links (email confirm,
+       OAuth callback, Stripe/PayPal return) that still target / keep
+       working by forwarding straight to /app/ with the query/hash intact. -->
+    <script>
+      (function () {
+        try {
+          var loggedIn = false;
+          try {
+            loggedIn = sessionStorage.getItem('ss_logged_in') === 'true';
+          } catch (e) {}
+          if (!loggedIn && location.hash && location.hash.indexOf('access_token') !== -1)
+            loggedIn = true;
+          if (!loggedIn) {
+            try {
+              var qp = new URLSearchParams(location.search);
+              if (
+                qp.get('token') ||
+                qp.get('token_hash') ||
+                qp.get('confirmation_token') ||
+                qp.get('code')
+              )
+                loggedIn = true;
+            } catch (e) {}
+          }
+          if (!loggedIn) {
+            try {
+              if (sessionStorage.getItem('ss_force_app') === 'true') loggedIn = true;
+            } catch (e) {}
+          }
+          if (!loggedIn) {
+            try {
+              if (
+                localStorage.getItem('sb_sess_token') ||
+                sessionStorage.getItem('sb_sess_token') ||
+                localStorage.getItem('sb_sess_refresh')
+              )
+                loggedIn = true;
+            } catch (e) {}
+          }
+          if (loggedIn) {
+            location.replace('/app/' + location.search + location.hash);
+          }
+        } catch (e) {}
+      })();
+    </script>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>German Learning — Grammar, Vocabulary & Exam Practice | Minallo</title>
+    <meta
+      name="description"
+      content="Explore German learning with Minallo: grammar, vocabulary in context, guided writing and exam practice. Try sample exercises and build a starter plan."
+    />
+    <link rel="canonical" href="https://minallo.de/german-learning.html" />
+    <!-- Tell Google we want the full description used as the snippet and a
+       large image preview. Without max-snippet:-1 Google often truncates
+       or omits the meta description in favor of an auto-generated one. -->
+    <meta
+      name="robots"
+      content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1"
+    />
+
+    <!-- Open Graph (Facebook, LinkedIn, Slack, Discord previews) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Minallo" />
+    <meta
+      property="og:title"
+      content="German Learning — Grammar, Vocabulary & Exam Practice | Minallo"
+    />
+    <meta
+      property="og:description"
+      content="Explore German learning with Minallo: grammar, vocabulary in context, guided writing and exam practice. Try sample exercises and build a starter plan."
+    />
+    <meta property="og:url" content="https://minallo.de/german-learning.html" />
+    <meta property="og:image" content="https://minallo.de/assets/favicon.png" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="German Learning — Grammar, Vocabulary & Exam Practice | Minallo"
+    />
+    <meta
+      name="twitter:description"
+      content="Explore German learning with Minallo: grammar, vocabulary in context, guided writing and exam practice. Try sample exercises and build a starter plan."
+    />
+    <meta name="twitter:image" content="https://minallo.de/assets/favicon.png" />
+
+    <!-- Structured data: tells Google this site is the Minallo AI study product,
+       distinct from the unrelated "Minallo Camping Farm Resort" listings. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Minallo",
+        "alternateName": "Minallo AI",
+        "url": "https://minallo.de/",
+        "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Minallo",
+        "url": "https://minallo.de/",
+        "logo": "https://minallo.de/assets/favicon.png",
+        "description": "Minallo helps students turn lecture PDFs, scripts, and exercise sheets into AI summaries, quizzes, flashcards, cheatsheets, and exam-style practice based on their real course material."
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Minallo",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Web",
+        "url": "https://minallo.de/german-learning.html",
+        "description": "Explore German learning with Minallo: grammar, vocabulary in context, guided writing and exam practice. Try sample exercises and build a starter plan."
+      }
+    </script>
+
+    <!-- Favicons. Google's SERP favicon picker wants at least 48x48; our
+       /assets/favicon.png is 128x128 which qualifies. Declaring sizes="any"
+       lets Google pick the file without us pre-committing to a single size. -->
+    <link rel="icon" type="image/png" sizes="any" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="128x128" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon.png" />
+    <link rel="shortcut icon" type="image/png" href="/assets/favicon.png" />
+    <link rel="apple-touch-icon" sizes="128x128" href="/assets/favicon.png" />
+    <meta name="theme-color" content="#0b1220" />
+
+    <!-- Manrope served from Bunny Fonts. Bunny is an EU-hosted (Slovenia),
+       GDPR-friendly drop-in replacement for Google Fonts that does not log
+       IPs — the privacy-conscious workaround for LG Muenchen I
+       (3 O 17493/20). One narrow domain in the CSP. -->
+    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin="" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.bunny.net/css?family=manrope:400,500,600,700,800&display=swap"
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin=""
+      href="https://fonts.bunny.net/manrope/files/manrope-latin-400-normal.woff2"
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin=""
+      href="https://fonts.bunny.net/manrope/files/manrope-latin-700-normal.woff2"
+    />
+
+    <!-- Google Identity Services loads independently of the landing content —
+       auth is infrastructure, not a landing-page feature. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <link rel="stylesheet" href="/css/typography.css?v=2" />
+    <link rel="stylesheet" href="/css/cinematic-landing.css?v=1" />
+    <link rel="stylesheet" href="/css/cinematic-accessibility.css?v=1" />
+  </head>
+  <body class="cinematic">
+    <!-- MINALLO_LANDING_CONTENT: scripts/build-production.mjs splices the
+         real content of frontend/pages/new_landing.html in here at build
+         time (dist/index.html only — this source file keeps the marker so
+         there is exactly one copy of the landing markup to maintain).
+         The server therefore always sends the full marketing content in
+         the initial HTML response; nothing here depends on client-side JS
+         fetching or injecting it. -->
+    <a class="skip-link" href="#main">Skip to content</a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="/" class="brand" aria-label="Minallo home"
+        ><img class="brandmark" src="/assets/minallo-mark.png" alt="" aria-hidden="true" width="39" height="25" />minallo<span class="branddot"
+          >.</span
+        ></a
+      >
+      <div class="navlinks">
+        <a href="/#choose">Journeys</a><a href="#pricing">Student Pro</a
+        ><a href="#start" data-auth="">Sign in</a>
+      </div>
+      <a class="pill" href="#start" data-auth="">Get started ↗</a>
+    </nav>
+    <main id="main">
+      <div class="journey" data-journey="german" id="german-journey">
+        <section
+          class="journey-chapters"
+          aria-label="YOUR GERMAN JOURNEY"
+          id="german-story"
+          data-story-path="german"
+        >
+          <div class="journey-breadcrumb">
+            <a href="/#choose">← Choose another journey</a><span>GERMAN LEARNER</span
+            ><a href="#plan">Skip to my plan ↘</a>
+          </div>
+          <p class="sample-label">
+            Product illustrations and interactive samples · no live AI requests
+          </p>
+          <article class="journey-chapter" data-scene="0">
+            <div class="copy">
+              <div class="scene-label">01 / The language barrier</div>
+              <h1>Understand it.<br /><em>Then speak it.</em></h1>
+              <p>
+                New grammar rules. Unfamiliar vocabulary. The pressure to use German in real life.
+                Learning a language should feel like progress, not guesswork.
+              </p>
+              <div class="scene-meta"><b>✧</b> A familiar place to begin</div>
+            </div>
+            <div aria-hidden="true" class="visual">
+              <div class="orb"></div>
+              <div class="lang-cards">
+                <div class="lang-card lc-one">
+                  <small>VOCABULARY</small><strong lang="de">die Erfahrung</strong
+                  ><span>experience</span>
+                </div>
+                <div class="lang-card lc-two">
+                  <small>GRAMMAR</small><strong lang="de">weil + Verb am Ende</strong
+                  ><span>Because the verb moves</span>
+                </div>
+                <div class="lang-card lc-three">
+                  <small>EVERYDAY GERMAN</small><strong lang="de">Wie geht's?</strong
+                  ><span>How are you?</span>
+                </div>
+                <div class="lang-bubble">A1 → C1</div>
+              </div>
+            </div>
+          </article>
+          <article class="journey-chapter" data-scene="1">
+            <div class="copy">
+              <div class="scene-label">02 / A learning space built for you</div>
+              <h2>German practice.<br /><em>One clear path.</em></h2>
+              <p>
+                Grammar, vocabulary, guided writing, and exam-oriented practice belong together. You
+                see what to work on next, not just another vocabulary list.
+              </p>
+              <div class="scene-meta"><b>✧</b> From disconnected resources to direction</div>
+            </div>
+            <div aria-hidden="true" class="visual">
+              <div class="orb"></div>
+              <div class="language-dashboard">
+                <div class="ld-top"><span>∿ minallo / German</span><b>LEARNING PATH</b></div>
+                <h3>Guten Morgen, Lernende.</h3>
+                <p>Today's practice · B1 example track</p>
+                <div class="ld-grid">
+                  <div>01 <b>Everyday speaking</b><span>Useful expressions</span></div>
+                  <div>02 <b>Grammar practice</b><span>Sentence structure</span></div>
+                  <div>03 <b>Writing coach</b><span>Guided feedback</span></div>
+                  <div>04 <b>Exam prep</b><span>Targeted practice</span></div>
+                </div>
+                <div class="ld-bottom"><span>Daily learning journey</span><b>YOUR PACE ↗</b></div>
+              </div>
+            </div>
+          </article>
+          <article class="journey-chapter" data-scene="2">
+            <div class="copy">
+              <div class="scene-label">03 / Build actual confidence</div>
+              <h2>Understand.<br />Try it.<br /><em>Try again.</em></h2>
+              <p>
+                Make a choice, get an explanation, and revisit what needs practice. Small exercises
+                help turn rules into usable language.
+              </p>
+              <div class="scene-meta"><b>✧</b> Learning means using the language</div>
+            </div>
+            <div aria-hidden="true" class="visual">
+              <div class="orb"></div>
+              <div class="language-dashboard ld-exercise">
+                <div class="ld-top"><span>MINALLO / SHORT PRACTICE</span><b>GERMAN B1</b></div>
+                <small class="ld-label">COMPLETE THE SENTENCE</small>
+                <h3 lang="de">Ich lerne Deutsch, weil ich in Deutschland <em>___</em>.</h3>
+                <div lang="de" class="ld-answers">
+                  <span>wohne</span><span>wohnt</span><span>wohnen</span>
+                </div>
+                <div class="ld-bottom">
+                  <span>Step by step, at your level.</span><b>LEARN + PRACTICE</b>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+        <section class="octopus-scroll" id="german-features" data-feature-path="german">
+          <div class="oct-pin">
+            <div class="oct-copy">
+              <div class="eyebrow">THE CONNECTED LEARNING SYSTEM / SCROLL TO REVEAL</div>
+              <h2>Language learning, connected.</h2>
+              <p>
+                Your level connects to the practice you need. Scroll to discover one feature at a
+                time.
+              </p>
+              <a class="map-skip" href="#german-grammar">Skip feature reveal →</a>
+            </div>
+            <div
+              class="oct-diagram"
+              aria-label="Five connected Minallo features, revealed on scroll"
+            >
+              <svg
+                class="oct-lines"
+                viewBox="0 0 1000 620"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path class="oct-line" data-line="1" d="M 500 285 Q 382 167 265 98" />
+                <path class="oct-line" data-line="2" d="M 500 285 Q 617 168 735 100" />
+                <path class="oct-line" data-line="3" d="M 500 285 Q 317 313 135 390" />
+                <path class="oct-line" data-line="4" d="M 500 285 Q 682 313 865 390" />
+                <path class="oct-line" data-line="5" d="M 500 285 Q 500 386 500 535" />
+              </svg>
+              <div aria-hidden="true" class="oct-core">
+                <img class="core-brand" src="/assets/minallo-mark.png" alt="" aria-hidden="true" /><strong>minallo.</strong
+                ><small>ONE LEARNING<br />SYSTEM</small>
+              </div>
+              <div class="oct-node n1" data-arm="1">
+                <span class="node-icon" aria-hidden="true">◈</span>
+                <h3>Vocabulary</h3>
+                <p>Learn words in context, not just in lists.</p>
+                <a href="#german-words">Explore vocabulary ↗</a>
+              </div>
+              <div class="oct-node n2" data-arm="2">
+                <span class="node-icon" aria-hidden="true">◇</span>
+                <h3>Grammar</h3>
+                <p>Understand the rule and apply it correctly.</p>
+                <a href="#german-grammar">Explore grammar ↗</a>
+              </div>
+              <div class="oct-node n3" data-arm="3">
+                <span class="node-icon" aria-hidden="true">✳</span>
+                <h3>Writing coach</h3>
+                <p>Practice writing and receive guided feedback.</p>
+                <a href="#german-writing">Explore writing coach ↗</a>
+              </div>
+              <div class="oct-node n4" data-arm="4">
+                <span class="node-icon" aria-hidden="true">◎</span>
+                <h3>Daily practice</h3>
+                <p>Short sessions that strengthen weak areas.</p>
+                <a href="#german-pace">Explore daily practice ↗</a>
+              </div>
+              <div class="oct-node n5" data-arm="5">
+                <span class="node-icon" aria-hidden="true">▤</span>
+                <h3>Exam preparation</h3>
+                <p>Practice for your target German exam.</p>
+                <a href="#german-exam">Explore exam preparation ↗</a>
+              </div>
+            </div>
+            <div class="oct-bottom">
+              <div class="oct-readout">
+                <span class="oct-index">00 / 05</span
+                ><strong class="oct-title">A system built around you</strong
+                ><span class="oct-description">Keep scrolling to connect the first feature.</span>
+              </div>
+              <div class="oct-meter"><i></i></div>
+            </div>
+          </div>
+        </section>
+        <section class="experience-block german-interactive" id="german-grammar">
+          <div class="block-intro">
+            <div class="eyebrow">01 / GRAMMAR IN CONTEXT</div>
+            <h2>Stop guessing.<br /><em>Understand the rule.</em></h2>
+            <p>
+              Choose a sentence ending and see the explanation. This is a working local sample, not
+              a live AI assessment.
+            </p>
+            <a class="chapter-link" href="/ai-tutor.html">Explore the next step ↗</a>
+          </div>
+          <div class="german-practice">
+            <div class="german-whiteboard">
+              <div class="gw-top">MINALLO / GERMAN PRACTICE <span>B1 EXAMPLE</span></div>
+              <div class="gw-tag">COMPLETE THE SENTENCE</div>
+              <h3 lang="de">Ich bleibe heute zu Hause, weil ich <span>___</span>.</h3>
+              <div lang="de" class="gw-answers" id="grammar-options">
+                <button disabled data-demo-control="" data-correct="false">bin müde</button
+                ><button disabled data-demo-control="" data-correct="true">müde bin</button
+                ><button disabled data-demo-control="" data-correct="false">müde sein</button>
+              </div>
+              <p class="grammar-feedback" id="grammar-feedback" aria-live="polite">
+                Choose the form that fits after <b>weil</b>.
+              </p>
+            </div>
+            <div class="german-rule">
+              <small>THE RULE</small>
+              <h3>Why does the verb move?</h3>
+              <p>
+                In a subordinate clause introduced by <b>weil</b>, the conjugated verb moves to the
+                end: “weil ich müde bin.”
+              </p>
+              <div class="rule-steps">
+                <span>01 · NOTICE</span><span>02 · UNDERSTAND</span><span>03 · APPLY</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="experience-block german-words" id="german-words">
+          <div class="block-intro">
+            <div class="eyebrow">02 / VOCABULARY &amp; REAL LIFE</div>
+            <h2>Don't just memorize words.<br /><em>Use them.</em></h2>
+            <p>
+              See vocabulary in a real-life moment. Tap the card to switch between German and
+              English, then try saying it aloud.
+            </p>
+            <a class="chapter-link" href="/german-learning.html#german-writing"
+              >Explore the next step ↗</a
+            >
+            <p>
+              Sample translation: <span lang="de">Wo fährt der Zug ab?</span> means “Where does the
+              train depart?”
+            </p>
+          </div>
+          <div class="german-vocab-scene">
+            <div class="city-window">
+              <div class="sun-disc"></div>
+              <div class="city-shape sh1"></div>
+              <div class="city-shape sh2"></div>
+              <div class="city-shape sh3"></div>
+              <div class="city-label">AT THE TRAIN STATION / AM BAHNHOF</div>
+            </div>
+            <button disabled data-demo-control="" id="vocab-card" class="vocab-card" type="button">
+              <small>EVERYDAY GERMAN · TAP TO TRANSLATE</small
+              ><strong lang="de" id="vocab-front">Wo fährt der Zug ab?</strong
+              ><span id="vocab-sub">Tap to reveal translation ↗</span>
+            </button>
+          </div>
+        </section>
+        <section class="experience-block german-writing" id="german-writing">
+          <div class="block-intro">
+            <div class="eyebrow">03 / STRUCTURED LANGUAGE FEEDBACK</div>
+            <h2>Practice writing.<br /><em>Learn from mistakes.</em></h2>
+            <p>
+              Try a local writing example and see how Minallo could explain a correction rather than
+              simply marking it wrong.
+            </p>
+            <a class="chapter-link" href="/german-learning.html#german-exam"
+              >Explore the next step ↗</a
+            >
+          </div>
+          <div class="writing-interface">
+            <div class="writing-left">
+              <div class="wl-top">SCHREIBTRAINER / SAMPLE SENTENCE</div>
+              <div lang="de" class="writing-prompt">
+                Ich bin gestern in die Stadt <em>gegehen</em>.
+              </div>
+              <a class="btn-primary" href="#writing-response">See the guided correction ↗</a>
+            </div>
+            <div class="writing-right">
+              <div class="wr-head">MINALLO / WRITING COACH</div>
+              <div id="writing-response">
+                <strong lang="de">Ich bin gestern in die Stadt gegangen.</strong>
+                <p>
+                  The past participle of <span lang="de">gehen</span> is
+                  <span lang="de">gegangen</span>, not <span lang="de">gegehen</span>. This example
+                  uses the auxiliary <span lang="de">sein</span>.
+                </p>
+              </div>
+              <small>Illustrative scripted correction · no account needed</small>
+            </div>
+          </div>
+        </section>
+        <section class="experience-block german-exam" id="german-exam">
+          <div class="exam-stage">
+            <div class="exam-copy">
+              <div class="eyebrow">04 / GERMAN EXAM PREPARATION</div>
+              <h2>Make practice<br /><em>exam-ready.</em></h2>
+              <p>
+                Combine reading, listening, writing and speaking preparation around the exam or
+                language goal you choose.
+              </p>
+              <div class="exam-progress-copy">
+                <span>EXAMPLE B1 PRACTICE CHECKLIST</span><b id="gexam-progress">0 / 4</b>
+              </div>
+              <a class="chapter-link" href="/german-learning.html#plan">Explore the next step ↗</a>
+            </div>
+            <div class="exam-paper">
+              <div class="exam-paper-top">
+                <span>MINALLO / GERMAN EXAM</span><span>B1 TRACK</span>
+              </div>
+              <h3>Ready for your next step?</h3>
+              <p>Illustrative practice checklist</p>
+              <div class="exam-checklist german-checklist">
+                <label><input type="checkbox" /><span>Reading comprehension</span></label
+                ><label><input type="checkbox" /><span>Listening practice</span></label
+                ><label><input type="checkbox" /><span>Writing a short response</span></label
+                ><label><input type="checkbox" /><span>Speaking prompts</span></label>
+              </div>
+              <div class="exam-paper-foot">YOUR LEVEL → YOUR PRACTICE → YOUR EXAM</div>
+            </div>
+          </div>
+        </section>
+        <section class="pace-section" id="german-pace">
+          <div class="pace-copy">
+            <div class="eyebrow">05 / LEARNING PACE</div>
+            <h2>Your practice should meet<br /><em>you at your level.</em></h2>
+            <p>
+              A learner practicing B1 grammar needs a different next step from someone preparing for
+              a German exam. A useful system helps them choose.
+            </p>
+            <div class="pace-actions">
+              <button
+                disabled
+                data-demo-control=""
+                aria-pressed="true"
+                class="gpace-choice active"
+                data-level="A2"
+                type="button"
+              >
+                A2 practice</button
+              ><button
+                disabled
+                data-demo-control=""
+                aria-pressed="false"
+                class="gpace-choice"
+                data-level="B1"
+                type="button"
+              >
+                B1 practice</button
+              ><button
+                disabled
+                data-demo-control=""
+                aria-pressed="false"
+                class="gpace-choice"
+                data-level="C1"
+                type="button"
+              >
+                C1 practice
+              </button>
+            </div>
+            <a class="chapter-link" href="/german-learning.html#plan">Explore the next step ↗</a>
+          </div>
+          <div class="pace-panel">
+            <div class="pace-panel-top">GERMAN / SUGGESTED NEXT ACTION <span>EXAMPLE</span></div>
+            <div class="pace-score">
+              <b>DE</b>
+              <div>
+                <small>YOUR SAMPLE LEVEL</small
+                ><strong id="gpace-heading">A2 · Everyday conversations</strong>
+              </div>
+            </div>
+            <p id="gpace-detail">
+              Practice asking for directions and describing your routine with simple connecting
+              words.
+            </p>
+            <div class="pace-tracks">
+              <span>LEVEL</span><span>LEARNING GOAL</span><span>NEXT LESSON</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <section class="plan" id="plan">
+        <div class="plan-wrap">
+          <div class="plan-copy">
+            <div class="eyebrow">THE STORY BECOMES YOURS</div>
+            <h2>Now build <span>your German</span> journey.</h2>
+            <p>
+              Four answers. A useful starting direction, before sign-up. This local suggestion is
+              not an assessment of your ability.
+            </p>
+          </div>
+          <div class="quiz-panel">
+            <form id="plan-form" data-path="german">
+              <h3>Your starting point</h3>
+              <p class="help">Nothing is sent or saved.</p>
+              <label class="fieldname" for="subject">Your German level or goal</label
+              ><input
+                id="subject"
+                name="subject"
+                type="text"
+                maxlength="70"
+                required
+                value="German B1"
+              />
+              <label class="fieldname" for="challenge">What is hardest?</label
+              ><select id="challenge" name="challenge">
+                <option value="understand">Understanding grammar</option>
+                <option value="practice">Practicing enough</option>
+                <option value="organize">Knowing where to start</option>
+              </select>
+              <label class="fieldname" for="deadline">When is your target?</label
+              ><select id="deadline" name="deadline">
+                <option value="7">Within 7 days</option>
+                <option value="21">Within 3 weeks</option>
+                <option value="60">More time</option>
+              </select>
+              <label class="fieldname" for="duration">Daily study time</label
+              ><select id="duration" name="duration">
+                <option value="20">20 minutes</option>
+                <option value="45" selected>45 minutes</option>
+                <option value="90">90 minutes</option>
+              </select>
+              <button class="btn-primary build-btn" type="submit" disabled>Reveal my starting plan ↗</button>
+            </form>
+            <section id="plan-result" hidden tabindex="-1" aria-labelledby="result-title">
+              <div class="eyebrow">YOUR STARTER STRATEGY</div>
+              <h3 id="result-title"></h3>
+              <p id="result-desc"></p>
+              <ol id="result-tasks"></ol>
+              <p class="disclaimer">
+                A rule-based suggestion from your answers, not a live AI evaluation. Your answers
+                are not carried into your account.
+              </p>
+              <a href="#start" data-auth="" class="btn-primary">Continue to Minallo ↗</a
+              ><button class="link-reset" id="restart" type="button">Change answers</button>
+            </section>
+            <noscript
+              ><p>
+                Enable JavaScript for a tailored suggestion. A good starting routine: review one
+                concept, practice it, then revisit mistakes.
+              </p></noscript
+            >
+          </div>
+        </div>
+      </section>
+      <section class="pricing-preview" id="pricing">
+        <div class="pricing-inner">
+          <div>
+            <div class="eyebrow">YOUR STUDY SYSTEM, IN ONE PLACE</div>
+            <h2>Make it your<br /><em>next chapter.</em></h2>
+            <p>
+              Explore first. When you are ready, create your Minallo account and choose your
+              learning profile. Subscription eligibility and the final offer are confirmed in the
+              existing checkout.
+            </p>
+          </div>
+          <div class="price-mini">
+            <div class="pm-top">MINALLO / STUDENT PRO</div>
+            <div class="pm-value">7-day <em>free trial*</em></div>
+            <p>
+              For eligible users, then <strong>€11.99/month</strong>. Renews monthly unless
+              cancelled. Cancel during the trial to avoid the first monthly charge, or before your
+              next renewal.
+            </p>
+            <div class="pm-features">
+              <span>Course workspace and AI Tutor</span><span>Summaries, Flashcards and Quiz</span
+              ><span>Cheatsheet, Deep Learn and ExamForge</span>
+            </div>
+            <a class="btn-primary" href="#start" data-auth="">Check trial eligibility ↗</a>
+            <small
+              >* Student plan. Trial eligibility and subscription terms apply. Creating an account
+              here does not start a paid subscription. See <a href="/terms.html">Terms</a> and
+              <a href="/withdrawal.html">Withdrawal information</a>.</small
+            >
+          </div>
+        </div>
+      </section>
+      <section class="experience-block trust-section" id="trust">
+        <div class="block-intro">
+          <div class="eyebrow">A CLEARER WAY TO LEARN</div>
+          <h2>Your work.<br /><em>Your judgement.</em></h2>
+          <p>
+            AI can make mistakes. Check explanations and generated study material against your
+            original sources. Minallo supports learning; it does not guarantee grades, exam success,
+            or official language certification.
+          </p>
+        </div>
+        <div class="trust-grid">
+          <article>
+            <h3>What can I bring?</h3>
+            <p>
+              Use lecture PDFs, scripts, slides, formula sheets and exercise sheets in a course
+              workspace. Readable source material helps; poor scans and complex diagrams may need
+              checking.
+            </p>
+            <a href="/course-based-ai-learning-tool.html">Explore the course workspace ↗</a>
+          </article>
+          <article>
+            <h3>Are these live AI demos?</h3>
+            <p>
+              No. These public examples are scripted samples running in your browser. They do not
+              upload documents or call AI services. The signed-in product works with your own
+              learning material.
+            </p>
+            <a href="/ai-tutor.html">How the AI Tutor works ↗</a>
+          </article>
+          <article>
+            <h3>What happens to my answers?</h3>
+            <p>
+              The starter-plan quiz stays in this page and is not saved or emailed. No email address
+              is collected here. Account and document handling are described in our privacy policy.
+            </p>
+            <a href="/privacy.html">Read the privacy policy ↗</a>
+          </article>
+        </div>
+      </section>
+      <section class="start-section" id="start">
+        <h2>Ready for your own chapter?</h2>
+        <p>
+          Continue with Minallo’s existing sign-in to create or access your account, choose your
+          learning profile, and review the available plan.
+        </p>
+        <button type="button" class="btn-primary" data-auth="">Continue to sign in ↗</button>
+        <p id="auth-status" role="status"></p>
+        <noscript
+          ><p>
+            JavaScript is required for account sign-in and the personalized quiz. All product
+            information and public links are available without it.
+          </p></noscript
+        >
+      </section>
+    </main>
+    <div class="seo-footer-wrap"><!-- MINALLO_FOOTER --></div>
+
+    <!-- Deferred, non-blocking: restores the automatic Google One Tap offer
+         (auth-bootstrap.js's _initOneTap) on page load. openAuth() in
+         cinematic/auth.js skips re-loading these when already present. -->
+    <script src="/js/minallo.js?v=2" defer></script>
+    <script src="/js/runtime-config.js" defer></script>
+    <script src="/js/config.js?v=20261015-qa2-cachebust" defer></script>
+    <script src="/js/auth-bootstrap.js?v=13" defer></script>
+    <script type="module" src="/js/pages/cinematic/index.js"></script>
+  </body>
+</html>

@@ -233,9 +233,13 @@ function _ssForceSplashOff(reason) {
     var hash = window.location.hash;
     var search = window.location.search;
     var hasOAuthHashToken = hash && hash.indexOf('access_token') !== -1;
-    if ((hash || search) && !hasOAuthHashToken) {
+    // Only app-route hashes (#portal=...) are stale app state to wipe. Public
+    // marketing-page content anchors (e.g. #german-words, #student-practice)
+    // must survive so direct/shared deep links keep working.
+    var isAppRouteHash = hash && hash.indexOf('#portal=') === 0;
+    if (!hasOAuthHashToken && (isAppRouteHash || search)) {
       try {
-        history.replaceState(null, '', window.location.pathname);
+        history.replaceState(null, '', window.location.pathname + (isAppRouteHash ? '' : hash));
       } catch (e) {}
     }
   }
