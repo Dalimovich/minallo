@@ -29,7 +29,7 @@ export async function openAuth() {
         '/js/minallo.js?v=2',
         '/js/runtime-config.js',
         '/js/config.js?v=20261015-qa2-cachebust',
-        '/js/auth-bootstrap.js?v=13'
+        '/js/auth-bootstrap.js?v=14'
       ]) {
         if (alreadyLoaded(src)) continue;
         await loadScript(src);

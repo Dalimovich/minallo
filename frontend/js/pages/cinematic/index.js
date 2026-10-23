@@ -1,6 +1,6 @@
-import { initFeatureMap } from './feature-map.js';
-import { initPlan } from './plan.js';
-import { openAuth } from './auth.js';
+import { initFeatureMap } from './feature-map.js?v=2';
+import { initPlan } from './plan.js?v=2';
+import { openAuth } from './auth.js?v=2';
 
 document.querySelectorAll('[data-auth]').forEach((element) => {
   element.addEventListener('click', async (event) => {
@@ -22,8 +22,8 @@ if (journey) {
   const loadDemo = () => {
     const module =
       journey.dataset.journey === 'student'
-        ? import('./student-demo.js')
-        : import('./german-demo.js');
+        ? import('./student-demo.js?v=2')
+        : import('./german-demo.js?v=2');
     module.catch(() => {
       // Static explanations and native details remain usable when loading fails.
       document.getElementById('auth-status').textContent =
