@@ -532,6 +532,76 @@ def test_unprohibited_requests_get_no_prohibition_instruction() -> None:
     assert "prohibited summarizing" not in instruction
 
 
+# ── final_negation_reminder (PR #27 follow-up) ──────────────────────────────
+#
+# Live production acceptance testing on the BWL page-6 request found that
+# intent_style_instruction's prohibition line alone was not enough: the model
+# still closed with a "Summary of ..." heading in 3/3 runs. final_negation_
+# reminder is a second, more specific, maximally-positioned reminder for the
+# SAME already-detected prohibition — these tests cover its own behaviour in
+# isolation; test_answer_stream.py covers where callers place its output.
+
+def test_final_negation_reminder_fires_on_the_live_repro_question() -> None:
+    from app.services.answer_intent import final_negation_reminder
+
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    reminder = final_negation_reminder(question)
+    assert "FINAL REMINDER" in reminder
+    # Must close the near-miss gap the live test exposed: the model satisfied
+    # the earlier instruction's literal wording with a differently-titled
+    # heading ("Summary of Development") rather than a bare "Summary".
+    assert "Summary of" in reminder
+    assert "Recap" in reminder
+    assert "Takeaways" in reminder
+    assert "Conclusion" in reminder
+
+
+def test_final_negation_reminder_works_in_german() -> None:
+    from app.services.answer_intent import final_negation_reminder
+
+    question = "Erkläre das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen."
+    reminder = final_negation_reminder(question)
+    assert "FINAL REMINDER" in reminder
+    assert "Zusammenfassung" in reminder
+    assert "Zusammenfassend" in reminder
+
+
+@pytest.mark.parametrize("question", [
+    "Explain the concept on this page in detail.",
+    "Summarize the concept on this page briefly.",
+    "Summarize this page.",
+    "Quiz me on this chapter.",
+    "Don't quiz me on this, just explain it.",
+])
+def test_final_negation_reminder_is_empty_without_a_summary_prohibition(question: str) -> None:
+    """Scoped narrowly: only an explicit no-summary request gets the extra
+    reminder. A plain explain, a plain (permitted) summarize request, and a
+    quiz-only negation (no summary prohibition) must all get nothing —
+    this must never become a blanket anti-summary/anti-conclusion rule."""
+    from app.services.answer_intent import final_negation_reminder
+
+    assert final_negation_reminder(question) == ""
+
+
+def test_final_negation_user_reminder_fires_on_the_live_repro_question() -> None:
+    from app.services.answer_intent import final_negation_user_reminder
+
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    reminder = final_negation_user_reminder(question)
+    assert "FINAL NO-SUMMARY CHECK" in reminder
+
+
+@pytest.mark.parametrize("question", [
+    "Explain the concept on this page in detail.",
+    "Summarize the concept on this page briefly.",
+    "Quiz me on this chapter.",
+])
+def test_final_negation_user_reminder_is_empty_without_a_summary_prohibition(question: str) -> None:
+    from app.services.answer_intent import final_negation_user_reminder
+
+    assert final_negation_user_reminder(question) == ""
+
+
 @pytest.mark.parametrize(
     "question",
     [

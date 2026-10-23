@@ -37,6 +37,8 @@ from .access_control import heavy_model_cap_reached
 from .answer_intent import (
     AcademicIntent,
     classify_academic_intent,
+    final_negation_reminder,
+    final_negation_user_reminder,
     wants_per_source_coverage,
 )
 from .answer import (
@@ -2220,6 +2222,16 @@ def stream_answer(
         has_visible_context=include_source_zero,
         has_history=bool(previous_turns),
     )
+    # Appended LAST, after every other system-prompt block — see
+    # final_negation_reminder's docstring (answer_intent.py) for why position
+    # matters. The original placement (right after apply_grounding_policy_prompt
+    # above) was NOT actually last: the intent-resolution/dialogue/language/
+    # exercise/correction overlays above all append to system_prompt after that
+    # point, so the reminder was being diluted by the very mechanism it was
+    # written to fix. Moved here, past every later overlay, so it is the true
+    # tail of the system prompt (user_message, built next, is a separate
+    # message and doesn't affect this ordering).
+    system_prompt += final_negation_reminder(question)
 
     user_message = "QUESTION:\n" + question.strip()
     if problem_mode and problem_solver:
@@ -2251,7 +2263,6 @@ def stream_answer(
             "and write the entire answer only in that same language. This rule applies "
             "to every language and writing system."
         )
-
     # Auto-attach the exercise/figure page bitmap on math/exercise questions so
     # the vision model can read dimensions and geometry off the drawing — most
     # of an engineering exercise's data lives in the figure, which OCR loses.
@@ -2282,6 +2293,11 @@ def stream_answer(
             user_message += _FIGURE_READ_INSTRUCTION
         else:
             log.info("figure-vision: will_attach_figure was set but no image rendered")
+    # Moved here, after the figure-instruction block above: that block also
+    # appends to user_message, so putting the reminder before it (as the
+    # original placement did) let the figure instruction dilute it again —
+    # the same ordering bug this reminder exists to fix, one level down.
+    user_message += final_negation_user_reminder(question)
 
     image_parts = [*open_image_parts, *figure_image_parts]
     log.info(

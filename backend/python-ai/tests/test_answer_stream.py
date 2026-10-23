@@ -862,3 +862,298 @@ def test_prohibition_and_depth_reach_the_actual_model_call_boundary(monkeypatch)
     assert "Zusammenfassung" in user_message
     assert "Wirtschaft" in user_message
     assert question in user_message
+
+
+def _run_stream_answer_and_capture_system_message(monkeypatch, question: str, page_text: str) -> str:
+    """Shared helper for the final_negation_reminder boundary tests below —
+    same fake-client technique as test_prohibition_and_depth_reach_the_actual_
+    model_call_boundary above, factored out so each test states only what
+    differs (the question)."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    return next(m["content"] for m in messages if m["role"] == "system")
+
+
+def _run_stream_answer_and_capture_both_messages(monkeypatch, question: str, page_text: str) -> tuple[str, str]:
+    """Same technique as the helper above, but also returns the USER message
+    — needed for final_negation_user_reminder, which is appended there, not
+    to the system prompt."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    system_message = next(m["content"] for m in messages if m["role"] == "system")
+    user_message = next(m["content"] for m in messages if m["role"] == "user")
+    assert isinstance(user_message, str), "expected a plain text user message (no image parts in this test)"
+    return system_message, user_message
+
+
+_PAGE6_TEXT = (
+    "Wirtschaft und Oekonomie\n\n"
+    "Der Begriff Wirtschaft leitet sich vom althochdeutschen Wort 'wirt' ab, "
+    "waehrend Oekonomie auf die griechischen Wurzeln oikos (Haus) und nemein "
+    "(verwalten) zurueckgeht.\n\n"
+    "## Zusammenfassung\n"
+    "Wirtschaft bezeichnet die Gesamtheit aller Einrichtungen und Handlungen, "
+    "die der Deckung menschlicher Beduerfnisse dienen.\n"
+)
+
+
+def test_final_reminder_is_positioned_after_the_later_generic_structure_rules(monkeypatch) -> None:
+    """Root-cause regression (PR #27 follow-up): live acceptance testing found
+    the model ignoring the mid-prompt prohibition because several more
+    generic, later-appended structure rules (table layout, the "use headings"
+    response-structure rule, the grounding-policy line) sat AFTER it, diluting
+    its priority. This asserts final_negation_reminder's text is the LAST
+    thing in the system prompt, strictly after all three of those blocks —
+    not just present somewhere."""
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+
+    table_layout_pos = system_message.index("ANSWER LAYOUT.")
+    response_structure_pos = system_message.index("RESPONSE STRUCTURE")
+    grounding_policy_pos = system_message.index("GROUNDING POLICY:")
+    final_reminder_pos = system_message.index("FINAL REMINDER")
+
+    assert final_reminder_pos > table_layout_pos
+    assert final_reminder_pos > response_structure_pos
+    assert final_reminder_pos > grounding_policy_pos
+    # And it must actually be the tail of the prompt, not just after those
+    # markers but followed by yet more instructions that could dilute it again.
+    assert system_message.rstrip().endswith(
+        "Keep every citation and sourced detail already in the answer — "
+        "only the closing recap is forbidden."
+    )
+
+
+def test_final_reminder_closes_the_near_miss_wording_gap(monkeypatch) -> None:
+    """The live failures were specifically headings like "Summary of
+    Development" / "Summary of Evolution" (not the bare "Summary" the
+    original instruction named) and untitled recap paragraphs. The reminder
+    must explicitly name those variants, not just repeat the original
+    instruction's narrower wording."""
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+
+    final_reminder_start = system_message.index("FINAL REMINDER")
+    reminder_tail = system_message[final_reminder_start:]
+    assert "Summary of ..." in reminder_tail
+    assert "Recap" in reminder_tail
+    assert "Takeaways" in reminder_tail
+    assert "Conclusion" in reminder_tail
+    assert "untitled" in reminder_tail
+
+
+def test_plain_explain_request_gets_no_final_reminder(monkeypatch) -> None:
+    """Control: 'Explain ... in detail' with NO prohibition must remain
+    completely unrestricted — no FINAL REMINDER block at all."""
+    question = "Explain the concept on this page in detail."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+    assert "FINAL REMINDER" not in system_message
+
+
+def test_explicit_summary_request_still_permits_and_requests_summarization(monkeypatch) -> None:
+    """Control: an explicit, non-prohibited summarize request must still get
+    the normal summary-task instruction and must NOT get the no-summary
+    reminder — the fix must not become a blanket anti-summary rule."""
+    question = "Summarize the concept on this page briefly."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+    assert "FINAL REMINDER" not in system_message
+    assert "Treat this as a summary request" in system_message
+
+
+def test_final_reminder_fires_for_the_same_prohibition_in_german(monkeypatch) -> None:
+    """The prohibition — and this reminder — must work in German, not just
+    English, since Minallo answers in the question's language."""
+    question = "Erkläre das Konzept auf dieser Seite im Detail. Fasse es nicht zusammen."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+    assert "FINAL REMINDER" in system_message
+    final_reminder_start = system_message.index("FINAL REMINDER")
+    assert final_reminder_start > system_message.index("GROUNDING POLICY:")
+
+
+def test_final_reminder_preserves_grounding_and_citation_rules(monkeypatch) -> None:
+    """The reminder must be purely additive: it must not remove or weaken the
+    existing citation/grounding rules elsewhere in the prompt."""
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+    assert "[Source N]" in system_message
+    assert "Use ONLY the context" in system_message
+
+
+def test_quiz_and_hint_requests_without_a_summary_prohibition_are_unaffected(monkeypatch) -> None:
+    """Deliverable #4.7: existing quiz/hint behaviour must be unchanged by
+    this fix — it is scoped strictly to a detected summary prohibition."""
+    for question in ("Quiz me on this chapter.", "Give me a hint for this problem."):
+        system_message = _run_stream_answer_and_capture_system_message(monkeypatch, question, _PAGE6_TEXT)
+        assert "FINAL REMINDER" not in system_message
+
+
+def test_final_no_summary_check_reaches_the_user_message_after_course_context(monkeypatch) -> None:
+    """final_negation_user_reminder is the second half of the fix: the same
+    detected prohibition, repeated at the true end of the USER message
+    (mirroring the existing FINAL LANGUAGE CHECK pattern) because that is
+    closer to generation than anything in the system prompt. Must land AFTER
+    COURSE CONTEXT, not merely be present somewhere."""
+    question = "Explain the concept on this page in detail. Do not summarize it."
+    _, user_message = _run_stream_answer_and_capture_both_messages(monkeypatch, question, _PAGE6_TEXT)
+
+    assert "FINAL NO-SUMMARY CHECK" in user_message
+    course_context_pos = user_message.index("COURSE CONTEXT:")
+    reminder_pos = user_message.index("FINAL NO-SUMMARY CHECK")
+    assert reminder_pos > course_context_pos
+    assert user_message.rstrip().endswith(
+        "delete that closing section and stop after the last new point instead."
+    )
+
+
+def test_final_no_summary_check_absent_without_a_prohibition(monkeypatch) -> None:
+    """Control: no prohibition detected → no user-message reminder either,
+    for both an unrestricted explain and a permitted summarize request."""
+    for question in (
+        "Explain the concept on this page in detail.",
+        "Summarize the concept on this page briefly.",
+    ):
+        _, user_message = _run_stream_answer_and_capture_both_messages(monkeypatch, question, _PAGE6_TEXT)
+        assert "FINAL NO-SUMMARY CHECK" not in user_message
+
+
+def _run_stream_answer_with_figure_and_capture_messages(
+    monkeypatch, question: str, page_text: str,
+) -> tuple[str, str, int]:
+    """Same technique as _run_stream_answer_and_capture_both_messages, plus
+    forcing the figure-attach branch (_should_attach_retrieved_figure /
+    _figure_page_image_parts) regardless of the real retrieval/math-mode
+    heuristics that normally gate it — those heuristics aren't what this
+    boundary test is checking; only the resulting user_message ORDER is.
+    Returns (system_message, user_message_text, image_part_count)."""
+    from app.services import answer_stream
+
+    captured_calls: list = []
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured_calls.append(kwargs)
+                    return []
+
+    monkeypatch.setattr(answer_stream, "get_openai_client", lambda: _FakeClient())
+    monkeypatch.setattr(
+        answer_stream, "_should_attach_retrieved_figure", lambda **kwargs: True,
+    )
+    monkeypatch.setattr(
+        answer_stream,
+        "_figure_page_image_parts",
+        lambda used_chunks, max_images: [
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64,FAKE"}}
+        ],
+    )
+
+    gen = answer_stream.stream_answer(
+        question=question,
+        chunks=[],
+        doc_names={},
+        open_file_context=page_text,
+    )
+    for _ in gen:
+        pass
+
+    assert len(captured_calls) == 1, "expected one answer-model call"
+    messages = captured_calls[0]["messages"]
+    system_message = next(m["content"] for m in messages if m["role"] == "system")
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert isinstance(user_content, list), "figure attach must send image parts, not a bare string"
+    text_parts = [p["text"] for p in user_content if p.get("type") == "text"]
+    image_parts = [p for p in user_content if p.get("type") == "image_url"]
+    assert len(text_parts) == 1
+    return system_message, text_parts[0], len(image_parts)
+
+
+def test_final_no_summary_check_is_the_true_tail_even_with_a_figure_attached(monkeypatch) -> None:
+    """Closes the review finding: _FIGURE_READ_INSTRUCTION used to be appended
+    AFTER final_negation_user_reminder, so a figure-attached request with an
+    explicit no-summary prohibition (e.g. "explain this diagram in detail,
+    don't summarize") lost the user-message reminder's tail position — the
+    same dilution bug the reminder exists to fix, one level down. The reminder
+    now moves past the figure-instruction block, so it must be the literal
+    tail regardless of figure attachment, and the figure instruction, image
+    attachment and page grounding must all still be present and intact."""
+    question = "Explain the diagram on this page in detail. Do not summarize it."
+    system_message, user_message, image_count = _run_stream_answer_with_figure_and_capture_messages(
+        monkeypatch, question, _PAGE6_TEXT,
+    )
+
+    assert "EXERCISE FIGURE" in user_message
+    assert "FINAL NO-SUMMARY CHECK" in user_message
+    assert user_message.index("FINAL NO-SUMMARY CHECK") > user_message.index("EXERCISE FIGURE")
+    assert user_message.rstrip().endswith(
+        "delete that closing section and stop after the last new point instead."
+    )
+
+    # Figure/image attachment and page grounding remain intact.
+    assert image_count == 1
+    assert "Wirtschaft" in user_message
+    assert "COURSE CONTEXT:" in user_message
+
+    # The system-message reminder (the first half of the fix) is unaffected
+    # by any of this — still the true tail of the system prompt.
+    assert "FINAL REMINDER" in system_message
+
+
+def test_figure_attached_request_without_prohibition_gets_no_reminder(monkeypatch) -> None:
+    """Control: an ordinary figure-vision request with no summary prohibition
+    must get the figure instruction but neither reminder."""
+    question = "Explain the diagram on this page in detail."
+    system_message, user_message, image_count = _run_stream_answer_with_figure_and_capture_messages(
+        monkeypatch, question, _PAGE6_TEXT,
+    )
+    assert image_count == 1
+    assert "EXERCISE FIGURE" in user_message
+    assert "FINAL NO-SUMMARY CHECK" not in user_message
+    assert "FINAL REMINDER" not in system_message
