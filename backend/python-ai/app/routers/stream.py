@@ -1344,6 +1344,61 @@ def _validate_open_file_images(images: list[OpenFileImagePayload] | None) -> lis
     return normalised
 
 
+_STOCK_FOLLOWUP_RE = re.compile(
+    r"^(i ?don'?t know|idk|no idea|yes|no|maybe|why\??|warum\??|"
+    r"weiter|continue|next|explain (that|this) (again|further|more)|"
+    r"solve it|answer it|do it|calculate it|compute it|just answer|"
+    r"hm+|ok(ay)?|sure|fine|"
+    r"go on|tell me more|more|details?|nochmal|noch einmal|"
+    r"i'?m stuck|stuck|help|hilfe|verstehe nicht|don'?t (get|understand)( (it|that))?)\s*[\.!\?]*$",
+    re.IGNORECASE,
+)
+
+
+def _fold_previous_turn_into_retrieval_query(
+    *,
+    question: str,
+    retrieval_query: str,
+    previous_turns_payload: list[dict[str, str]] | None,
+    dialogue_relation: str,
+    dialogue_task_family: str,
+) -> str:
+    """Fold the last user message into a short/anaphoric follow-up's query.
+
+    A short reply like "I don't know", "yes", "explain that again", "warum?"
+    matches nothing in retrieval on its own and used to land the conversation
+    in PARTIAL mode -- breaking the turn-by-turn dialogue. But raw shortness
+    is not the same as being context-dependent: "Explain transformers."
+    after "Solve exercise 5 about circuits." is just as short, yet names its
+    own topic and must not be contaminated with the unrelated prior turn.
+    dialogue_state already resolved that distinction (relation=new_topic AND
+    a recognized task_family means the message is self-contained) -- trust
+    it instead of re-deriving topic continuity from length alone. An
+    explicit stock follow-up phrase still folds in context regardless, since
+    those carry no topic of their own even when dialogue_state's narrower
+    act-regexes don't happen to tag them as a continuation.
+    """
+    if not previous_turns_payload:
+        return retrieval_query
+    q_norm = (question or "").strip()
+    is_short = len(q_norm) <= 25 or len(q_norm.split()) <= 4
+    is_anaphoric = bool(_STOCK_FOLLOWUP_RE.match(q_norm))
+    is_new_self_contained_topic = (
+        dialogue_relation == "new_topic" and dialogue_task_family != "unknown"
+    )
+    if not (is_anaphoric or (is_short and not is_new_self_contained_topic)):
+        return retrieval_query
+    last_user = next(
+        (t["text"] for t in reversed(previous_turns_payload) if t.get("role") == "user"),
+        "",
+    )
+    if not last_user:
+        return retrieval_query
+    # Prepend the prior user message so retrieval has real signal. Keep the
+    # new question on the end so any keywords in it still influence ranking.
+    return (last_user + "\n" + q_norm).strip()
+
+
 def _augment_retrieval_query_with_open_context(
     *,
     question: str,
@@ -5748,39 +5803,16 @@ async def _prepare_ask_stream_response(
         if payload.problemSolver else resolved_question
     )
 
-    # Follow-up rewriting. A short reply like "I don't know", "yes",
-    # "explain that again", "warum?" matches nothing in retrieval and
-    # used to land the conversation in PARTIAL mode ("I found a partial
-    # match in your course files") — completely breaking the turn-by-turn
-    # dialogue. When the new question is short / anaphoric AND we have
-    # prior turns, fold the LAST user message into the retrieval query
-    # so embeddings target the topic the student is actually following
-    # up on. Skip when Problem Solver is active (problemSolver.problem
-    # already anchors retrieval to the exercise).
-    if not payload.problemSolver and previous_turns_payload:
-        q_norm = (question or "").strip()
-        # Heuristic: short text OR matches a known stock follow-up phrase.
-        _is_short = len(q_norm) <= 25 or len(q_norm.split()) <= 4
-        _STOCK_FOLLOWUPS = re.compile(
-            r"^(i ?don'?t know|idk|no idea|yes|no|maybe|why\??|warum\??|"
-            r"weiter|continue|next|explain (that|this) (again|further|more)|"
-            r"solve it|answer it|do it|calculate it|compute it|just answer|"
-            r"hm+|ok(ay)?|sure|fine|"
-            r"go on|tell me more|more|details?|nochmal|noch einmal|"
-            r"i'?m stuck|stuck|help|hilfe|verstehe nicht|don'?t (get|understand)( (it|that))?)\s*[\.!\?]*$",
-            re.IGNORECASE,
+    # Follow-up rewriting. Skip when Problem Solver is active
+    # (problemSolver.problem already anchors retrieval to the exercise).
+    if not payload.problemSolver:
+        retrieval_query = _fold_previous_turn_into_retrieval_query(
+            question=question,
+            retrieval_query=retrieval_query,
+            previous_turns_payload=previous_turns_payload,
+            dialogue_relation=dialogue.relation.value,
+            dialogue_task_family=dialogue.task_family.value,
         )
-        _is_anaphoric = bool(_STOCK_FOLLOWUPS.match(q_norm))
-        if _is_short or _is_anaphoric:
-            last_user = next(
-                (t["text"] for t in reversed(previous_turns_payload) if t.get("role") == "user"),
-                "",
-            )
-            if last_user:
-                # Prepend the prior user message so retrieval has real
-                # signal. Keep the new question on the end so any
-                # keywords in it still influence ranking.
-                retrieval_query = (last_user + "\n" + q_norm).strip()
     retrieval_query = _augment_retrieval_query_with_open_context(
         question=question,
         retrieval_query=retrieval_query,

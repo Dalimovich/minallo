@@ -412,6 +412,97 @@ def test_explicit_page_lookup_asks_instead_of_guessing_without_a_document() -> N
     assert "page 11" in clarification
 
 
+# Audit Phase 2A (stale conversation context contaminating retrieval): a
+# short NEW-TOPIC question ("Explain transformers.") after an unrelated
+# turn ("Solve exercise 5 about circuits.") was folded into the previous
+# turn's retrieval query purely because it was short -- contaminating
+# retrieval with the wrong topic's evidence. Legitimate short follow-ups
+# that genuinely need prior context ("Why?", "What about part b?", "Show
+# me the next step.") must keep working.
+
+def test_short_new_topic_question_does_not_inherit_unrelated_prior_turn() -> None:
+    from app.routers.stream import _fold_previous_turn_into_retrieval_query
+
+    out = _fold_previous_turn_into_retrieval_query(
+        question="Explain transformers.",
+        retrieval_query="Explain transformers.",
+        previous_turns_payload=[
+            {"role": "user", "text": "Solve exercise 5 about circuits."},
+            {"role": "assistant", "text": "Here is exercise 5 solved..."},
+        ],
+        dialogue_relation="new_topic",
+        dialogue_task_family="explain",
+    )
+
+    assert out == "Explain transformers."
+    assert "circuits" not in out
+
+
+def test_bare_why_still_inherits_prior_turn() -> None:
+    from app.routers.stream import _fold_previous_turn_into_retrieval_query
+
+    out = _fold_previous_turn_into_retrieval_query(
+        question="Why?",
+        retrieval_query="Why?",
+        previous_turns_payload=[
+            {"role": "user", "text": "Solve exercise 5 about circuits."},
+            {"role": "assistant", "text": "Here is exercise 5 solved..."},
+        ],
+        dialogue_relation="new_topic",
+        dialogue_task_family="unknown",
+    )
+
+    assert "circuits" in out
+
+
+def test_what_about_part_b_still_inherits_prior_turn() -> None:
+    from app.routers.stream import _fold_previous_turn_into_retrieval_query
+
+    out = _fold_previous_turn_into_retrieval_query(
+        question="What about part b?",
+        retrieval_query="What about part b?",
+        previous_turns_payload=[
+            {"role": "user", "text": "Solve exercise 5 about circuits."},
+            {"role": "assistant", "text": "Here is exercise 5 solved..."},
+        ],
+        dialogue_relation="new_topic",
+        dialogue_task_family="unknown",
+    )
+
+    assert "circuits" in out
+
+
+def test_show_me_the_next_step_still_inherits_prior_turn() -> None:
+    from app.routers.stream import _fold_previous_turn_into_retrieval_query
+
+    out = _fold_previous_turn_into_retrieval_query(
+        question="Show me the next step.",
+        retrieval_query="Show me the next step.",
+        previous_turns_payload=[
+            {"role": "user", "text": "Solve exercise 5 about circuits."},
+            {"role": "assistant", "text": "Here is exercise 5 solved..."},
+        ],
+        dialogue_relation="new_topic",
+        dialogue_task_family="unknown",
+    )
+
+    assert "circuits" in out
+
+
+def test_short_new_topic_with_no_prior_turns_is_a_noop() -> None:
+    from app.routers.stream import _fold_previous_turn_into_retrieval_query
+
+    out = _fold_previous_turn_into_retrieval_query(
+        question="Explain transformers.",
+        retrieval_query="Explain transformers.",
+        previous_turns_payload=[],
+        dialogue_relation="new_topic",
+        dialogue_task_family="explain",
+    )
+
+    assert out == "Explain transformers."
+
+
 def test_pending_index_page_evidence_provenance_is_honest_not_a_success_badge() -> None:
     from app.routers.stream import _mark_pending_index_page_evidence_provenance
 
