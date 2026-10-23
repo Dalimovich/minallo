@@ -1,0 +1,1598 @@
+{
+  "summary": {
+    "single_target_turns_scored": 59,
+    "multi_target_turns_excluded_from_headline": 5,
+    "target_accuracy": 0.8814,
+    "objective_accuracy": 0.7627,
+    "final_answer_accuracy_raw_noul_gate": 0.661,
+    "final_answer_accuracy_compiled_policy": 0.7797,
+    "all_fields_accuracy_raw_noul_gate": 0.5424,
+    "all_fields_accuracy_compiled_policy": 0.6949
+  },
+  "changed_by_rescoring": [
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "turn": 1,
+      "student": "bei Aufgabe 2 bin ich mir unsicher, klingt komisch irgendwie",
+      "is_multi_target": false,
+      "jev_target": "2",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.19,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "turn": 3,
+      "student": "Eigentlich, gib mir doch die L\u00f6sung von 2b auch.",
+      "is_multi_target": false,
+      "jev_target": "2b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.46,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "turn": 2,
+      "student": "I just meant the second part.",
+      "is_multi_target": false,
+      "jev_target": "2b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.42,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 5.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.36,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "turn": 2,
+      "student": "Can you solve that last one now?",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.33,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "turn": 1,
+      "student": "Solve exercise 6.",
+      "is_multi_target": false,
+      "jev_target": "6",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.32,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "turn": 2,
+      "student": "No wait, I meant exercise 5, not 6.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.31,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Kannst du mich zu Aufgabe 3 abfragen? Gib mir nicht gleich die Antwort.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.04,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "turn": 2,
+      "student": "Ich sage 'der'.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.07,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Quiz me on exercise 5 \u2014 ask me for the two roots, don't just tell me.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.05,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "turn": 2,
+      "student": "x = 2 and x = 3?",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.31,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Frag mich die Lagerkraft R_A ab.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.4,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "turn": 1,
+      "student": "Solve 13a fully.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.49,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "turn": 1,
+      "student": "What's this document about?",
+      "is_multi_target": false,
+      "jev_target": "document",
+      "jev_objective": "summarize",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.12,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "turn": 2,
+      "student": "Ok now specifically what happens in the Calvin cycle part?",
+      "is_multi_target": false,
+      "jev_target": "section:calvin_cycle",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.13,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    }
+  ],
+  "all_rows": [
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "turn": 1,
+      "student": "hey im stuck on number 4, what am i even supposed to do here",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.15,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "turn": 2,
+      "student": "ok i think i get it, is it 3x=15 next?",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.25,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "turn": 1,
+      "student": "Aufgabe 1 raff ich grad nicht so richtig",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.17,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "turn": 2,
+      "student": "achso, und dann rechne ich einfach die Kr\u00e4fte zusammen?",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.14,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "turn": 1,
+      "student": "this cutting speed thing makes no sense to me can u explain what's going on",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.12,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "turn": 2,
+      "student": "oh ok so n is like how fast it spins",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.11,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "turn": 1,
+      "student": "bei Aufgabe 2 bin ich mir unsicher, klingt komisch irgendwie",
+      "is_multi_target": false,
+      "jev_target": "2",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.19,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "turn": 2,
+      "student": "ist es vielleicht Konjunktiv?",
+      "is_multi_target": false,
+      "jev_target": "2",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.16,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-05",
+      "category": "hint_no_reveal",
+      "turn": 1,
+      "student": "Give me a hint for exercise 5, don't tell me the roots.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.04,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "turn": 1,
+      "student": "Kannst du mir einen Tipp zu Aufgabe 3 geben, aber bitte nicht das Ergebnis verraten?",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.03,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "turn": 2,
+      "student": "Ist das Drehmoment F mal Hebelarm?",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.06,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-07",
+      "category": "hint_no_reveal",
+      "turn": 1,
+      "student": "Nudge me in the right direction for part b, no numbers please.",
+      "is_multi_target": false,
+      "jev_target": "13b",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.04,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-08",
+      "category": "hint_no_reveal",
+      "turn": 1,
+      "student": "Hinweis zu Aufgabe 6, aber ohne die L\u00f6sung von x und y.",
+      "is_multi_target": false,
+      "jev_target": "6",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.22,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-09",
+      "category": "full_solution_explicit",
+      "turn": 1,
+      "student": "Just solve exercise 4 completely, show me x.",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.77,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-10",
+      "category": "full_solution_explicit",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 bitte komplett mit beiden Lagerkr\u00e4ften.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.69,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-11",
+      "category": "full_solution_explicit",
+      "turn": 1,
+      "student": "Solve part a completely, give me n.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.82,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "turn": 1,
+      "student": "give me a hint for exercise 5",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.08,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "turn": 2,
+      "student": "that's not enough, just walk me through the whole method",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.17,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "turn": 3,
+      "student": "ok now just give me the full answer",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.5,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 2a komplett.",
+      "is_multi_target": false,
+      "jev_target": "2a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.62,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "turn": 2,
+      "student": "Und jetzt nur noch ein Tipp zu 2b, nicht die L\u00f6sung.",
+      "is_multi_target": false,
+      "jev_target": "2b",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.24,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "turn": 3,
+      "student": "Eigentlich, gib mir doch die L\u00f6sung von 2b auch.",
+      "is_multi_target": false,
+      "jev_target": "2b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.46,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "turn": 1,
+      "student": "What's the formula for part a? No numbers.",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.07,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "turn": 2,
+      "student": "Still stuck, can you plug in the numbers for me?",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.38,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "unresolved",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.55,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "turn": 2,
+      "student": "F\u00fcr Aufgabe 2 will ich es aber selbst versuchen, gib mir nur einen Hinweis.",
+      "is_multi_target": false,
+      "jev_target": "2",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.24,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "turn": 1,
+      "student": "Solve Aufgabe 2 for me.",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.33,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "unresolved",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "turn": 2,
+      "student": "I just meant the second part.",
+      "is_multi_target": false,
+      "jev_target": "2b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.42,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 5.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.36,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "turn": 2,
+      "student": "Und wie sieht's mit der vorherigen Aufgabe aus, nur ein Tipp?",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.18,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "turn": 1,
+      "student": "Give me a hint for 13a.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.08,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "turn": 2,
+      "student": "Can you solve that last one now?",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.33,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "turn": 1,
+      "student": "Solve exercise 6.",
+      "is_multi_target": false,
+      "jev_target": "6",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.32,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "turn": 2,
+      "student": "No wait, I meant exercise 5, not 6.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.31,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "turn": 1,
+      "student": "Gib mir einen Hinweis zu Aufgabe 2.",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.07,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "unresolved",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "turn": 2,
+      "student": "Ich meinte eigentlich Aufgabe 3, nicht Aufgabe 2.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.1,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "turn": 1,
+      "student": "Explain part b to me.",
+      "is_multi_target": false,
+      "jev_target": "13b",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.21,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "turn": 2,
+      "student": "Actually I think you misunderstood \u2014 I'm asking about part a, not b.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.2,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Kannst du mich zu Aufgabe 3 abfragen? Gib mir nicht gleich die Antwort.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.04,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "turn": 2,
+      "student": "Ich sage 'der'.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.07,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Quiz me on exercise 5 \u2014 ask me for the two roots, don't just tell me.",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.05,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "turn": 2,
+      "student": "x = 2 and x = 3?",
+      "is_multi_target": false,
+      "jev_target": "5",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.31,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "turn": 1,
+      "student": "Frag mich die Lagerkraft R_A ab.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.4,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "turn": 2,
+      "student": "80 N?",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.52,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "turn": 3,
+      "student": "75 N?",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.58,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-25",
+      "category": "multi_target_mixed_level",
+      "turn": 1,
+      "student": "Solve exercise 4 fully, but just give me a hint for exercise 5 \u2014 don't solve it.",
+      "is_multi_target": true,
+      "jev_target": "4",
+      "jev_objective": "other",
+      "expected_final_answers": [
+        "permitted",
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.45,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": false,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.57,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "turn": 2,
+      "student": "F\u00fcr Aufgabe 3 reicht ein Tipp.",
+      "is_multi_target": false,
+      "jev_target": "3",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.24,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "turn": 3,
+      "student": "Was ist mit Aufgabe 1 \u2014 kannst du das nochmal in Worten erkl\u00e4ren, ohne neue Zahlen?",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.19,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "turn": 1,
+      "student": "Give me the full solution for 13a, and a hint only for 13b.",
+      "is_multi_target": true,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted",
+        "prohibited"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.57,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "turn": 2,
+      "student": "Now give me the full answer for everything, including b.",
+      "is_multi_target": true,
+      "jev_target": "13b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.56,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "turn": 1,
+      "student": "What's the hint for exercise 4?",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.11,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "turn": 2,
+      "student": "What's the hint for exercise 4?",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.09,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "turn": 1,
+      "student": "L\u00f6se Aufgabe 1 komplett.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.58,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "turn": 2,
+      "student": "Jetzt bitte nur noch mal als Hinweis f\u00fcr jemand anderen, nicht die L\u00f6sung direkt.",
+      "is_multi_target": false,
+      "jev_target": "1",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.09,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "turn": 1,
+      "student": "Solve 13a fully.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.49,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "turn": 2,
+      "student": "Give me a hint for 13b.",
+      "is_multi_target": false,
+      "jev_target": "13b",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.19,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "turn": 3,
+      "student": "Solve 13a fully again, I lost the number.",
+      "is_multi_target": false,
+      "jev_target": "13a",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.83,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-31",
+      "category": "german_multi_quantity_math",
+      "turn": 1,
+      "student": "Berechne f\u00fcr Aufgabe 13 sowohl die Drehzahl n als auch die neue Schnittgeschwindigkeit vc2 aus Teil b.",
+      "is_multi_target": true,
+      "jev_target": "13b",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.59,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-32",
+      "category": "german_multi_quantity_math",
+      "turn": 1,
+      "student": "Gib mir f\u00fcr Aufgabe 2 beide Werte, F_parallel und F_N, aber nur als Tipp, nicht ausgerechnet.",
+      "is_multi_target": true,
+      "jev_target": "2a",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "prohibited"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.06,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-33",
+      "category": "ambiguous_typo_phrasing",
+      "turn": 1,
+      "student": "cn u solv exsercise 4 pls jsut give me x alreayd",
+      "is_multi_target": false,
+      "jev_target": "4",
+      "jev_objective": "solve",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "permitted",
+      "raw_final_answer_noul": 0.63,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": true,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-34",
+      "category": "ambiguous_typo_phrasing",
+      "turn": 1,
+      "student": "aufgab 2 hilf mir ma, aber nur n tip ni die l\u00f6sung",
+      "is_multi_target": false,
+      "jev_target": "none",
+      "jev_objective": "hint",
+      "expected_final_answers": [
+        "unspecified"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.05,
+      "compiled_final_answer": "prohibited",
+      "compiled_state": "unresolved",
+      "target_match": false,
+      "objective_match": false,
+      "raw_final_match": false,
+      "compiled_final_match": false
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "turn": 1,
+      "student": "What's this document about?",
+      "is_multi_target": false,
+      "jev_target": "document",
+      "jev_objective": "summarize",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.12,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "turn": 2,
+      "student": "Ok now specifically what happens in the Calvin cycle part?",
+      "is_multi_target": false,
+      "jev_target": "section:calvin_cycle",
+      "jev_objective": "explain",
+      "expected_final_answers": [
+        "permitted"
+      ],
+      "raw_final_answer": "prohibited",
+      "raw_final_answer_noul": 0.13,
+      "compiled_final_answer": "permitted",
+      "compiled_state": "requested",
+      "target_match": true,
+      "objective_match": true,
+      "raw_final_match": false,
+      "compiled_final_match": true
+    }
+  ]
+}
