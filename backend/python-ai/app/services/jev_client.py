@@ -59,7 +59,10 @@ import httpx
 from ..config import get_settings
 
 JEV_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
-JEV_DEFAULT_MODEL = "jev-latest"
+# Pinned, not "jev-latest" -- a rolling alias could silently change
+# evaluated/deployed decision thresholds without a code change (2026-10-23
+# review finding). Confirm against GET /v1/models before bumping.
+JEV_DEFAULT_MODEL = "jev-1.13.0"
 
 QuestionType = Literal["noul", "choice", "score"]
 
