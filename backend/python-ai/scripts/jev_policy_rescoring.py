@@ -2,38 +2,28 @@
 (reports/jev-corpus-evaluation-2026-10-22.json) through the real, trusted
 policy compiler -- NO new API calls; reuses only data already paid for.
 
-Why: jev_corpus_evaluation.py's own scoring used Jev's raw
-``final_answer_permitted`` noul >= 0.5 directly as the release-authorization
-decision (``final_answer = "permitted" if noul >= 0.5 else "prohibited"``).
-That IS "an independent universal numeric-answer gate" -- the trusted
-``compile_policy``, not Jev, must decide what gets released (2026-10-23
-review finding). This script instead treats Jev's ``target``/``objective``
-choices as UNTRUSTED INTERPRETATION PROPOSALS -- Jev's own
-``final_answer_permitted`` value is read from the saved file only for the
-side-by-side comparison column, never fed into the compiled action -- grounds
-the target through ``diagnostic_policy.resolve_target_identity`` (the exact
-same trust boundary the deterministic production path uses: Jev is not
-trusted to invent an exercise identity any more than any other model claim
-is), and lets ``compile_policy``'s own existing, already-tested fallback
-rules decide ``final_answer``.
+2026-10-23 review findings this implements:
 
-Deliberate limitations of this rescoring, reported rather than hidden:
-- No cross-turn ``TurnLedger`` (``turn_ledger=None``, matching
-  ``semantic_intent_deterministic_baseline.py``'s own setting) -- a fair
-  comparison of the SAME single-turn-at-a-time slice for both arms, not a
-  claim that either one has real persisted-restriction behavior here.
-- Jev's 3-question schema has no slot for an explicit multi-target split --
-  turns whose gold expectation names more than one target are EXCLUDED from
-  the headline accuracy (reported separately), never scored as a lucky
-  partial match the way the original harness did.
-- Jev's objective vocabulary (hint/explain/solve/summarize/other) has no
-  distinguished "quiz" value the way the deterministic path's
-  ``AcademicIntent`` does (``diagnostic_policy.py`` deliberately maps
-  ``QUIZ_GENERATION`` -> ``"hint"`` to reuse hint's protective fallback) --
-  quiz-shaped requests landing on Jev's ``objective="other"`` get
-  ``compile_policy``'s ordinary tutoring default (final_answer permitted),
-  not a quiz-specific one. Reported as a real structural gap, not patched
-  with an unvalidated heuristic invented for this script.
+1. Jev's raw ``final_answer_permitted`` noul must never be the release-
+   authorization decision -- see scripts/jev_policy_adapter.py (the shared
+   adapter this script now uses) for the real fix.
+2. The saved Jev answers were collected with NO assistant turn at all in
+   their conversation ``state`` (jev_corpus_evaluation.py only ever
+   appended student lines), while the deterministic baseline's history had
+   a DIFFERENT (and, until the 2026-10-23 transcript fix, gold-leaking)
+   shape. The two were never comparable. This script's numbers below are
+   therefore STILL NOT a fair, completed Arm C -- they are a diagnostic
+   read of the existing adapter/scorer logic against data collected under
+   an uneven, now-superseded context. A fair Arm C needs a real Jev re-run
+   against scripts.semantic_blind_ab_transcript's shared history, which is
+   a new paid call requiring its own approval (see the written-up report).
+3. Four categories are tracked explicitly per turn, never silently folded
+   into one accuracy number -- see jev_policy_adapter.py's docstring:
+   ``target_unverified``, ``objective_unsupported``,
+   ``permission_change_untestable``, ``is_multi_target``. A turn flagged in
+   any of these is EXCLUDED from the "cleanly evaluable" headline accuracy
+   and reported in its own bucket instead of being scored as if absent
+   restriction information were evidence of permission.
 """
 
 from __future__ import annotations
@@ -45,72 +35,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from app.services.diagnostic_policy import resolve_target_identity  # noqa: E402
-from app.services.policy_compiler import compile_policy  # noqa: E402
-from app.services.resolved_student_intent import (  # noqa: E402
-    Action, ReleaseConstraints, ResolvedStudentIntent,
+from scripts.jev_policy_adapter import (  # noqa: E402
+    is_permission_change_untestable, load_corpus, load_documents, rescore_jev_answer,
 )
 
 SAVED = json.loads((ROOT / "reports/jev-corpus-evaluation-2026-10-22.json").read_text(encoding="utf-8"))
-DOCUMENTS = json.loads((ROOT / "tests/fixtures/semantic_blind_ab_documents.json").read_text(encoding="utf-8"))
-CORPUS = json.loads((ROOT / "tests/fixtures/semantic_blind_ab_corpus.json").read_text(encoding="utf-8"))
+DOCUMENTS = load_documents()
+CORPUS = load_corpus()
 _SCENARIO_BY_ID = {c["id"]: c for c in CORPUS["cases"]}
 
 _RELEASE_TO_FINAL_ANSWER = {
     "permitted": "permitted", "prohibited": "prohibited",
     "partial": "unspecified", "ambiguous_expect_clarify_or_both": "unspecified",
 }
-# Jev's own choice-option names already match the real Objective literal
-# values 1:1 (hint/explain/solve/summarize/other) -- confirmed against
-# resolved_student_intent.Objective -- so no separate mapping table is
-# needed here, unlike diagnostic_policy.py's AcademicIntent bridge.
-_VALID_OBJECTIVES = frozenset({"hint", "explain", "solve", "summarize", "other"})
-# The subset of diagnostic_policy._OBJECTIVES_WITHOUT_EXERCISE_IDENTITY that
-# Jev's vocabulary can even express -- ported, not invented: production
-# treats these as never needing a verified numbered-exercise identity.
-_OBJECTIVES_WITHOUT_EXERCISE_IDENTITY = frozenset({"explain", "summarize"})
-
-
-def _authorized_labels(document: dict) -> frozenset[str]:
-    return frozenset((document.get("exercises") or {}).keys())
-
-
-def _rescore_action(*, jev_target: str, jev_objective: str, message: str, document: dict) -> dict:
-    labels = _authorized_labels(document)
-    is_content_scope = jev_target == "document" or jev_target.startswith("section:") or jev_target == "none"
-    target_resolved = (not is_content_scope) and resolve_target_identity(
-        jev_target, original_message=message, verified_active_question=None,
-        authorized_exercise_labels=labels,
-    )
-    objective = jev_objective if jev_objective in _VALID_OBJECTIVES else "other"
-    # Mirrors diagnostic_policy.py's "current_request" placeholder
-    # convention exactly: a claim that isn't a grounded numbered exercise
-    # only ever gets a "requested" state when the objective itself has no
-    # answer-key concept to protect in the first place.
-    action_target = jev_target if target_resolved else "current_request"
-    state = (
-        "requested" if (target_resolved or objective in _OBJECTIVES_WITHOUT_EXERCISE_IDENTITY)
-        else "unresolved"
-    )
-    action = Action(
-        objective=objective, target=action_target,
-        release=ReleaseConstraints(),  # fully unspecified -- Jev's noul is NEVER read into this
-        state=state,
-    )
-    intent = ResolvedStudentIntent(
-        schema_version="1.0.0", original_message=message, student_goal=message,
-        actions=(action,), conversation="new", references=None,
-        response_language="en", teaching=None, trust=None,
-    )
-    policy = compile_policy(intent, turn_ledger=None, conversation_id=None)
-    compiled = policy.actions[0]
-    return {"target_resolved": target_resolved or is_content_scope, "state": compiled.state,
-            "final_answer": compiled.release.final_answer}
 
 
 def main() -> None:
     rows: list[dict] = []
-    multi_target_excluded = 0
+    excluded_counts = {
+        "multi_target": 0, "permission_change_untestable": 0,
+        "objective_unsupported": 0, "target_unverified": 0,
+    }
     counts = {
         "turns": 0, "target_match": 0, "objective_match": 0,
         "final_answer_match_raw_noul_gate": 0, "final_answer_match_compiled_policy": 0,
@@ -122,11 +67,16 @@ def main() -> None:
         document = DOCUMENTS[scenario["document"]]
         expected = turn["expected"]
         is_multi_target = len(expected) > 1
+        gold_form = expected[0]["form"]  # single-target turns only reach here as "evaluable"
+        turn_index = turn["turn"] - 1  # corpus "n" is 1-based
+        permission_untestable = is_permission_change_untestable(
+            category=turn["category"], turn_index=turn_index,
+        )
         expected_final_answers = {_RELEASE_TO_FINAL_ANSWER.get(e["release"], "unspecified") for e in expected}
 
         jev = turn["jev_result"]
-        rescored = _rescore_action(
-            jev_target=jev["target"], jev_objective=jev["objective"],
+        rescored = rescore_jev_answer(
+            jev_target=jev["target"], jev_objective=jev["objective"], gold_form=gold_form,
             message=turn["student"], document=document,
         )
 
@@ -134,24 +84,48 @@ def main() -> None:
         objective_match = turn["score"]["objective_match"]
         raw_final_match = turn["score"]["final_answer_match"]
         compiled_final_match = target_match and (
-            rescored["final_answer"] in expected_final_answers or "unspecified" in expected_final_answers
+            rescored.compiled_final_answer in expected_final_answers or "unspecified" in expected_final_answers
         )
+
+        excluded_reasons = []
+        if is_multi_target:
+            excluded_reasons.append("multi_target")
+        if permission_untestable:
+            excluded_reasons.append("permission_change_untestable")
+        if rescored.objective_unsupported:
+            excluded_reasons.append("objective_unsupported")
+        # target_unverified is reported (below) but deliberately NOT a
+        # headline-exclusion reason on its own: a correctly-grounded
+        # "unresolved" degrading to compile_policy's most-restrictive
+        # fallback is the compiler working as intended, not an unevaluable
+        # case. Multi-target/permission/unsupported-objective ARE excluded
+        # because no amount of correct compiling can fix an input the
+        # schema structurally cannot carry.
 
         row = {
             "scenario": turn["scenario"], "category": turn["category"], "turn": turn["turn"],
-            "student": turn["student"], "is_multi_target": is_multi_target,
+            "student": turn["student"],
+            "is_multi_target": is_multi_target,
+            "permission_change_untestable": permission_untestable,
+            "objective_unsupported": rescored.objective_unsupported,
+            "target_unverified": rescored.target_unverified,
             "jev_target": jev["target"], "jev_objective": jev["objective"],
             "expected_final_answers": sorted(expected_final_answers),
             "raw_final_answer": jev["final_answer"], "raw_final_answer_noul": jev.get("final_answer_noul"),
-            "compiled_final_answer": rescored["final_answer"], "compiled_state": rescored["state"],
+            "compiled_final_answer": rescored.compiled_final_answer, "compiled_state": rescored.compiled_state,
+            "policy_audit": list(rescored.policy_audit),
             "target_match": target_match, "objective_match": objective_match,
             "raw_final_match": raw_final_match, "compiled_final_match": compiled_final_match,
         }
         rows.append(row)
 
-        if is_multi_target:
-            multi_target_excluded += 1
+        if excluded_reasons:
+            for reason in excluded_reasons:
+                excluded_counts[reason] += 1
             continue  # excluded from headline accuracy -- see module docstring
+
+        if rescored.target_unverified:
+            excluded_counts["target_unverified"] += 1  # reported, still scored below
 
         counts["turns"] += 1
         counts["target_match"] += target_match
@@ -163,24 +137,31 @@ def main() -> None:
 
     n = counts["turns"]
     summary = {
-        "single_target_turns_scored": n,
-        "multi_target_turns_excluded_from_headline": multi_target_excluded,
+        "cleanly_evaluable_turns_scored": n,
+        "excluded_from_headline": excluded_counts,
         "target_accuracy": round(counts["target_match"] / n, 4),
         "objective_accuracy": round(counts["objective_match"] / n, 4),
         "final_answer_accuracy_raw_noul_gate": round(counts["final_answer_match_raw_noul_gate"] / n, 4),
         "final_answer_accuracy_compiled_policy": round(counts["final_answer_match_compiled_policy"] / n, 4),
         "all_fields_accuracy_raw_noul_gate": round(counts["all_match_raw_noul_gate"] / n, 4),
         "all_fields_accuracy_compiled_policy": round(counts["all_match_compiled_policy"] / n, 4),
+        "caveat": (
+            "This is a diagnostic re-read of saved data collected under an "
+            "uneven context (no assistant turns at all), NOT a fair, "
+            "completed Arm C. See module docstring."
+        ),
     }
 
     changed = [
-        r for r in rows if not r["is_multi_target"] and r["raw_final_match"] != r["compiled_final_match"]
+        r for r in rows
+        if not (r["is_multi_target"] or r["permission_change_untestable"] or r["objective_unsupported"])
+        and r["raw_final_match"] != r["compiled_final_match"]
     ]
     out = {"summary": summary, "changed_by_rescoring": changed, "all_rows": rows}
     out_path = ROOT / "reports" / "jev-policy-compiler-rescoring-2026-10-23.json"
     out_path.write_text(json.dumps(out, indent=2, ensure_ascii=True), encoding="utf-8")
     print(json.dumps(summary, indent=2))
-    print(f"\n{len(changed)} single-target turns changed final_answer verdict after compiling through the real policy.")
+    print(f"\n{len(changed)} cleanly-evaluable turns changed final_answer verdict after compiling through the real policy.")
     print(f"Full results written to {out_path}")
 
 
