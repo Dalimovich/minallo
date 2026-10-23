@@ -519,10 +519,24 @@ export function _resetScrollFollow(): void {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-export async function pdfToImages(maxPages?: number, denseVisualTask = false): Promise<RenderedPdfPage[]> {
+// A student can clarify "page 13" in the chat text without ever scrolling
+// the viewer there. Honor that explicit mention over the viewer's own
+// scroll position; otherwise fall back to what's actually on screen.
+export function resolveQuestionPage(question: string, viewerPage: number, totalPages: number): number {
+  const match = question.match(/\b(?:page|seite|s\.)\s*(\d{1,4})\b/i);
+  if (match) {
+    const explicit = parseInt(match[1] || '', 10);
+    if (explicit >= 1 && explicit <= totalPages) return explicit;
+  }
+  return viewerPage >= 1 ? viewerPage : 1;
+}
+
+export async function pdfToImages(maxPages?: number, denseVisualTask = false, pageOverride?: number): Promise<RenderedPdfPage[]> {
   const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
   if (!pdfDoc) return [];
-  const currentPage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+  const currentPage = pageOverride && pageOverride >= 1
+    ? pageOverride
+    : (window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1);
   return pdfDocToImages(pdfDoc, currentPage, maxPages, denseVisualTask);
 }
 
@@ -588,7 +602,12 @@ async function pdfDocToImages(
           }
         }
       }
-    } catch { /* skip failed page */ }
+    } catch (err) {
+      // Swallowing this silently previously made a page-render failure
+      // indistinguishable from "no image was needed" — the AI would deny
+      // seeing a diagram with no trace of why. Surface it instead.
+      console.warn('[pdfDocToImages] failed to render page', i, err);
+    }
   }
   return imgs;
 }
@@ -1011,6 +1030,9 @@ export function initAskAI(
     }
 
     const pdfDoc = window.pdfDoc as PdfDocLike | null | undefined;
+    const _resolvedPage = pdfDoc
+      ? resolveQuestionPage(question, window.pdfPage || 1, pdfDoc.numPages)
+      : null;
     let pdfFullText = window.pdfFullText || '';
     const _compareName = _isProblemSolver ? null : getCompareFileName();
     let _compareText = _compareName ? (getPane('right').pdfFullText || '') : '';
@@ -1072,7 +1094,7 @@ export function initAskAI(
     _textReady
       .then(() => {
         if (!pdfDoc) return [];
-        const _pp = window.pdfPage as number | undefined;
+        const _pp = _resolvedPage ?? (window.pdfPage as number | undefined);
         const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
         const _currentPageText = _pp && _ppt ? (_ppt[_pp] || '') : '';
         const _visibleTextWeak =
@@ -1082,7 +1104,9 @@ export function initAskAI(
         // Requests about how a displayed solution was answered depend on the
         // exact working visible on the page (often inside a drawing/solution
         // box that PDF text extraction scrambles). Always attach that page.
-        return _visibleTextWeak || _asksAboutVisibleSolution ? pdfToImages(1, _denseVisualTask) : [];
+        return _visibleTextWeak || _asksAboutVisibleSolution
+          ? pdfToImages(1, _denseVisualTask, _resolvedPage ?? undefined)
+          : [];
       })
       .then(async (pageImages: RenderedPdfPage[]) => {
         let userContent: unknown;
@@ -1170,7 +1194,7 @@ export function initAskAI(
                 .replace(/Ü/g, 'Ue').replace(/Ö/g, 'Oe').replace(/Ä/g, 'Ae')
                 .replace(/ß/g, 'ss').toLowerCase();
             const _normTerm = _normDe(_matchTerm);
-            const _pp = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+            const _pp = _resolvedPage ?? (window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1);
             const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts || {};
             const _visiblePageText = (_ppt[_pp] || '').trim();
             const _normVisibleText = _normDe(_visiblePageText);
@@ -1224,7 +1248,7 @@ export function initAskAI(
             // what's on screen. pdfPageTexts is populated per page as it
             // renders (or pre-extracted up front by pdf-viewer). Falls all
             // the way back to the document start only as a last resort.
-            const _pp = window.pdfPage as number | undefined;
+            const _pp = _resolvedPage ?? (window.pdfPage as number | undefined);
             const _ppt = (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts;
             const _pageParts: string[] = [];
             if (_pp && _ppt) {
@@ -1243,7 +1267,7 @@ export function initAskAI(
             }
           }
         }
-        const _currentPageNo = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1;
+        const _currentPageNo = _resolvedPage ?? (window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : 1);
         const _visibleTextWeak =
           !!pdfDoc &&
           (
@@ -1596,7 +1620,7 @@ export function initAskAI(
               _viewerWrap.contains(_selectionFocus)
                 ? (_viewerSelection?.toString() || '').trim().slice(0, 12000)
                 : '';
-            const _visiblePage = window.pdfPage && window.pdfPage >= 1 ? window.pdfPage : undefined;
+            const _visiblePage = _currentPageNo;
             const _visiblePageTexts =
               (window as unknown as { pdfPageTexts?: Record<number, string> }).pdfPageTexts || {};
             const _currentVisiblePageText =
