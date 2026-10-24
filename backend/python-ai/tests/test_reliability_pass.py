@@ -215,6 +215,32 @@ def test_active_exercise_scope_is_resolved_before_retrieval() -> None:
     assert not scope.allow_course_fallback
 
 
+def test_exercise_reference_does_not_discard_an_explicit_multi_file_selection() -> None:
+    """A merely-active (open-but-unselected) document must not override an
+    explicit multi-file selection just because the question names an
+    exercise. Regression for the opposite case already covered above, where
+    the active document IS part of the selection and narrowing is correct."""
+    traits = classify_task_traits(
+        "Explain exercise 3.",
+        active_document_id="stale-open-tab",
+    )
+    identity = GroundedTaskIdentity(
+        document_id="stale-open-tab",
+        exercise_reference="3",
+        source_confidence=1.0,
+    )
+    scope = build_retrieval_scope(
+        active_document_id="stale-open-tab",
+        visible_page=None,
+        identity=identity,
+        traits=traits,
+        fallback_document_ids=["selected-a", "selected-b", "selected-c"],
+        question="Explain exercise 3.",
+    )
+    assert scope.document_ids == ["selected-a", "selected-b", "selected-c"]
+    assert scope.allow_course_fallback
+
+
 def test_open_pdf_is_preferred_but_does_not_hard_scope_course_question() -> None:
     traits = classify_task_traits("What loss functions did we study in this course?")
     scope = build_retrieval_scope(
@@ -314,7 +340,7 @@ def test_final_derived_state_rebuilds_scope_obligations_and_fingerprint() -> Non
     )
     common = dict(
         traits=traits, active_document_id="doc", visible_page=39,
-        fallback_document_ids=["other"], question="Find and solve 14.4",
+        fallback_document_ids=["doc", "other"], question="Find and solve 14.4",
         has_valid_selected_region=False, document_revision="rev",
         visible_page_text="page text", image_hashes=["image"],
     )

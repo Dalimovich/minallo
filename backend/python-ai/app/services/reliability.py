@@ -740,11 +740,20 @@ def build_retrieval_scope(
         [page for page in (task_page - 1, task_page, task_page + 1) if page >= 1]
         if task_page else []
     )
+    # exact_active_task narrows retrieval to the one document the task is
+    # visually anchored to -- but only when that document isn't excluded by
+    # an explicit multi-file selection. fallback_document_ids already IS that
+    # selection (effective_document_ids / SPECIFIC_FILES), so if the viewer's
+    # merely-active document isn't in it, narrowing would silently discard an
+    # explicit source constraint in favor of an unselected, stale open tab.
+    narrow_to_active = exact_active_task and (
+        not fallback_document_ids or active_document_id in fallback_document_ids
+    )
     return RetrievalScope(
-        document_ids=[active_document_id] if exact_active_task else fallback_document_ids,
+        document_ids=[active_document_id] if narrow_to_active else fallback_document_ids,
         preferred_pages=pages,
         exercise_reference=identity.exercise_reference,
-        allow_course_fallback=not exact_active_task,
+        allow_course_fallback=not narrow_to_active,
     )
 
 
