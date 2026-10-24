@@ -922,3 +922,89 @@ def test_prohibition_and_depth_reach_the_actual_model_call_boundary(monkeypatch)
     assert "Zusammenfassung" in user_message
     assert "Wirtschaft" in user_message
     assert question in user_message
+
+
+# ── post-generation processing (exam repair / visual-assignment verify /
+# inline-quiz verify / diagram force-render) must not crash the stream ─────
+#
+# All of those make their OWN OpenAI call, same as the main answer stream —
+# but unlike the main stream's own try/except, a failure there used to
+# propagate straight out of stream_answer() uncaught, through stream.py's
+# `for chunk_bytes in gen_iter:` loop (which has no try/except of its own
+# either), to Starlette: the client got a silently truncated SSE response
+# with no "done" and no "error" frame at all. Reproduced here via the
+# diagram force-render path (the simplest of the four to trigger), fixed by
+# wrapping the whole post-generation stage in the same style of
+# try/except already used for the main generation call.
+
+
+def _fake_streaming_client(monkeypatch, module, answer_text: str) -> None:
+    """Patch module.get_openai_client() so the main generation call streams
+    `answer_text` as a single token chunk, no diagram fence included."""
+
+    class _FakeDelta:
+        def __init__(self, content: str | None) -> None:
+            self.content = content
+
+    class _FakeChoice:
+        def __init__(self, content: str | None) -> None:
+            self.delta = _FakeDelta(content)
+
+    class _FakeChunk:
+        def __init__(self, content: str | None) -> None:
+            self.choices = [_FakeChoice(content)]
+            self.usage = None
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return [_FakeChunk(answer_text)]
+
+    monkeypatch.setattr(module, "get_openai_client", lambda: _FakeClient())
+
+
+def test_diagram_render_failure_still_emits_a_terminal_sse_event(monkeypatch) -> None:
+    import json
+
+    from app.services import answer_stream
+
+    _fake_streaming_client(monkeypatch, answer_stream, "Here is the explanation.")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("diagram model unavailable")
+
+    monkeypatch.setattr(answer_stream, "_force_render_diagram", _boom)
+
+    gen = answer_stream.stream_answer(
+        question="Draw a diagram of the free-body force balance.",
+        chunks=[],
+        doc_names={},
+    )
+    events = [json.loads(chunk.decode("utf-8").removeprefix("data: ").strip()) for chunk in gen]
+
+    assert any(evt.get("error") is True and evt.get("code") == "internal_error" for evt in events)
+    assert not any(evt.get("done") is True for evt in events)
+
+
+def test_ordinary_diagram_request_without_failure_still_completes_normally(monkeypatch) -> None:
+    """Regression for the fix itself: the new try/except must not swallow
+    the normal success path -- an ordinary diagram request with no injected
+    failure still reaches the "done" event."""
+    import json
+
+    from app.services import answer_stream
+
+    _fake_streaming_client(monkeypatch, answer_stream, "Here is the explanation.")
+    monkeypatch.setattr(answer_stream, "_force_render_diagram", lambda *a, **k: "")
+
+    gen = answer_stream.stream_answer(
+        question="Draw a diagram of the free-body force balance.",
+        chunks=[],
+        doc_names={},
+    )
+    events = [json.loads(chunk.decode("utf-8").removeprefix("data: ").strip()) for chunk in gen]
+
+    assert any(evt.get("done") is True for evt in events)
+    assert not any(evt.get("error") is True for evt in events)

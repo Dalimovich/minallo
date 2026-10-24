@@ -2530,291 +2530,303 @@ def stream_answer(
         })
         return
 
-    # Short answer that never tripped the release condition (no newline and
-    # under the hold cap) — scrub and flush it now.
-    if intro_hold and intro_buf:
-        cleaned = strip_answer_intro(intro_buf).lstrip("\n")
-        if cleaned:
-            answer_buf.append(cleaned)
-            if not buffer_for_validation:
-                yield _sse({"t": cleaned})
+    try:
+        # Short answer that never tripped the release condition (no newline and
+        # under the hold cap) — scrub and flush it now.
+        if intro_hold and intro_buf:
+            cleaned = strip_answer_intro(intro_buf).lstrip("\n")
+            if cleaned:
+                answer_buf.append(cleaned)
+                if not buffer_for_validation:
+                    yield _sse({"t": cleaned})
 
-    full_answer = "".join(answer_buf)
-    log.info(
-        "ai_stream_timing request_id=%s phase=openai_completion model=%s openai_ms=%.0f prompt_tokens=%s completion_tokens=%s",
-        request_id or "none", target_model, (time.perf_counter() - openai_started) * 1000,
-        prompt_tokens, completion_tokens,
-    )
-
-    # Buffered exam path: the tokens above were accumulated but NOT streamed, so
-    # we can lint and (on blocking failures) repair the exam BEFORE the user sees
-    # it, then emit the final version. Exams already pause on the reasoning model,
-    # so losing live streaming here is an acceptable trade for a validated exam.
-    visual_verification: dict[str, Any] | None = None
-    if is_exam_request:
-        yield _sse({"status": "verifying_answer"})
-        repair_started = False
-
-        def _mark_repair_started() -> None:
-            nonlocal repair_started
-            repair_started = True
-
-        full_answer, remaining_blocking = validate_and_finalize_exam_output(
-            system_prompt=system_prompt, user_message=user_content, draft=full_answer,
-            client=client, model=target_model, max_tokens=effective_max_tokens,
-            on_repair=_mark_repair_started,
+        full_answer = "".join(answer_buf)
+        log.info(
+            "ai_stream_timing request_id=%s phase=openai_completion model=%s openai_ms=%.0f prompt_tokens=%s completion_tokens=%s",
+            request_id or "none", target_model, (time.perf_counter() - openai_started) * 1000,
+            prompt_tokens, completion_tokens,
         )
-        if repair_started:
-            yield _sse({"status": "generating_answer"})
-        if remaining_blocking:
-            log.error(
-                "exam validation remained blocking after repair; refusing draft: %s",
-                "; ".join(remaining_blocking),
+
+        # Buffered exam path: the tokens above were accumulated but NOT streamed, so
+        # we can lint and (on blocking failures) repair the exam BEFORE the user sees
+        # it, then emit the final version. Exams already pause on the reasoning model,
+        # so losing live streaming here is an acceptable trade for a validated exam.
+        visual_verification: dict[str, Any] | None = None
+        if is_exam_request:
+            yield _sse({"status": "verifying_answer"})
+            repair_started = False
+
+            def _mark_repair_started() -> None:
+                nonlocal repair_started
+                repair_started = True
+
+            full_answer, remaining_blocking = validate_and_finalize_exam_output(
+                system_prompt=system_prompt, user_message=user_content, draft=full_answer,
+                client=client, model=target_model, max_tokens=effective_max_tokens,
+                on_repair=_mark_repair_started,
             )
-            yield _sse({
-                "error": True,
-                "code": "exam_validation_failed",
-                "message": (
-                    "Minallo could not verify a complete answer key for every generated "
-                    "question. No unverified exam was returned. Please try again."
+            if repair_started:
+                yield _sse({"status": "generating_answer"})
+            if remaining_blocking:
+                log.error(
+                    "exam validation remained blocking after repair; refusing draft: %s",
+                    "; ".join(remaining_blocking),
+                )
+                yield _sse({
+                    "error": True,
+                    "code": "exam_validation_failed",
+                    "message": (
+                        "Minallo could not verify a complete answer key for every generated "
+                        "question. No unverified exam was returned. Please try again."
+                    ),
+                    "recoverable": True,
+                    "retryable": True,
+                    "requestId": request_id,
+                })
+                return
+            # Emit the final (possibly repaired) exam in slices the client appends.
+            for i in range(0, len(full_answer), 1500):
+                yield _sse({"t": full_answer[i:i + 1500]})
+        elif visual_assignment_task:
+            yield _sse({"status": "verifying_visual_answer"})
+            log.info(
+                "ai_stage request_id=%s stage=visual_verification_started "
+                "required_numbers=%s draft_assignments=%d",
+                request_id or "none",
+                required_numbers,
+                len(extract_numbered_assignments(full_answer)),
+            )
+            full_answer, visual_verification = verify_and_repair_visual_assignment(
+                client=client,
+                model=target_model,
+                question=question,
+                answer=full_answer,
+                required=required_numbers,
+                image_parts=image_parts,
+                max_tokens=effective_max_tokens,
+            )
+            log.info(
+                "ai_stage request_id=%s stage=visual_verification_completed "
+                "status=%s repair_attempts=%s final_assignments=%d",
+                request_id or "none",
+                (
+                    visual_verification.get("status")
+                    if isinstance(visual_verification, dict)
+                    else "missing"
                 ),
-                "recoverable": True,
-                "retryable": True,
-                "requestId": request_id,
-            })
-            return
-        # Emit the final (possibly repaired) exam in slices the client appends.
-        for i in range(0, len(full_answer), 1500):
-            yield _sse({"t": full_answer[i:i + 1500]})
-    elif visual_assignment_task:
-        yield _sse({"status": "verifying_visual_answer"})
-        log.info(
-            "ai_stage request_id=%s stage=visual_verification_started "
-            "required_numbers=%s draft_assignments=%d",
-            request_id or "none",
-            required_numbers,
-            len(extract_numbered_assignments(full_answer)),
+                (
+                    visual_verification.get("repairAttempts")
+                    if isinstance(visual_verification, dict)
+                    else 0
+                ),
+                len(extract_numbered_assignments(full_answer)),
+            )
+            for i in range(0, len(full_answer), 1500):
+                yield _sse({"t": full_answer[i:i + 1500]})
+        elif is_quiz_request:
+            # Independent re-derivation of each inline quiz answer, mirroring the
+            # standalone Quiz/ExamForge safety net (quiz.py's _verify_mcq_keys) —
+            # the inline ```minallo-quiz block previously reached the student with
+            # no such check at all. Corrects confidently-wrong keys in place
+            # rather than dropping questions: unlike generate_quiz, this path
+            # never over-collects a buffer to absorb a drop.
+            yield _sse({"status": "verifying_answer"})
+            from .quiz import verify_and_correct_inline_quiz  # noqa: WPS433
+            full_answer, quiz_verify_diag = verify_and_correct_inline_quiz(full_answer, context_block)
+            if quiz_verify_diag.get("model"):
+                record_usage(
+                    feature="ask_stream_quiz_verify",
+                    model=quiz_verify_diag["model"],
+                    prompt_tokens=quiz_verify_diag.get("prompt_tokens"),
+                    completion_tokens=quiz_verify_diag.get("completion_tokens"),
+                )
+            for i in range(0, len(full_answer), 1500):
+                yield _sse({"t": full_answer[i:i + 1500]})
+
+        # Diagram refusal-recovery. The system-prompt overlay tells the model
+        # to emit a fenced ``minallo-diagram`` block, but gpt-4o's RLHF refusal
+        # reflex on "I can't generate images" reliably overrides even few-shot
+        # examples. When the student asked for a diagram and the streamed answer
+        # has no fence, we make a SECOND, narrowly-scoped call with
+        # response_format=json_schema. Structured outputs can't refuse — the
+        # response shape is constrained — so this is the reliable backstop.
+        plot_wanted = _wants_plot(question, problem_solver) and not app_question
+        log.debug(
+            "[DIAGRAM_DEBUG] check wants_diagram=%s wants_plot=%s "
+            "has_diag_fence=%s has_plot_fence=%s answer_len=%d",
+            wants_diagram, plot_wanted,
+            "```minallo-diagram" in full_answer,
+            "```minallo-plot" in full_answer,
+            len(full_answer),
         )
-        full_answer, visual_verification = verify_and_repair_visual_assignment(
-            client=client,
-            model=target_model,
-            question=question,
-            answer=full_answer,
-            required=required_numbers,
-            image_parts=image_parts,
-            max_tokens=effective_max_tokens,
-        )
-        log.info(
-            "ai_stage request_id=%s stage=visual_verification_completed "
-            "status=%s repair_attempts=%s final_assignments=%d",
-            request_id or "none",
-            (
+        # Plot-shape requests: a ``minallo-diagram`` fence is the WRONG fence
+        # (a curve encoded as node-chain). Fire the plot fallback whenever no
+        # plot fence is present — even if a diagram fence slipped through.
+        if plot_wanted and "```minallo-plot" not in full_answer:
+            plot_fence = _force_render_plot(
+                client, target_model, question, used_chunks,
+                problem_source_text or (open_ctx if include_open_source else None),
+            )
+            if plot_fence:
+                yield _sse({"t": plot_fence})
+                full_answer += plot_fence
+        elif wants_diagram and "```minallo-diagram" not in full_answer:
+            diagram_fence = _force_render_diagram(
+                client, target_model, question, used_chunks,
+                problem_source_text or (open_ctx if include_open_source else None),
+            )
+            if diagram_fence:
+                yield _sse({"t": diagram_fence})
+                full_answer += diagram_fence
+
+        # Exam quality gate. The answer already STREAMED (we can't un-send it), so a
+        # live repair pass would need to buffer the whole exam — deferred. Here we
+        # lint, log, and EMIT the result (resolved style + blocking issues) in the
+        # final metadata so the frontend/telemetry can see why an exam looked the way
+        # it did. /ask (generate_answer) runs the actual lint→repair gate.
+        if is_exam_request:
+            exam_issues = lint_exam_output(full_answer)
+            blocking = exam_lint_blocking(exam_issues)
+            if exam_issues:
+                log.warning(
+                    "exam lint flagged %d issue(s) (%d blocking): %s",
+                    len(exam_issues), len(blocking), "; ".join(exam_issues),
+                )
+            yield _sse({"examStyle": exam_style, "examLint": exam_issues, "examLintBlocking": blocking})
+
+        cited = _cited_indices(full_answer, len(used_chunks))
+        filtered_sources = [_source_payload(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
+
+        # [Source 0] = the visible PDF text snippet the model received when the
+        # question was deictic ("explain this"). _cited_indices only handles
+        # 1..N (the retrieved chunks); [Source 0] needs an explicit pass.
+        # Without this, the answer would show "grounded in [Source 0]" inline
+        # but the final Sources block would be missing that source entirely —
+        # a misleading UX gap the user can't tell from a fabricated citation.
+        if include_source_zero and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
+            filtered_sources.insert(0, _source_zero_payload())
+        if has_problem_source and used_chunks and not any(src.get("file_name") != "Problem Solver input" for src in filtered_sources):
+            filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:3], start=1))
+        if not filtered_sources:
+            # The UI should still show the material the answer was grounded on.
+            # Verification may mark the answer down when inline citations are
+            # missing, but hiding sources entirely makes students think retrieval
+            # did not use their lectures/exercises at all.
+            if include_source_zero:
+                filtered_sources.append(_source_zero_payload())
+            filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:4], start=1))
+
+        # Phase 10 — deterministic verification on the streamed answer.
+        # Include the open-file text in the haystack so formulas / numbers the
+        # model lifted from [Source 0] aren't flagged as ungrounded.
+        verification_haystack = []
+        if has_problem_source:
+            verification_haystack.append(problem_source_text)
+        if include_open_source:
+            verification_haystack.append(open_ctx)
+        verification_haystack.extend(c.text for c in used_chunks)
+        # The whitelist of filenames the model could legitimately cite. Anything
+        # else in a `(filename.pdf, p.N)` ref is fabricated — see verification.py.
+        # When [Source 0] was suppressed the active file isn't a valid citation
+        # target either; whitelisting it would let the model "cite" a slice we
+        # never sent.
+        allowed_filenames = [doc_names.get(c.document_id) for c in used_chunks]
+        allowed_filenames = [f for f in allowed_filenames if f]
+        if include_open_source and active_file_name:
+            allowed_filenames.append(active_file_name)
+
+        verification: dict[str, Any] = {"status": "missing_context", "reasons": [], "details": {}}
+        if visual_assignment_task:
+            coverage_issues = (
+                numbered_assignment_issues(full_answer, required_numbers)
+                if required_numbers else {"missing": [], "extras": [], "duplicates": []}
+            )
+            visual_status = (
                 visual_verification.get("status")
                 if isinstance(visual_verification, dict)
-                else "missing"
-            ),
-            (
-                visual_verification.get("repairAttempts")
-                if isinstance(visual_verification, dict)
-                else 0
-            ),
+                else "unavailable"
+            )
+            verification = {
+                "status": (
+                    "verified"
+                    if visual_status == "verified" and not any(coverage_issues.values())
+                    else "partially_verified"
+                ),
+                "reasons": (
+                    [] if visual_status == "verified"
+                    else [f"visual verification {visual_status}"]
+                ),
+                "details": {
+                    "taskType": grounded_task_type,
+                    "assignmentCoverage": coverage_issues,
+                    "criticalNumericalMismatch": False,
+                    "numberMisses": [],
+                },
+            }
+        else:
+            try:
+                if answer_mode == "math" or problem_mode in {"setup", "check", "solve"}:
+                    yield _sse({"status": "verifying_calculation"})
+                from .verification import verify_answer  # noqa: WPS433
+                verification = verify_answer(
+                    answer_text=full_answer,
+                    chunk_texts=verification_haystack,
+                    question=question,
+                    answer_mode=answer_mode,
+                    allowed_filenames=allowed_filenames,
+                ).to_api()
+            except Exception:  # noqa: BLE001
+                log.exception("verify_answer (stream) failed — emitting default missing_context")
+
+        # Confidence shown to the user is now derived from verification status —
+        # NOT from retrieval strength. The old "strong retrieval ⇒ confidence: high"
+        # mapping let the UI show a green badge on answers the model had self-tagged
+        # as "Missing context" and on answers with fabricated citations.
+        if app_question:
+            verification = {
+                "status": "verified",
+                "reasons": ["Answered from Minallo app context."],
+                "details": {"appSupport": True},
+            }
+            filtered_sources = []
+
+        v_status = verification.get("status") if isinstance(verification, dict) else None
+        if v_status == "verified":
+            confidence_label = "high"
+        elif v_status == "partially_verified":
+            confidence_label = "medium"
+        else:
+            confidence_label = "low"
+
+        # Heavy-cap notice rides the token stream (so it lands in the visible
+        # answer and chat history) but NOT full_answer — verification and citation
+        # filtering ran on the real answer text above. stream.py skips the cache
+        # save when heavyCapped is set, so the note never replays from cache.
+        if heavy_capped:
+            yield _sse({"t": (
+                "\n\n⚠️ *This month's advanced-solver allowance is used up, so this answer "
+                "used the standard model. The allowance resets on the 1st.*"
+            )})
+
+        log.info(
+            "ai_stage request_id=%s stage=done_event_emitted task_type=%s "
+            "visual_evidence=%s assignment_count=%d",
+            request_id or "none",
+            grounded_task_type,
+            has_open_image,
             len(extract_numbered_assignments(full_answer)),
         )
-        for i in range(0, len(full_answer), 1500):
-            yield _sse({"t": full_answer[i:i + 1500]})
-    elif is_quiz_request:
-        # Independent re-derivation of each inline quiz answer, mirroring the
-        # standalone Quiz/ExamForge safety net (quiz.py's _verify_mcq_keys) —
-        # the inline ```minallo-quiz block previously reached the student with
-        # no such check at all. Corrects confidently-wrong keys in place
-        # rather than dropping questions: unlike generate_quiz, this path
-        # never over-collects a buffer to absorb a drop.
-        yield _sse({"status": "verifying_answer"})
-        from .quiz import verify_and_correct_inline_quiz  # noqa: WPS433
-        full_answer, quiz_verify_diag = verify_and_correct_inline_quiz(full_answer, context_block)
-        if quiz_verify_diag.get("model"):
-            record_usage(
-                feature="ask_stream_quiz_verify",
-                model=quiz_verify_diag["model"],
-                prompt_tokens=quiz_verify_diag.get("prompt_tokens"),
-                completion_tokens=quiz_verify_diag.get("completion_tokens"),
-            )
-        for i in range(0, len(full_answer), 1500):
-            yield _sse({"t": full_answer[i:i + 1500]})
-
-    # Diagram refusal-recovery. The system-prompt overlay tells the model
-    # to emit a fenced ``minallo-diagram`` block, but gpt-4o's RLHF refusal
-    # reflex on "I can't generate images" reliably overrides even few-shot
-    # examples. When the student asked for a diagram and the streamed answer
-    # has no fence, we make a SECOND, narrowly-scoped call with
-    # response_format=json_schema. Structured outputs can't refuse — the
-    # response shape is constrained — so this is the reliable backstop.
-    plot_wanted = _wants_plot(question, problem_solver) and not app_question
-    log.debug(
-        "[DIAGRAM_DEBUG] check wants_diagram=%s wants_plot=%s "
-        "has_diag_fence=%s has_plot_fence=%s answer_len=%d",
-        wants_diagram, plot_wanted,
-        "```minallo-diagram" in full_answer,
-        "```minallo-plot" in full_answer,
-        len(full_answer),
-    )
-    # Plot-shape requests: a ``minallo-diagram`` fence is the WRONG fence
-    # (a curve encoded as node-chain). Fire the plot fallback whenever no
-    # plot fence is present — even if a diagram fence slipped through.
-    if plot_wanted and "```minallo-plot" not in full_answer:
-        plot_fence = _force_render_plot(
-            client, target_model, question, used_chunks,
-            problem_source_text or (open_ctx if include_open_source else None),
-        )
-        if plot_fence:
-            yield _sse({"t": plot_fence})
-            full_answer += plot_fence
-    elif wants_diagram and "```minallo-diagram" not in full_answer:
-        diagram_fence = _force_render_diagram(
-            client, target_model, question, used_chunks,
-            problem_source_text or (open_ctx if include_open_source else None),
-        )
-        if diagram_fence:
-            yield _sse({"t": diagram_fence})
-            full_answer += diagram_fence
-
-    # Exam quality gate. The answer already STREAMED (we can't un-send it), so a
-    # live repair pass would need to buffer the whole exam — deferred. Here we
-    # lint, log, and EMIT the result (resolved style + blocking issues) in the
-    # final metadata so the frontend/telemetry can see why an exam looked the way
-    # it did. /ask (generate_answer) runs the actual lint→repair gate.
-    if is_exam_request:
-        exam_issues = lint_exam_output(full_answer)
-        blocking = exam_lint_blocking(exam_issues)
-        if exam_issues:
-            log.warning(
-                "exam lint flagged %d issue(s) (%d blocking): %s",
-                len(exam_issues), len(blocking), "; ".join(exam_issues),
-            )
-        yield _sse({"examStyle": exam_style, "examLint": exam_issues, "examLintBlocking": blocking})
-
-    cited = _cited_indices(full_answer, len(used_chunks))
-    filtered_sources = [_source_payload(c, i) for i, c in enumerate(used_chunks, start=1) if i in cited]
-
-    # [Source 0] = the visible PDF text snippet the model received when the
-    # question was deictic ("explain this"). _cited_indices only handles
-    # 1..N (the retrieved chunks); [Source 0] needs an explicit pass.
-    # Without this, the answer would show "grounded in [Source 0]" inline
-    # but the final Sources block would be missing that source entirely —
-    # a misleading UX gap the user can't tell from a fabricated citation.
-    if include_source_zero and re.search(r"\[Source\s+0\]", full_answer, re.IGNORECASE):
-        filtered_sources.insert(0, _source_zero_payload())
-    if has_problem_source and used_chunks and not any(src.get("file_name") != "Problem Solver input" for src in filtered_sources):
-        filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:3], start=1))
-    if not filtered_sources:
-        # The UI should still show the material the answer was grounded on.
-        # Verification may mark the answer down when inline citations are
-        # missing, but hiding sources entirely makes students think retrieval
-        # did not use their lectures/exercises at all.
-        if include_source_zero:
-            filtered_sources.append(_source_zero_payload())
-        filtered_sources.extend(_source_payload(c, i) for i, c in enumerate(used_chunks[:4], start=1))
-
-    # Phase 10 — deterministic verification on the streamed answer.
-    # Include the open-file text in the haystack so formulas / numbers the
-    # model lifted from [Source 0] aren't flagged as ungrounded.
-    verification_haystack = []
-    if has_problem_source:
-        verification_haystack.append(problem_source_text)
-    if include_open_source:
-        verification_haystack.append(open_ctx)
-    verification_haystack.extend(c.text for c in used_chunks)
-    # The whitelist of filenames the model could legitimately cite. Anything
-    # else in a `(filename.pdf, p.N)` ref is fabricated — see verification.py.
-    # When [Source 0] was suppressed the active file isn't a valid citation
-    # target either; whitelisting it would let the model "cite" a slice we
-    # never sent.
-    allowed_filenames = [doc_names.get(c.document_id) for c in used_chunks]
-    allowed_filenames = [f for f in allowed_filenames if f]
-    if include_open_source and active_file_name:
-        allowed_filenames.append(active_file_name)
-
-    verification: dict[str, Any] = {"status": "missing_context", "reasons": [], "details": {}}
-    if visual_assignment_task:
-        coverage_issues = (
-            numbered_assignment_issues(full_answer, required_numbers)
-            if required_numbers else {"missing": [], "extras": [], "duplicates": []}
-        )
-        visual_status = (
-            visual_verification.get("status")
-            if isinstance(visual_verification, dict)
-            else "unavailable"
-        )
-        verification = {
-            "status": (
-                "verified"
-                if visual_status == "verified" and not any(coverage_issues.values())
-                else "partially_verified"
-            ),
-            "reasons": (
-                [] if visual_status == "verified"
-                else [f"visual verification {visual_status}"]
-            ),
-            "details": {
-                "taskType": grounded_task_type,
-                "assignmentCoverage": coverage_issues,
-                "criticalNumericalMismatch": False,
-                "numberMisses": [],
-            },
-        }
-    else:
-        try:
-            if answer_mode == "math" or problem_mode in {"setup", "check", "solve"}:
-                yield _sse({"status": "verifying_calculation"})
-            from .verification import verify_answer  # noqa: WPS433
-            verification = verify_answer(
-                answer_text=full_answer,
-                chunk_texts=verification_haystack,
-                question=question,
-                answer_mode=answer_mode,
-                allowed_filenames=allowed_filenames,
-            ).to_api()
-        except Exception:  # noqa: BLE001
-            log.exception("verify_answer (stream) failed — emitting default missing_context")
-
-    # Confidence shown to the user is now derived from verification status —
-    # NOT from retrieval strength. The old "strong retrieval ⇒ confidence: high"
-    # mapping let the UI show a green badge on answers the model had self-tagged
-    # as "Missing context" and on answers with fabricated citations.
-    if app_question:
-        verification = {
-            "status": "verified",
-            "reasons": ["Answered from Minallo app context."],
-            "details": {"appSupport": True},
-        }
-        filtered_sources = []
-
-    v_status = verification.get("status") if isinstance(verification, dict) else None
-    if v_status == "verified":
-        confidence_label = "high"
-    elif v_status == "partially_verified":
-        confidence_label = "medium"
-    else:
-        confidence_label = "low"
-
-    # Heavy-cap notice rides the token stream (so it lands in the visible
-    # answer and chat history) but NOT full_answer — verification and citation
-    # filtering ran on the real answer text above. stream.py skips the cache
-    # save when heavyCapped is set, so the note never replays from cache.
-    if heavy_capped:
-        yield _sse({"t": (
-            "\n\n⚠️ *This month's advanced-solver allowance is used up, so this answer "
-            "used the standard model. The allowance resets on the 1st.*"
-        )})
-
-    log.info(
-        "ai_stage request_id=%s stage=done_event_emitted task_type=%s "
-        "visual_evidence=%s assignment_count=%d",
-        request_id or "none",
-        grounded_task_type,
-        has_open_image,
-        len(extract_numbered_assignments(full_answer)),
-    )
+    except Exception:  # noqa: BLE001
+        log.exception("stream_answer post-generation processing failed")
+        yield _sse({
+            "error": True,
+            "code": "internal_error",
+            "message": "Minallo could not complete this grounded answer.",
+            "recoverable": False,
+            "retryable": False,
+            "requestId": request_id,
+        })
+        return
     yield _sse({
         "done": True,
         "heavyCapped": heavy_capped,
