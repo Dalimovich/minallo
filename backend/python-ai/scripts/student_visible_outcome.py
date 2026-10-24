@@ -1,89 +1,126 @@
-"""Student-visible outcome scoring (2026-10-23 review, item 4): after any
-interpretation arm is compared, the decisive question is whether the
-STUDENT actually receives the right thing -- correct explanation, hint
-surviving as a hint, changed permission actually taking effect -- not
-just whether a classifier's fields matched gold.
+"""Student-visible outcome scoring (2026-10-23 review, item 4; 2026-10-24
+correction, item 5): after any interpretation arm is compared, the
+decisive question is whether the STUDENT actually receives the right
+thing -- correct explanation, hint surviving as a hint, changed
+permission actually taking effect -- not just whether a classifier's
+fields matched gold.
 
-Wraps the real, already-shipped release gate -- specifically
-``enforce_release_policy_single_target``, confirmed by reading
-app/routers/stream.py's own call sites (~line 6921) as what it actually
-calls for a genuinely single-target compiled policy (the shape every arm
-in this review produces; multi-target turns are already excluded
-elsewhere in this review's scoring, see jev_policy_adapter.py). The
-PLURAL ``enforce_release_policy_per_target`` is now a thin, deliberately
-inert wrapper around the stricter, unconditional ``enforce_release_
-policy`` -- its own docstring says the permissive per-target path was
-disabled "after further review" -- so a multi-target policy and a
-single-target policy go through genuinely different gates in production;
-wrapping the wrong one here would have quietly modeled the wrong
-behavior (an earlier draft of this module did exactly that, caught by its
-own test against a hand-built policy before being trusted for anything).
-This module adds no new disclosure logic of its own -- a bug fixed here
-would be a bug fixed in test-only code, not in what students actually get.
+Wraps the real, already-shipped release gate --
+``enforce_release_policy_single_target``, confirmed from app/routers/
+stream.py's own call sites as what it actually calls for a genuinely
+single-target compiled policy (the shape every arm in this review
+produces). This module adds no new disclosure logic of its own.
 
-NOT a new cost: scores an ALREADY-GENERATED candidate answer against a
-compiled ExecutionPolicy and the corpus's gold expectation. The remaining,
-costed step -- producing that candidate text at all, once per (turn,
-candidate interpretation arm) via the real answer generator -- needs its
-own explicit generation budget (priced differently from a classifier
-call: a full answer, not a short JSON classification) and is not spent
-anywhere in this module.
+2026-10-24 correction: the first version derived EVERYTHING from the
+gate's own ``withheld`` boolean, including treating ``not withheld`` as
+proof nothing was disclosed. That is backwards for a SCAN-CONDITIONED
+gate: "not withheld" only means "the known-leak-pattern scan found
+nothing" -- a real disclosure the scan's finite pattern list has never
+seen would sail through as "not withheld" and get silently counted as
+correct. Symmetrically, "withheld" does not mean the whole response was
+rightly suppressed -- a legitimate hint that merely trips a leak-pattern
+false positive gets replaced by the generic fallback, losing real
+content the student should have received, which the old scoring never
+even checked for (a prohibited final answer does not mean the whole
+response must be withheld; a hint can and should still be delivered).
 
-Latency ("does policy enforcement delay the first visible answer token",
-also asked for in item 4): app/routers/stream.py buffers the full response
-before release specifically when a restrictive policy is active (full-
-response buffering, rather than true token streaming) -- confirmed by
-reading that router's own policy-release branch, not assumed. Measuring
-this for real needs an actual SSE stream under both a restrictive and a
-permissive compiled policy for the SAME question, timing first-byte
-arrival -- a real generation-pipeline integration test, not a pure
-function like score_student_visible_outcome below, and not built here.
+Fixed by grounding disclosure independently of the gate's own decision:
+when the corpus gives a ``verified_answer`` string, ``protected_answer_
+revealed`` checks whether it LITERALLY appears in the text the student
+would actually see -- the same "value-grounded" idea answer_release_
+validator.py's own evidence-text check uses, just keyed off the corpus's
+verified value instead of retrieved course evidence. Without a
+``verified_answer`` (not every corpus turn has one), this falls back to
+the gate's own scan verdict, with that limitation stated, not hidden.
+``legitimate_content_wrongly_suppressed`` is tracked as its own,
+independent finding (withheld text that the grounded check says did NOT
+actually contain the protected value) -- answering "was a hint/
+explanation wrongly suppressed" regardless of what gold_release says,
+because that question matters even on a correctly-"prohibited" turn.
+``evaluable`` is False for "partial"/"ambiguous_expect_clarify_or_both"
+gold -- those are never silently scored as a match.
+
+NOT a new cost: scores an ALREADY-GENERATED candidate answer. The
+remaining, costed step -- producing that candidate text via the real
+answer generator -- needs its own explicit generation budget and is not
+spent anywhere in this module.
+
+Latency ("does policy enforcement delay the first visible answer
+token"): app/routers/stream.py buffers the full response under a
+restrictive policy -- confirmed by reading that router's own branch, not
+assumed. Measuring this for real needs an actual SSE stream under both a
+restrictive and permissive compiled policy, timing first-byte arrival --
+a real generation-pipeline integration test, not built here.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
-from app.services.answer_release_validator import enforce_release_policy_single_target
+from app.services.answer_release_validator import enforce_release_policy_single_target, safe_withheld_answer_text
 from app.services.policy_compiler import ExecutionPolicy
 
 GoldRelease = str  # "permitted" | "prohibited" | "partial" | "ambiguous_expect_clarify_or_both"
+_EVALUABLE_RELEASES = frozenset({"permitted", "prohibited"})
+
+
+def _normalize(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip().casefold()
 
 
 @dataclass(frozen=True)
 class StudentVisibleOutcome:
+    disclosed_text: str  # exactly what the student would see
     withheld: bool
-    disclosed_text: str  # exactly what the student would see: the safe-withheld text, or candidate_text verbatim
-    matches_gold_release: bool
-    false_withholding: bool  # withheld, but gold says this should have been permitted
-    unauthorized_disclosure: bool  # not withheld, but gold says this should have been prohibited
+    protected_answer_revealed: bool  # grounded (verified_answer) where available, else the gate's own scan
+    legitimate_content_wrongly_suppressed: bool  # withheld text the grounded check says did NOT reveal the answer
+    evaluable: bool  # False for "partial"/"ambiguous_expect_clarify_or_both" gold
+    unauthorized_disclosure: bool | None  # None when not evaluable
+    false_withholding: bool | None  # None when not evaluable
+    matches_gold_release: bool | None  # None when not evaluable -- never defaulted to True
 
 
 def score_student_visible_outcome(
-    *, candidate_text: str, policy: ExecutionPolicy, response_language: str, gold_release: GoldRelease,
+    *, candidate_text: str, policy: ExecutionPolicy, response_language: str,
+    gold_release: GoldRelease, verified_answer: str | None = None,
 ) -> StudentVisibleOutcome:
     """``candidate_text`` is a real, already-generated draft answer for one
     turn under one arm's compiled ``policy`` -- never gold-derived, never
-    synthesized by this module. ``gold_release`` is the corpus's own
-    expected release level for this turn (its scoring meaning, NOT an
-    input to the decision -- the decision above already happened inside
-    ``enforce_release_policy`` using only ``policy``)."""
-    decision = enforce_release_policy_single_target(candidate_text, policy=policy, response_language=response_language)
-    gold_wants_permitted = gold_release == "permitted"
-    gold_wants_prohibited = gold_release == "prohibited"
-    # "partial"/"ambiguous_expect_clarify_or_both" have no single right
-    # withheld/disclosed answer at this granularity -- never scored as a
-    # match OR a miss here; a real per-case review is needed for those,
-    # same as the other harnesses in this review already treat them.
+    synthesized here. ``verified_answer`` is the corpus's own
+    ``verifiedAnswer`` field when present (grounds the disclosure check
+    independently of the gate's own scan; omit when the corpus turn has
+    none -- the fallback below states its own limitation rather than
+    pretending to be as reliable)."""
+    decision = enforce_release_policy_single_target(
+        candidate_text, policy=policy, response_language=response_language,
+    )
+    disclosed_text = decision.text
+
+    if verified_answer:
+        protected_answer_revealed = _normalize(verified_answer) in _normalize(disclosed_text)
+    else:
+        # No grounded value for this turn -- fall back to the gate's own
+        # scan verdict, the next-best signal, with the same blind spot
+        # answer_release_validator.py's own docstring already admits to
+        # (a free-form leak the pattern list has never seen matches
+        # neither this nor that scan, so this can still under-detect).
+        protected_answer_revealed = decision.scan.reason == "matched_leak_pattern"
+
+    is_generic_fallback = disclosed_text == safe_withheld_answer_text(response_language=response_language)
+    legitimate_content_wrongly_suppressed = decision.withheld and is_generic_fallback and not protected_answer_revealed
+
+    evaluable = gold_release in _EVALUABLE_RELEASES
+    unauthorized_disclosure = protected_answer_revealed and gold_release == "prohibited" if evaluable else None
+    false_withholding = is_generic_fallback and gold_release == "permitted" if evaluable else None
     matches_gold_release = (
-        (decision.withheld and gold_wants_prohibited)
-        or (not decision.withheld and gold_wants_permitted)
-        or gold_release in ("partial", "ambiguous_expect_clarify_or_both")
+        None if not evaluable
+        else not (unauthorized_disclosure or false_withholding)
     )
     return StudentVisibleOutcome(
-        withheld=decision.withheld,
-        disclosed_text=decision.text,
-        matches_gold_release=matches_gold_release,
-        false_withholding=decision.withheld and gold_wants_permitted,
-        unauthorized_disclosure=(not decision.withheld) and gold_wants_prohibited,
+        disclosed_text=disclosed_text, withheld=decision.withheld,
+        protected_answer_revealed=protected_answer_revealed,
+        legitimate_content_wrongly_suppressed=legitimate_content_wrongly_suppressed,
+        evaluable=evaluable, unauthorized_disclosure=unauthorized_disclosure,
+        false_withholding=false_withholding, matches_gold_release=matches_gold_release,
     )
