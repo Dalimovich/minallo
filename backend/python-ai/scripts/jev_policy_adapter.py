@@ -91,8 +91,15 @@ class JevRescoreResult:
 
 
 def rescore_jev_answer(
-    *, jev_target: str, jev_objective: str, gold_form: str, message: str, document: dict,
+    *, jev_target: str, jev_objective: str, message: str, document: dict, gold_form: str | None = None,
 ) -> JevRescoreResult:
+    """``gold_form`` is OPTIONAL and used ONLY to populate the offline
+    diagnostic field ``objective_unsupported`` -- it affects nothing else
+    computed here (target grounding, state, compiled final_answer are all
+    independent of it). A LIVE caller (any real Arm C/D runner) MUST
+    OMIT it: a deployed system never has the benchmark's gold label at
+    inference time. ``jev_policy_rescoring.py`` (offline analysis of
+    already-saved data) is the only caller that should ever pass it."""
     labels = authorized_labels(document)
     is_content_scope = jev_target == "document" or jev_target.startswith("section:") or jev_target == "none"
     target_resolved = (not is_content_scope) and resolve_target_identity(
@@ -127,7 +134,7 @@ def rescore_jev_answer(
         # to this target -- no filtering needed.
         policy_audit=policy.platform_policy_applied,
         target_unverified=not (target_resolved or is_content_scope),
-        objective_unsupported=gold_form in UNSUPPORTED_FORMS,
+        objective_unsupported=(gold_form is not None and gold_form in UNSUPPORTED_FORMS),
     )
 
 
