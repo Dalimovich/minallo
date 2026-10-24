@@ -50,9 +50,19 @@ CLS was zero except desktop home (0.000405). Desktop student LCP exceeds the 2.5
 - [Mobile personalized plan](../../audit/cinematic/student-plan-mobile.png)
 - [Mobile German pace section](../../audit/cinematic/german-pace-mobile.png)
 
-## Staging verification still required
+## Staging verification
 
-No manual deployment was performed. Local HTTP tests do not establish CDN headers, WAF access from trusted crawler IPs, search indexing, or production performance. Once an approved preview URL is available, run:
+The existing GitHub integration automatically built previews after the push. No manual deployment was performed. At commit `e2419984`, the [Cloudflare branch preview](https://preview-cinematic-landing.minallo.pages.dev) passed all raw HTTP/content checks for normal, Googlebot and OAI-SearchBot requests, discovery files and missing-route 404. Cloudflare redirects `.html` journey paths to extensionless paths; their canonical metadata remains the production `.html` URL.
+
+Preview hosting adds `X-Robots-Tag: noindex`. The strict production check correctly rejected this; the explicit `--preview` mode permits that hosting header while still checking semantic HTML, canonicals, document robots metadata, user-agent parity and discovery. It does not establish production indexability. The Netlify integration also reported a ready preview, but its homepage returned 404; use the working Cloudflare preview for review.
+
+Checks do not establish WAF access from trusted crawler IPs, search indexing, or production performance. Repeat preview checks with:
+
+```sh
+npm run verify:marketing:http -- https://preview-cinematic-landing.minallo.pages.dev --preview
+```
+
+For the production release, retain the strict check without that flag:
 
 ```sh
 npm run verify:marketing:http -- https://APPROVED-PREVIEW-HOST

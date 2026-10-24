@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 const base = process.argv[2];
+const preview = process.argv.includes('--preview');
 if (!base || !/^https?:\/\//.test(base)) {
   throw new Error('Usage: node scripts/verify-marketing-http.mjs https://approved-staging-host');
 }
@@ -14,10 +15,12 @@ for (const path of ['/', '/student-journey.html', '/german-learning.html']) {
       signal: AbortSignal.timeout(20000)
     });
     assert.equal(response.status, 200, `${agent}: ${path} must return 200`);
-    assert.ok(
-      !/noindex/i.test(response.headers.get('x-robots-tag') || ''),
-      'unexpected noindex header'
-    );
+    const headerNoindex = /noindex/i.test(response.headers.get('x-robots-tag') || '');
+    if (preview && headerNoindex) {
+      console.log(`PREVIEW ${path}: hosting noindex header retained; production indexability not verified`);
+    } else {
+      assert.ok(!headerNoindex, 'unexpected noindex header');
+    }
     const html = await response.text();
     const { document } = parseHTML(html);
     const text = document.querySelector('main')?.textContent;
