@@ -79,6 +79,7 @@ export function initFeatureMap() {
     // must retain their native behavior too.
     if (
       !query.matches ||
+      event.defaultPrevented ||
       event.ctrlKey ||
       event.deltaY === 0 ||
       event.target.closest('a, button, input, select, textarea')
