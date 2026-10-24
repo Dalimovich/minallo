@@ -141,6 +141,52 @@ def test_explicit_course_mode_still_honours_user_source_choice_for_short_turn() 
     assert decision.source_scope == SourceScope.COURSE_FILES
 
 
+def test_auto_merely_open_pdf_does_not_override_explicit_web_request() -> None:
+    # A PDF sitting open in the viewer is not a "use this file" instruction —
+    # stream.py's own has_specific_file construction (and execution_router's)
+    # deliberately excludes a merely-open activeDocumentId for exactly this
+    # reason. classify_source_scope's has_specific_file must agree: it must
+    # not let an open-but-unselected PDF outrank an explicit "search the
+    # internet" request, the way an actually-selected file legitimately would
+    # (see test_auto_with_selected_file_prefers_course_files for the document_ids
+    # case, which must still win).
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    decision = classify_source_scope(
+        question="search the internet for the latest news on inflation",
+        source_mode="auto",
+        active_document_id="document",
+    )
+
+    assert decision.source_scope == SourceScope.INTERNET
+
+
+def test_auto_specific_files_scope_without_any_file_still_needs_clarification() -> None:
+    # Guard against over-correcting the fix above: course_file_scope=
+    # "specific_files" with an actually-resolved active_document_id must
+    # still count as has_specific_file (unlike a merely-open PDF under the
+    # default all_course_files scope), and scope=specific_files with
+    # NEITHER document_ids NOR an active_document_id must still fall through
+    # to NEEDS_CLARIFICATION rather than silently answering from zero files.
+    from app.services.source_router import SourceScope, classify_source_scope
+
+    resolved = classify_source_scope(
+        question="explain the course material",
+        source_mode="auto",
+        course_file_scope="specific_files",
+        active_document_id="document",
+    )
+    assert resolved.source_scope == SourceScope.COURSE_FILES
+    assert resolved.used_document_ids == ["document"]
+
+    unresolved = classify_source_scope(
+        question="explain the course material",
+        source_mode="auto",
+        course_file_scope="specific_files",
+    )
+    assert unresolved.source_scope == SourceScope.NEEDS_CLARIFICATION
+
+
 def test_auto_without_file_defaults_to_course_files() -> None:
     # Auto mode now retrieves from course files FIRST and only falls back to
     # general knowledge downstream — in ask.py, when retrieval finds no strong

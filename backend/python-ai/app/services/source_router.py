@@ -297,7 +297,15 @@ def classify_source_scope(
 
     q = question or ""
     has_context = bool((selected_text or "").strip() or (open_file_context or "").strip())
-    has_specific_file = bool(document_ids or active_document_id)
+    # A merely-open PDF is not a selection — only an explicit document_ids
+    # list, or course_file_scope narrowed to specific_files, is. This must
+    # match execution_router's own has_specific_file rule (stream.py passes
+    # bool(payload.documentIds or courseFileScope == "specific_files")); an
+    # open-but-unselected PDF must not outrank an explicit internet request
+    # below, the way an actual selection legitimately does.
+    has_specific_file = bool(document_ids) or (
+        file_scope == CourseFileScope.SPECIFIC_FILES and bool(active_document_id)
+    )
     # An open course/PDF is available context, not evidence that every new
     # utterance is about it. High-confidence conversational turns must leave
     # Auto routing before active-document, side-rail, or broad deictic signals
