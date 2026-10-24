@@ -42,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from scripts.eval_guarded_transport import BudgetStop, EvalGuardedTransport  # noqa: E402
+from scripts.fake_conversation_store import FakeConversationStore  # noqa: E402
 from scripts.jev_policy_adapter import authorized_labels, load_corpus, load_documents  # noqa: E402
 from scripts.semantic_blind_ab_transcript import build_history_turns  # noqa: E402
 
@@ -102,34 +103,86 @@ def _score(turn: dict, actions: list[dict]) -> dict:
     }
 
 
-def _run_arm_a_turn(question: str, *, previous_turns: list[dict]) -> dict:
+def _run_arm_a_turn(question: str, *, previous_turns: list[dict], document: dict) -> dict:
+    """Today's actual deployed interpretation path, reconstructed from the
+    real production functions -- NOT a stub. Mirrors semantic_intent_
+    deterministic_baseline.py's own method (interpret_student_intent(mode=
+    "off") -> diagnostic_policy.adapt_deterministic_intent -> compile_
+    policy, the exact same functions production uses on the
+    SEMANTIC_INTENT_MODE="off" path) and adds the one real piece that
+    script deliberately left out: the legacy resolve_dialogue_
+    semantically escalation, which fires in production TODAY on the
+    ~18/64 turns whose needs_semantic_resolution gate triggers,
+    independent of SEMANTIC_INTENT_MODE entirely (confirmed by reading
+    app/routers/stream.py's own call site -- see the 2026-10-23 report).
+
+    Known, stated limitation this does NOT paper over: real production,
+    with all three Milestone-4 flags off (today's default), never
+    actually calls adapt_deterministic_intent/compile_policy at all --
+    release behavior comes from the hardcoded textual instructions
+    dialogue_state.py bakes into resolved_request per dialogue_act (e.g.
+    "Do not reveal the complete solution or final result" for
+    REQUEST_HINT), not a compiled ExecutionPolicy. This function measures
+    the deterministic adapter's diagnostic policy as a structured stand-in
+    for that textual behavior -- the same interpretation the existing,
+    already-reviewed deterministic baseline makes, not a new assumption
+    introduced here. A literal text-scan arm (grep resolved_request for
+    the real hardcoded phrases) is a different, narrower measurement this
+    does not attempt to replace.
+    """
     from app.services.dialogue_state import needs_semantic_resolution, resolve_dialogue, resolve_dialogue_semantically
+    from app.services.diagnostic_policy import adapt_deterministic_intent
+    from app.services.policy_compiler import compile_policy
+    from app.services.student_intent import interpret_student_intent
 
     base = resolve_dialogue(question, previous_turns=previous_turns)
     dialogue = base
     escalated = needs_semantic_resolution(question, base, previous_turns)
     if escalated:
         dialogue = resolve_dialogue_semantically(question, previous_turns=previous_turns, base=base)
+
+    student_intent = interpret_student_intent(
+        question, dialogue=dialogue, resolved_access=None, has_visible_context=True,
+        mode="off", previous_turns=previous_turns, user_id=USER_ID,
+    )
+    resolved = adapt_deterministic_intent(
+        message=question, dialogue=dialogue, student_intent=student_intent,
+        authorized_exercise_labels=authorized_labels(document), has_visible_context=True,
+    )
+    policy = compile_policy(resolved, turn_ledger=None, conversation_id=None)
     return {
         "escalated": escalated,
-        "actions": [{
-            "target": dialogue.active_question or "current_request",
-            "objective": "other", "final_answer": "unspecified",
-        }],
+        "actions": [
+            {"target": a.target, "objective": a.objective, "final_answer": a.release.final_answer}
+            for a in policy.actions
+        ],
         "dialogue_relation": dialogue.relation.value,
     }
 
 
-def _run_arm_b_turn(question: str, *, previous_turns: list[dict], document: dict) -> dict:
-    from app.services.conversation_store import get_durable_conversation_messages, validate_durable_conversation
+def _run_arm_b_turn(
+    question: str, *, previous_turns: list[dict], document: dict,
+    store: FakeConversationStore, conversation_id: str, turn_n: int,
+) -> dict:
+    """Milestone 4's authoritative interpreter, with REAL verified durable
+    history -- not conversation_id=None (the 2026-10-24 fix: that made
+    every turn history-free and could never exercise the multi-turn
+    restriction-persistence mechanism that distinguishes Milestone 4 from
+    the legacy path at all). ``store`` is a FakeConversationStore the
+    caller created once per SCENARIO (one durable conversation per
+    scenario, matching real per-conversation isolation) and must call
+    ``store.append_turn(...)`` with this call's real ``execution_policy``
+    after this returns, so the NEXT turn in the same scenario can actually
+    see it -- this function does not persist its own result; the caller
+    owns write timing (see main()'s loop)."""
     from app.services.dialogue_state import resolve_dialogue
     from app.services.semantic_intent_orchestrator import interpret_turn_authoritatively
 
     base = resolve_dialogue(question, previous_turns=previous_turns)
     result = interpret_turn_authoritatively(
         question=question, dialogue_base=base, preflight_turns=previous_turns,
-        user_id=USER_ID, conversation_id=None,
-        validate_ownership=validate_durable_conversation, get_messages=get_durable_conversation_messages,
+        user_id=USER_ID, conversation_id=conversation_id,
+        validate_ownership=store.validate_ownership, get_messages=store.get_messages,
         resolved_access=None, has_visible_context=True,
         authorized_exercise_labels=authorized_labels(document),
     )
@@ -139,9 +192,10 @@ def _run_arm_b_turn(question: str, *, previous_turns: list[dict], document: dict
         for a in (policy.actions if policy else [])
     ] or [{"target": "current_request", "objective": "other", "final_answer": "unspecified"}]
     return {
-        "escalated": result.resolved_intent is not None,
+        "escalated": result.used_unified_call,
         "actions": actions,
         "dialogue_relation": result.dialogue.relation.value,
+        "execution_policy": policy,
     }
 
 
@@ -203,18 +257,33 @@ def main() -> None:
             with httpx.Client(transport=guard, follow_redirects=False, trust_env=False) as http:
                 instrumented = client.with_options(http_client=http)
                 with patch.object(openai_client, "get_openai_client", return_value=instrumented):
+                    store = FakeConversationStore()
                     for scenario in CORPUS["cases"]:
                         document = DOCUMENTS[scenario["document"]]
+                        # One real, durable conversation per SCENARIO (never per
+                        # turn) -- matches real per-conversation isolation, and
+                        # is what actually lets turn 2+ of a scenario see turn
+                        # 1's persisted restriction via the real mechanism.
+                        conversation_id = store.create_conversation(user_id=USER_ID)
                         for turn_index, turn in enumerate(scenario["turns"]):
                             previous_turns = build_history_turns(scenario, turn_index)
                             guard.context = {"arm": args.arm.upper(), "scenario": scenario["id"], "turn": turn["n"]}
                             try:
                                 if args.arm == "a":
-                                    result = _run_arm_a_turn(turn["student"], previous_turns=previous_turns)
+                                    result = _run_arm_a_turn(
+                                        turn["student"], previous_turns=previous_turns, document=document,
+                                    )
                                 else:
                                     result = _run_arm_b_turn(
                                         turn["student"], previous_turns=previous_turns, document=document,
+                                        store=store, conversation_id=conversation_id, turn_n=turn["n"],
                                     )
+                                    policy_obj = result.pop("execution_policy", None)
+                                    if policy_obj is not None:
+                                        store.append_turn(
+                                            conversation_id=conversation_id, turn_n=turn["n"],
+                                            execution_policy=policy_obj,
+                                        )
                                 error = None
                             except BudgetStop:
                                 raise
