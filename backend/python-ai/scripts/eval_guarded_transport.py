@@ -15,6 +15,17 @@ the ledger file, never refunded even on error -- so a crash mid-run leaves
 an accurate record of what was actually risked, not just what succeeded. An
 existing ledger file refuses a second run outright (``touch(exist_ok=False)``):
 no silent reruns/overwrites of a prior attempt's cost record.
+
+2026-10-24 addition: a RESERVATION line alone only proves what was risked,
+never what actually happened -- status, the real returned model, usage,
+latency and errors were previously held only in the in-memory ``attempts``
+list, which a crash loses entirely. Every attempt now writes a SECOND,
+also fsync'd, ``type: "completion"`` line immediately after the response
+(or exception) is known, carrying exactly those fields plus the running
+cumulative reserved spend at that point -- so a process that dies anywhere
+after a reservation leaves either just the reservation (attempt was in
+flight, cost already correctly counted as at-risk) or a reservation AND a
+completion (attempt finished, outcome durably known), never a silent gap.
 """
 
 from __future__ import annotations
@@ -68,6 +79,12 @@ class EvalGuardedTransport(httpx.BaseTransport):
     def spent_usd(self) -> float:
         return sum(a["reserved_usd"] for a in self.attempts)
 
+    def _write_line(self, line: dict) -> None:
+        with self.ledger_path.open("a", encoding="utf-8") as out:
+            out.write(json.dumps(line) + "\n")
+            out.flush()
+            os.fsync(out.fileno())
+
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         if str(request.url) != self.url or request.method != "POST":
             raise BudgetStop(f"unapproved endpoint: {request.method} {request.url}")
@@ -77,31 +94,49 @@ class EvalGuardedTransport(httpx.BaseTransport):
             raise BudgetStop(f"request-count ceiling reached ({self.max_requests})")
         if self.spent_usd + reserved_usd > self.budget_usd:
             raise BudgetStop(f"cost ceiling reached (${self.spent_usd:.4f} + ${reserved_usd:.6f} > ${self.budget_usd:.2f})")
+        attempt_number = len(self.attempts) + 1
         attempt = {
-            **self.context, "attempt_number": len(self.attempts) + 1,
+            "type": "reservation", **self.context, "attempt_number": attempt_number,
             "requested_model": requested_model, "reserved_usd": reserved_usd,
             "sdk_retry": int(request.headers.get("x-stainless-retry-count", "0")),
         }
-        with self.ledger_path.open("a", encoding="utf-8") as out:
-            out.write(json.dumps(attempt) + "\n")
-            out.flush()
-            os.fsync(out.fileno())
+        self._write_line(attempt)
         self.attempts.append(attempt)
         started = time.perf_counter()
+        status = None
+        returned_model = None
+        usage = None
+        error = None
         try:
             response = self.inner.handle_request(request)
             response.read()
-            attempt["status"] = response.status_code
-            if response.status_code == 200:
+            status = response.status_code
+            if status == 200:
                 data = response.json()
-                attempt["returned_model"] = data.get("model")
-                attempt["usage"] = data.get("usage")
+                returned_model = data.get("model")
+                usage = data.get("usage")
+            attempt["status"] = status
+            attempt["returned_model"] = returned_model
+            attempt["usage"] = usage
             return response
         except Exception as exc:
-            attempt["error"] = type(exc).__name__  # never log request body/headers/credentials
+            error = type(exc).__name__  # never log request body/headers/credentials
+            attempt["error"] = error
             raise
         finally:
-            attempt["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+            latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            attempt["latency_ms"] = latency_ms
+            # Durable completion record (2026-10-24): everything a crash
+            # would otherwise only lose from the in-memory `attempt` dict,
+            # plus the cumulative spend as of this attempt -- written
+            # whether this attempt succeeded, errored, or returned a
+            # non-200 status; never skipped.
+            self._write_line({
+                "type": "completion", **self.context, "attempt_number": attempt_number,
+                "status": status, "returned_model": returned_model, "usage": usage,
+                "latency_ms": latency_ms, "error": error,
+                "cumulative_reserved_usd": round(self.spent_usd, 6),
+            })
 
     def close(self) -> None:
         self.inner.close()
