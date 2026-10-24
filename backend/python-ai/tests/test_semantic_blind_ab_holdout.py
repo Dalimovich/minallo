@@ -15,10 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 HOLDOUT_PATH = ROOT / "tests/fixtures/semantic_blind_ab_holdout.json"
 DOCUMENTS_PATH = ROOT / "tests/fixtures/semantic_blind_ab_documents.json"
 
-# Recorded at creation time (2026-10-23). Update ONLY when deliberately
+# Recorded 2026-10-24 (updated when the size-caveat note was added --
+# see the fixture's own "notes" field). Update ONLY when deliberately
 # adding/editing holdout cases BEFORE ever running them against any
 # interpreter -- never after seeing a model's mistakes on them.
-_FROZEN_SHA256 = "634ab68c5438850d9801d6abafa4e55e999f46735be7730d7e43a1d731a31df1"
+_FROZEN_SHA256 = "2e0b1259339578296be6f18934c02f785a1d08003488785d5771bd2dd2473f55"
 
 _VALID_FORMS = frozenset({
     "answer_check", "confirmation", "full_solution", "hint",

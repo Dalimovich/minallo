@@ -52,6 +52,7 @@ _RELEASE_TO_FINAL_ANSWER = {
 
 def main() -> None:
     rows: list[dict] = []
+    excluded_turns = 0
     excluded_counts = {
         "multi_target": 0, "permission_change_untestable": 0,
         "objective_unsupported": 0, "target_unverified": 0,
@@ -120,8 +121,9 @@ def main() -> None:
         rows.append(row)
 
         if excluded_reasons:
+            excluded_turns += 1  # once per turn, even if it matches more than one reason below
             for reason in excluded_reasons:
-                excluded_counts[reason] += 1
+                excluded_counts[reason] += 1  # a breakdown, not a partition -- a turn may count in more than one
             continue  # excluded from headline accuracy -- see module docstring
 
         if rescored.target_unverified:
@@ -136,19 +138,30 @@ def main() -> None:
         counts["all_match_compiled_policy"] += target_match and objective_match and compiled_final_match
 
     n = counts["turns"]
+    total_turns = len(SAVED["turns"])
+    assert n + excluded_turns == total_turns, "every turn must be either scored or excluded exactly once"
     summary = {
-        "cleanly_evaluable_turns_scored": n,
+        # Deliberately FIRST and never omitted (2026-10-24 review
+        # requirement): the 42-cleanly-evaluable number below is NOT the
+        # overall system accuracy and must never be reported as if it
+        # were. This conservative figure treats every excluded/
+        # unevaluable turn as a failure, over the full original corpus.
+        "total_corpus_turns": total_turns,
         "excluded_from_headline": excluded_counts,
-        "target_accuracy": round(counts["target_match"] / n, 4),
-        "objective_accuracy": round(counts["objective_match"] / n, 4),
-        "final_answer_accuracy_raw_noul_gate": round(counts["final_answer_match_raw_noul_gate"] / n, 4),
-        "final_answer_accuracy_compiled_policy": round(counts["final_answer_match_compiled_policy"] / n, 4),
-        "all_fields_accuracy_raw_noul_gate": round(counts["all_match_raw_noul_gate"] / n, 4),
-        "all_fields_accuracy_compiled_policy": round(counts["all_match_compiled_policy"] / n, 4),
+        "all_fields_accuracy_conservative_over_full_corpus": round(counts["all_match_compiled_policy"] / total_turns, 4),
+        "cleanly_evaluable_turns_scored": n,
+        "target_accuracy_on_cleanly_evaluable_only": round(counts["target_match"] / n, 4),
+        "objective_accuracy_on_cleanly_evaluable_only": round(counts["objective_match"] / n, 4),
+        "final_answer_accuracy_raw_noul_gate_on_cleanly_evaluable_only": round(counts["final_answer_match_raw_noul_gate"] / n, 4),
+        "final_answer_accuracy_compiled_policy_on_cleanly_evaluable_only": round(counts["final_answer_match_compiled_policy"] / n, 4),
+        "all_fields_accuracy_raw_noul_gate_on_cleanly_evaluable_only": round(counts["all_match_raw_noul_gate"] / n, 4),
+        "all_fields_accuracy_compiled_policy_on_cleanly_evaluable_only": round(counts["all_match_compiled_policy"] / n, 4),
         "caveat": (
             "This is a diagnostic re-read of saved data collected under an "
             "uneven context (no assistant turns at all), NOT a fair, "
-            "completed Arm C. See module docstring."
+            "completed Arm C. See module docstring. Report BOTH the "
+            "conservative full-corpus figure and the cleanly-evaluable "
+            "figure together -- never the latter alone as 'the' accuracy."
         ),
     }
 

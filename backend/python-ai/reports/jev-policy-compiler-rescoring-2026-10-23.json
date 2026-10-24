@@ -1,19 +1,21 @@
 {
   "summary": {
-    "cleanly_evaluable_turns_scored": 42,
+    "total_corpus_turns": 64,
     "excluded_from_headline": {
       "multi_target": 5,
       "permission_change_untestable": 10,
       "objective_unsupported": 7,
       "target_unverified": 0
     },
-    "target_accuracy": 0.8571,
-    "objective_accuracy": 0.7143,
-    "final_answer_accuracy_raw_noul_gate": 0.6429,
-    "final_answer_accuracy_compiled_policy": 0.8095,
-    "all_fields_accuracy_raw_noul_gate": 0.5,
-    "all_fields_accuracy_compiled_policy": 0.6905,
-    "caveat": "This is a diagnostic re-read of saved data collected under an uneven context (no assistant turns at all), NOT a fair, completed Arm C. See module docstring."
+    "all_fields_accuracy_conservative_over_full_corpus": 0.4531,
+    "cleanly_evaluable_turns_scored": 42,
+    "target_accuracy_on_cleanly_evaluable_only": 0.8571,
+    "objective_accuracy_on_cleanly_evaluable_only": 0.7143,
+    "final_answer_accuracy_raw_noul_gate_on_cleanly_evaluable_only": 0.6429,
+    "final_answer_accuracy_compiled_policy_on_cleanly_evaluable_only": 0.8095,
+    "all_fields_accuracy_raw_noul_gate_on_cleanly_evaluable_only": 0.5,
+    "all_fields_accuracy_compiled_policy_on_cleanly_evaluable_only": 0.6905,
+    "caveat": "This is a diagnostic re-read of saved data collected under an uneven context (no assistant turns at all), NOT a fair, completed Arm C. See module docstring. Report BOTH the conservative full-corpus figure and the cleanly-evaluable figure together -- never the latter alone as 'the' accuracy."
   },
   "changed_by_rescoring": [
     {
