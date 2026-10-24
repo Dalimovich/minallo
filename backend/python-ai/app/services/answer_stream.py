@@ -1605,6 +1605,37 @@ def _web_search_last_resort(
     return text, list(web_result.get("webSources") or [])
 
 
+def _requires_strong_model(
+    *,
+    answer_mode: str,
+    wants_diagram: bool,
+    has_open_image: bool,
+    will_attach_figure: bool,
+    is_exam_request: bool,
+    wants_full_coverage: bool,
+    question: str,
+) -> bool:
+    """Strong-model gate for /ask-stream.
+
+    Must include ``answer_mode == "math"``: pick_system_prompt only returns
+    that label once retrieval already proved a complete exercise+formula+
+    givens set (the same condition answer.py's /ask gate keys its strong-
+    model routing on). Without it, a plain calculation question with no
+    image/diagram/exam and no "prove/derive/multi-step" wording silently ran
+    the rigid MATH worksheet template on the mini model -- exactly the
+    wrong-variable-subscript, dropped-sum-term failure mode this gate exists
+    to avoid.
+    """
+    return bool(
+        answer_mode == "math"
+        or wants_diagram
+        or has_open_image
+        or will_attach_figure
+        or (is_exam_request and wants_full_coverage)
+        or _COMPLEX_REASONING_RE.search(question)
+    )
+
+
 def stream_answer(
     *,
     question: str,
@@ -1967,16 +1998,14 @@ def stream_answer(
     heavy_capped = False
     if model:
         target_model = model
-    elif (
-        wants_diagram
-        or has_open_image
-        or will_attach_figure
-        # A multi-section mock exam (one Aufgabe per selected file, with calc
-        # tasks + Kurzlösung) needs strong instruction-following: the mini model
-        # silently drops most sections and covers only a few files. Route exams
-        # to the strong model so the full per-file coverage is honoured.
-        or (is_exam_request and wants_full_coverage)
-        or bool(_COMPLEX_REASONING_RE.search(question))
+    elif _requires_strong_model(
+        answer_mode=answer_mode,
+        wants_diagram=wants_diagram,
+        has_open_image=has_open_image,
+        will_attach_figure=will_attach_figure,
+        is_exam_request=is_exam_request,
+        wants_full_coverage=wants_full_coverage,
+        question=question,
     ):
         target_model = settings.openai_generate_model_strong
         # Monthly strong-model allowance: bounds worst-case OpenAI cost per

@@ -3,6 +3,66 @@
 from __future__ import annotations
 
 
+def test_strong_model_required_for_math_answer_mode_even_without_image_or_exam() -> None:
+    """A plain calculation question with complete retrieval (answer_mode ==
+    "math") must route to the strong model exactly like /ask does, even when
+    no diagram/image/exam signal is present and the wording isn't "prove" /
+    "derive" / "multi-step". Regression for the gate silently omitting the
+    math label and leaving such questions on mini."""
+    from app.services.answer_stream import _requires_strong_model
+
+    assert _requires_strong_model(
+        answer_mode="math",
+        wants_diagram=False,
+        has_open_image=False,
+        will_attach_figure=False,
+        is_exam_request=False,
+        wants_full_coverage=False,
+        question="Berechne die Kraft F bei einer Masse von 10 kg.",
+    )
+
+
+def test_strong_model_not_required_for_ordinary_non_math_question() -> None:
+    """A non-math, non-diagram, non-exam question stays on mini -- the gate
+    must not become unconditionally true."""
+    from app.services.answer_stream import _requires_strong_model
+
+    assert not _requires_strong_model(
+        answer_mode="strong",
+        wants_diagram=False,
+        has_open_image=False,
+        will_attach_figure=False,
+        is_exam_request=False,
+        wants_full_coverage=False,
+        question="What is photosynthesis?",
+    )
+
+
+def test_strong_model_required_via_preexisting_diagram_image_figure_exam_or_regex_signals() -> None:
+    """The pre-existing non-math escalation paths still work unchanged."""
+    from app.services.answer_stream import _requires_strong_model
+
+    base = dict(
+        answer_mode="strong",
+        wants_diagram=False,
+        has_open_image=False,
+        will_attach_figure=False,
+        is_exam_request=False,
+        wants_full_coverage=False,
+        question="Explain this.",
+    )
+    assert _requires_strong_model(**{**base, "wants_diagram": True})
+    assert _requires_strong_model(**{**base, "has_open_image": True})
+    assert _requires_strong_model(**{**base, "will_attach_figure": True})
+    assert _requires_strong_model(
+        **{**base, "is_exam_request": True, "wants_full_coverage": True}
+    )
+    assert not _requires_strong_model(**{**base, "is_exam_request": True})
+    assert _requires_strong_model(
+        **{**base, "question": "Please derive the formula step by step."}
+    )
+
+
 def test_final_language_rule_ignores_foreign_exercise_labels() -> None:
     """An English request stays English even if it names a German exercise."""
     from app.services.answer_stream import FINAL_RESPONSE_LANGUAGE_RULE
