@@ -80,8 +80,12 @@ select:focus-visible {
 .source-sample small,
 .exam-checklist input:checked + span,
 .gw-top,
-.wl-top { color: #3b6073; }
-.wr-head { color: #bae6fd; }
+.wl-top {
+  color: #3b6073;
+}
+.wr-head {
+  color: #bae6fd;
+}
 .site-footer nav {
   position: static;
   height: auto;
@@ -316,7 +320,7 @@ select:focus-visible {
 .scroll-icon:after {
   animation: none;
 }
-@media (min-width: 1100px) and (min-height: 800px) and (prefers-reduced-motion: no-preference) {
+@media (min-width: 1100px) and (min-height: 600px) and (prefers-reduced-motion: no-preference) {
   .map-enhanced {
     height: 370svh;
   }
@@ -402,6 +406,56 @@ select:focus-visible {
   }
   .map-enhanced .oct-description {
     color: #b5c9d8;
+  }
+}
+/* Browser chrome leaves many laptops with only 600–799px of content height.
+   Fit the complete map instead of disabling the cinematic reveal there. */
+@media (min-width: 1100px) and (min-height: 600px) and (max-height: 799px) and (prefers-reduced-motion: no-preference) {
+  .map-enhanced .oct-pin {
+    padding-bottom: 12px;
+  }
+  .map-enhanced .oct-copy {
+    padding-top: 12px;
+  }
+  .map-enhanced .oct-copy h2 {
+    font-size: 32px;
+  }
+  .map-enhanced .oct-copy p {
+    margin: 0;
+    font-size: 13px;
+  }
+  .map-enhanced .map-skip {
+    margin-top: 0;
+    min-height: 36px;
+  }
+  .map-enhanced .oct-diagram {
+    min-height: 360px;
+    max-height: 520px;
+  }
+  .map-enhanced .oct-core {
+    width: 120px;
+    height: 120px;
+  }
+  .map-enhanced .oct-node {
+    min-height: 130px;
+    padding: 10px 14px;
+  }
+  .map-enhanced .oct-node h3 {
+    font-size: 15px;
+  }
+  .map-enhanced .oct-node p {
+    font-size: 12px;
+  }
+  .map-enhanced .oct-node.n3,
+  .map-enhanced .oct-node.n4 {
+    top: 42%;
+  }
+  .map-enhanced .oct-node.n5 {
+    top: auto;
+    bottom: 0;
+  }
+  .map-enhanced .oct-bottom {
+    display: none;
   }
 }
 @media (max-width: 1099px) {
@@ -587,6 +641,11 @@ select:focus-visible {
   }
 }
 @media (max-width: 360px) {
-  .site-nav { padding-inline: 16px; gap: 12px; }
-  .site-nav .navlinks a:nth-child(2) { display: none; }
+  .site-nav {
+    padding-inline: 16px;
+    gap: 12px;
+  }
+  .site-nav .navlinks a:nth-child(2) {
+    display: none;
+  }
 }

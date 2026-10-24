@@ -1,4 +1,4 @@
-import { initFeatureMap } from './feature-map.js?v=3';
+import { initFeatureMap } from './feature-map.js?v=4';
 import { initPlan } from './plan.js?v=3';
 import { openAuth } from './auth.js?v=3';
 

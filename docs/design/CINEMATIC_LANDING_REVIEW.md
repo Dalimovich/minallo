@@ -6,6 +6,12 @@ The production build retains marketing HTML injection. Product descriptions, fea
 
 ## Final reliability fixes
 
+### Laptop reveal correction
+
+The original 800px minimum viewport height disabled both sticky pinning and the connected diagram on common laptops. Reproduced on the deployed preview at 1366×650 and 1366×768. The reveal now fits desktop content areas down to 600px high, with compact spacing and fully visible cards. Fast wheel gestures crossing into the section stop at its entrance instead of jumping over it. Mobile and reduced-motion fallback behavior is preserved. CSS/module URLs were versioned to avoid stale cached behavior.
+
+Regression coverage exercises both journeys at 600, 650 and 768px heights, real wheel entry, sequential arms, sticky screen position and all five cards inside the viewport. Screenshots: [600px student](../../audit/cinematic/laptop-600-student.png), [768px German](../../audit/cinematic/laptop-768-german.png).
+
 - Prevent the application startup watchdog from reloading an already-rendered marketing page and clearing quiz answers.
 - Await deferred authentication initialization and retry failed script loads when sign-in is selected.
 - Preserve browser zoom and native controls during paced feature-map scrolling; cancel queued scrolling when users skip or use the keyboard.

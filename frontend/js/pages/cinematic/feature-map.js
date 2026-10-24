@@ -2,7 +2,7 @@ export function initFeatureMap() {
   const section = document.querySelector('.octopus-scroll');
   if (!section) return;
   const query = matchMedia(
-    '(min-width: 1100px) and (min-height: 800px) and (prefers-reduced-motion: no-preference)'
+    '(min-width: 1100px) and (min-height: 600px) and (prefers-reduced-motion: no-preference)'
   );
   const nodes = [...section.querySelectorAll('.oct-node')];
   const lines = [...section.querySelectorAll('.oct-line')];
@@ -85,12 +85,23 @@ export function initFeatureMap() {
     )
       return;
     const rect = section.getBoundingClientRect();
-    const progress = Math.max(0, Math.min(1, -rect.top / (section.offsetHeight - innerHeight)));
-    const goingDown = event.deltaY > 0;
-    if ((goingDown && progress >= 1) || (!goingDown && progress <= 0)) return;
-    event.preventDefault();
     const delta =
       event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1);
+    const end = rect.bottom - innerHeight;
+    // Catch a gesture that crosses the entrance before it can skip the map.
+    // Listen on the window because that gesture can start in the prior chapter.
+    if ((rect.top > 0 && delta >= rect.top) || (end < 0 && delta <= end)) {
+      event.preventDefault();
+      queuedDelta = 0;
+      window.scrollBy({ top: rect.top > 0 ? rect.top + 1 : end - 1, behavior: 'instant' });
+      paint();
+      return;
+    }
+    if (rect.top > 0 || end < 0) return;
+    const progress = Math.max(0, Math.min(1, -rect.top / (section.offsetHeight - innerHeight)));
+    const goingDown = delta > 0;
+    if ((goingDown && progress >= 1) || (!goingDown && progress <= 0)) return;
+    event.preventDefault();
     const remaining = goingDown ? section.offsetHeight - innerHeight + rect.top : -rect.top;
     queuedDelta =
       Math.sign(delta) * Math.min(Math.abs(queuedDelta + delta), Math.max(0, remaining));
@@ -99,7 +110,7 @@ export function initFeatureMap() {
       requestAnimationFrame(drain);
     }
   }
-  section.addEventListener('wheel', onWheel, { passive: false });
+  window.addEventListener('wheel', onWheel, { passive: false });
 
   // Never replay queued wheel input after the user chooses another action.
   const cancelQueuedScroll = () => {
