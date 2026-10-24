@@ -75,19 +75,40 @@ export function initFeatureMap() {
     }
   }
   function onWheel(event) {
-    if (!query.matches) return;
+    // Ctrl+wheel is browser zoom. Horizontal gestures and form controls
+    // must retain their native behavior too.
+    if (
+      !query.matches ||
+      event.ctrlKey ||
+      event.deltaY === 0 ||
+      event.target.closest('a, button, input, select, textarea')
+    )
+      return;
     const rect = section.getBoundingClientRect();
     const progress = Math.max(0, Math.min(1, -rect.top / (section.offsetHeight - innerHeight)));
     const goingDown = event.deltaY > 0;
     if ((goingDown && progress >= 1) || (!goingDown && progress <= 0)) return;
     event.preventDefault();
-    queuedDelta += event.deltaY;
+    const delta =
+      event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1);
+    const remaining = goingDown ? section.offsetHeight - innerHeight + rect.top : -rect.top;
+    queuedDelta =
+      Math.sign(delta) * Math.min(Math.abs(queuedDelta + delta), Math.max(0, remaining));
     if (!draining) {
       draining = true;
       requestAnimationFrame(drain);
     }
   }
   section.addEventListener('wheel', onWheel, { passive: false });
+
+  // Never replay queued wheel input after the user chooses another action.
+  const cancelQueuedScroll = () => {
+    queuedDelta = 0;
+  };
+  section.addEventListener('click', cancelQueuedScroll);
+  window.addEventListener('keydown', cancelQueuedScroll);
+  window.addEventListener('pointerdown', cancelQueuedScroll);
+  window.addEventListener('hashchange', cancelQueuedScroll);
 
   query.addEventListener('change', configure);
   window.addEventListener('scroll', schedule, { passive: true });

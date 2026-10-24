@@ -96,6 +96,8 @@ function _ssForceSplashOff(reason) {
 // already happened this tab and we're STILL hung, escalate to a hard
 // landing-page bounce instead of redirecting in circles.
 (function () {
+  // Marketing HTML is already rendered, even when its optional module fails.
+  if (document.body && document.body.classList.contains('cinematic')) return;
   var ready = false;
   window.addEventListener('ss-ready', function () {
     ready = true;

@@ -1,6 +1,14 @@
-import { initFeatureMap } from './feature-map.js?v=2';
-import { initPlan } from './plan.js?v=2';
-import { openAuth } from './auth.js?v=2';
+import { initFeatureMap } from './feature-map.js?v=3';
+import { initPlan } from './plan.js?v=3';
+import { openAuth } from './auth.js?v=3';
+
+// Classic deferred auth scripts and this module can finish in either order.
+// Announce the already-rendered page only after all deferred scripts ran,
+// otherwise the app watchdog reloads an idle marketing page after 15 seconds.
+const announceReady = () => window.dispatchEvent(new Event('ss-ready'));
+if (document.readyState !== 'complete') {
+  document.addEventListener('DOMContentLoaded', announceReady, { once: true });
+} else announceReady();
 
 document.querySelectorAll('[data-auth]').forEach((element) => {
   element.addEventListener('click', async (event) => {
@@ -22,8 +30,8 @@ if (journey) {
   const loadDemo = () => {
     const module =
       journey.dataset.journey === 'student'
-        ? import('./student-demo.js?v=2')
-        : import('./german-demo.js?v=2');
+        ? import('./student-demo.js?v=3')
+        : import('./german-demo.js?v=3');
     module.catch(() => {
       // Static explanations and native details remain usable when loading fails.
       document.getElementById('auth-status').textContent =

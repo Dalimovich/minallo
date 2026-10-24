@@ -1,5 +1,8 @@
-// Load Minallo's existing auth entry only on deliberate sign-in. Its startup
-// route cleanup must not erase public marketing fragment links on page load.
+// Reuse the deferred auth entry; retry a failed load on deliberate sign-in.
+const deferredScriptsReady = new Promise((resolve) => {
+  if (document.readyState === 'complete') resolve();
+  else document.addEventListener('DOMContentLoaded', resolve, { once: true });
+});
 let pending;
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -13,30 +16,22 @@ function loadScript(src) {
     document.head.append(script);
   });
 }
-function alreadyLoaded(src) {
-  return !!document.querySelector(`script[src="${src}"]`);
-}
-
 export async function openAuth() {
   if (!pending) {
     pending = (async () => {
-      // The page already loads this same chain deferred in <head>/<body> so
-      // the automatic Google One Tap prompt (auth-bootstrap.js's
-      // _initOneTap) fires on page load. Only fall back to loading it here
-      // if that failed or hasn't finished yet — never reload it, which
-      // would re-run _initOneTap and double-register One Tap.
+      // A script element can exist while its request is pending or failed.
+      // Wait for deferred scripts, then check their actual initialization.
+      await deferredScriptsReady;
+      if (typeof window._googleAuth === 'function') return;
       for (const src of [
         '/js/minallo.js?v=2',
         '/js/runtime-config.js',
         '/js/config.js?v=20261015-qa2-cachebust',
-        '/js/auth-bootstrap.js?v=14'
+        '/js/auth-bootstrap.js?v=15'
       ]) {
-        if (alreadyLoaded(src)) continue;
         await loadScript(src);
       }
-      if (typeof window._googleAuth !== 'function') {
-        window.dispatchEvent(new Event('ss-ready'));
-      }
+      window.dispatchEvent(new Event('ss-ready'));
     })().catch((error) => {
       pending = null;
       throw error;
