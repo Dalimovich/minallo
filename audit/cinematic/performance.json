@@ -1,0 +1,180 @@
+{
+  "results": [
+    {
+      "device": "desktop",
+      "path": "/",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2352,
+        "cls": 0.0004047887731481481,
+        "longTasks": [
+          522,
+          80
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 128,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty."
+      ],
+      "failed": []
+    },
+    {
+      "device": "desktop",
+      "path": "/student-journey.html",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2652,
+        "cls": 0,
+        "longTasks": [
+          909,
+          59,
+          94,
+          233,
+          210
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 96,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty.",
+        "[GSI_LOGGER]: FedCM get() rejects with NetworkError: Error retrieving a token."
+      ],
+      "failed": []
+    },
+    {
+      "device": "desktop",
+      "path": "/german-learning.html",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2456,
+        "cls": 0,
+        "longTasks": [
+          723,
+          51,
+          57,
+          132,
+          128
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 96,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty."
+      ],
+      "failed": []
+    },
+    {
+      "device": "mobile",
+      "path": "/",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2056,
+        "cls": 0,
+        "longTasks": [
+          372
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 48,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty."
+      ],
+      "failed": []
+    },
+    {
+      "device": "mobile",
+      "path": "/student-journey.html",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2372,
+        "cls": 0,
+        "longTasks": [
+          694,
+          78,
+          75
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 32,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty."
+      ],
+      "failed": []
+    },
+    {
+      "device": "mobile",
+      "path": "/german-learning.html",
+      "throttle": "4x CPU; 1.6 Mbps down; 150 ms latency",
+      "initial": {
+        "lcp": 2168,
+        "cls": 0,
+        "longTasks": [
+          534,
+          65,
+          67
+        ],
+        "interactions": []
+      },
+      "longestSampleInteractionMs": 40,
+      "errors": [],
+      "warnings": [
+        "[GSI_LOGGER]: Your client application uses one of the Google One Tap prompt UI status methods that may stop functioning when FedCM becomes mandatory. Refer to the migration guide to update your code accordingly and opt-in to FedCM to test your changes. Learn more: https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#display_moment and https://developers.google.com/identity/gsi/web/guides/fedcm-migration?s=dc#skipped_moment",
+        "Provider's accounts list is empty."
+      ],
+      "failed": []
+    }
+  ],
+  "sizes": [
+    {
+      "file": "css/cinematic-landing.css",
+      "bytes": 59290,
+      "gzipBytes": 13301
+    },
+    {
+      "file": "css/cinematic-accessibility.css",
+      "bytes": 10534,
+      "gzipBytes": 2942
+    },
+    {
+      "file": "js/pages/cinematic/index.js",
+      "bytes": 1992,
+      "gzipBytes": 898
+    },
+    {
+      "file": "js/pages/cinematic/auth.js",
+      "bytes": 1334,
+      "gzipBytes": 647
+    },
+    {
+      "file": "js/pages/cinematic/feature-map.js",
+      "bytes": 4818,
+      "gzipBytes": 1699
+    },
+    {
+      "file": "js/pages/cinematic/plan.js",
+      "bytes": 2905,
+      "gzipBytes": 1217
+    },
+    {
+      "file": "js/pages/cinematic/student-demo.js",
+      "bytes": 3128,
+      "gzipBytes": 1365
+    },
+    {
+      "file": "js/pages/cinematic/german-demo.js",
+      "bytes": 2158,
+      "gzipBytes": 968
+    }
+  ]
+}

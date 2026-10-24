@@ -6,6 +6,9 @@ Students upload their course files into a per-course workspace at https://minall
 
 ## Study tools
 
+- [University Student journey](https://minallo.de/student-journey.html): Course-based explanations, summaries, flashcards, quizzes and exam preparation, with scripted public examples.
+- [German Learner journey](https://minallo.de/german-learning.html): Grammar, vocabulary in context, writing feedback and German exam practice, with scripted public examples. This page is in English.
+
 - [AI lecture summary generator](https://minallo.de/lecture-summary-generator.html): Turn lecture PDFs and scripts into structured summaries.
 - [Generate flashcards from lecture PDFs](https://minallo.de/flashcards-from-pdf.html): Create active-recall flashcards from course files.
 - [AI quiz generator from notes](https://minallo.de/ai-quiz-generator-from-notes.html): Build quizzes from your notes and course material.
@@ -14,6 +17,10 @@ Students upload their course files into a per-course workspace at https://minall
 - [Course-based AI learning tool](https://minallo.de/course-based-ai-learning-tool.html): Study one course at a time inside a single workspace.
 
 ## About
+
+The current Student Pro plan offers a 7-day free trial for eligible users, then €11.99/month, renewing monthly unless cancelled. Eligibility and final terms are confirmed in checkout. Cancel during the trial to avoid the first monthly charge.
+
+Public interactive examples are local samples, not live AI responses. The starter-plan quiz is rule-based and does not save or email answers. AI can make mistakes: check generated explanations against sources. Minallo does not guarantee grades, exam success or language certification.
 
 - [Privacy policy](https://minallo.de/privacy.html)
 - [Terms of service](https://minallo.de/terms.html)

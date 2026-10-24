@@ -15,6 +15,8 @@ const FOOTER_MARKER = '<!-- MINALLO_FOOTER -->';
 const FOOTER_LINKS = {
   en: [
     ['/', 'Home'],
+    ['/student-journey.html', 'University Student'],
+    ['/german-learning.html', 'German Learner'],
     ['/#pricing', 'Pricing'],
     ['/#features', 'About'],
     ['/impressum.html', 'Impressum'],
@@ -24,6 +26,8 @@ const FOOTER_LINKS = {
   ],
   de: [
     ['/', 'Startseite'],
+    ['/student-journey.html', 'University Student (English)'],
+    ['/german-learning.html', 'German Learner (English)'],
     ['/#pricing', 'Preise'],
     ['/#features', 'Über Minallo'],
     ['/impressum.html', 'Impressum'],

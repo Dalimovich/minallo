@@ -46,6 +46,7 @@ frontend/js/**/*.js.map
 !frontend/js/router.js
 !frontend/js/ss-ready-marker.js
 !frontend/js/supabase.js
+!frontend/js/pages/cinematic/*.js
 
 # Playwright
 tests/e2e/.auth/

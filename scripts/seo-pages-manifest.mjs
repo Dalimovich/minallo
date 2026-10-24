@@ -11,7 +11,7 @@ export const HOME_PAGE = {
   path: '/',
   lang: 'en',
   hreflangGroup: null,
-  lastmod: '2026-05-21',
+  lastmod: '2026-10-20',
   changefreq: 'weekly',
   priority: 1.0,
 };
@@ -69,7 +69,16 @@ const BILINGUAL_PAGES = BILINGUAL_SLUGS.flatMap(({ slug, priority }) => [
 
 // Pages whose footer marker gets spliced (everything except legal pages,
 // which use their own legal-footer template and are left untouched).
-export const SEO_PAGES = [...NO_VARIANT_PAGES, ...BILINGUAL_PAGES];
+const JOURNEY_PAGES = ['/student-journey.html', '/german-learning.html'].map((path) => ({
+  path,
+  lang: 'en',
+  hreflangGroup: null,
+  lastmod: '2026-10-20',
+  changefreq: 'monthly',
+  priority: 0.9,
+}));
+
+export const SEO_PAGES = [...NO_VARIANT_PAGES, ...BILINGUAL_PAGES, ...JOURNEY_PAGES];
 
 // Every public page that belongs in sitemap.xml.
 export const SITEMAP_PAGES = [HOME_PAGE, ...SEO_PAGES, ...LEGAL_PAGES];
