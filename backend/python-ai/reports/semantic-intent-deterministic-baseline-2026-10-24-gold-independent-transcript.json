@@ -1,0 +1,3890 @@
+{
+  "summary": {
+    "corpus_version": 1,
+    "total_turns": 64,
+    "target_accuracy": 0.4062,
+    "objective_accuracy": 0.1406,
+    "final_answer_accuracy": 0.2031,
+    "all_fields_accuracy": 0.125,
+    "escalation_trigger_coverage_of_wrong_turns": {
+      "wrong_turns": 56,
+      "wrong_turns_that_would_escalate": 23,
+      "fraction": 0.4107
+    },
+    "deterministic_interpretation_latency_ms": {
+      "p50": 0.283,
+      "p95": 0.419,
+      "max": 0.671
+    },
+    "by_category": {
+      "ambiguous_typo_phrasing": {
+        "turns": 2,
+        "all_fields_accuracy": 0.0
+      },
+      "cache_history_control": {
+        "turns": 3,
+        "all_fields_accuracy": 0.0
+      },
+      "cache_history_no_replay": {
+        "turns": 4,
+        "all_fields_accuracy": 0.25
+      },
+      "changing_instructions_less_help": {
+        "turns": 5,
+        "all_fields_accuracy": 0.4
+      },
+      "changing_instructions_more_help": {
+        "turns": 5,
+        "all_fields_accuracy": 0.0
+      },
+      "document_vs_exercise_level": {
+        "turns": 2,
+        "all_fields_accuracy": 0.0
+      },
+      "exercise_correction": {
+        "turns": 6,
+        "all_fields_accuracy": 0.1667
+      },
+      "full_solution_explicit": {
+        "turns": 3,
+        "all_fields_accuracy": 0.6667
+      },
+      "german_multi_quantity_math": {
+        "turns": 2,
+        "all_fields_accuracy": 0.0
+      },
+      "hint_no_reveal": {
+        "turns": 5,
+        "all_fields_accuracy": 0.0
+      },
+      "indirect_reference": {
+        "turns": 6,
+        "all_fields_accuracy": 0.1667
+      },
+      "multi_target_mixed_level": {
+        "turns": 6,
+        "all_fields_accuracy": 0.1667
+      },
+      "natural_informal_no_keyword": {
+        "turns": 8,
+        "all_fields_accuracy": 0.0
+      },
+      "quiz_wait_for_answer": {
+        "turns": 7,
+        "all_fields_accuracy": 0.0
+      }
+    }
+  },
+  "turns": [
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 1,
+      "student": "hey im stuck on number 4, what am i even supposed to do here",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.671,
+      "error": null
+    },
+    {
+      "scenario": "AB-01",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 2,
+      "student": "ok i think i get it, is it 3x=15 next?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.312,
+      "error": null
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 1,
+      "student": "Aufgabe 1 raff ich grad nicht so richtig",
+      "expected": [
+        {
+          "target": "1",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.472,
+      "error": null
+    },
+    {
+      "scenario": "AB-02",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 2,
+      "student": "achso, und dann rechne ich einfach die Kräfte zusammen?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.392,
+      "error": null
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 1,
+      "student": "this cutting speed thing makes no sense to me can u explain what's going on",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.366,
+      "error": null
+    },
+    {
+      "scenario": "AB-03",
+      "category": "natural_informal_no_keyword",
+      "language": "en",
+      "turn": 2,
+      "student": "oh ok so n is like how fast it spins",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "confirmation",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.269,
+      "error": null
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 1,
+      "student": "bei Aufgabe 2 bin ich mir unsicher, klingt komisch irgendwie",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.314,
+      "error": null
+    },
+    {
+      "scenario": "AB-04",
+      "category": "natural_informal_no_keyword",
+      "language": "de",
+      "turn": 2,
+      "student": "ist es vielleicht Konjunktiv?",
+      "expected": [
+        {
+          "target": "2",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.191,
+      "error": null
+    },
+    {
+      "scenario": "AB-05",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me a hint for exercise 5, don't tell me the roots.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.419,
+      "error": null
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 1,
+      "student": "Kannst du mir einen Tipp zu Aufgabe 3 geben, aber bitte nicht das Ergebnis verraten?",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "3",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "3",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.37,
+      "error": null
+    },
+    {
+      "scenario": "AB-06",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 2,
+      "student": "Ist das Drehmoment F mal Hebelarm?",
+      "expected": [
+        {
+          "target": "3",
+          "form": "confirmation",
+          "release": "partial"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.318,
+      "error": null
+    },
+    {
+      "scenario": "AB-07",
+      "category": "hint_no_reveal",
+      "language": "en",
+      "turn": 1,
+      "student": "Nudge me in the right direction for part b, no numbers please.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.327,
+      "error": null
+    },
+    {
+      "scenario": "AB-08",
+      "category": "hint_no_reveal",
+      "language": "de",
+      "turn": 1,
+      "student": "Hinweis zu Aufgabe 6, aber ohne die Lösung von x und y.",
+      "expected": [
+        {
+          "target": "6",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "6",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "6",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "6"
+        ],
+        "resolved_targets": [
+          "6"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.327,
+      "error": null
+    },
+    {
+      "scenario": "AB-09",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "turn": 1,
+      "student": "Just solve exercise 4 completely, show me x.",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "4",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "4",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.252,
+      "error": null
+    },
+    {
+      "scenario": "AB-10",
+      "category": "full_solution_explicit",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 1 bitte komplett mit beiden Lagerkräften.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.236,
+      "error": null
+    },
+    {
+      "scenario": "AB-11",
+      "category": "full_solution_explicit",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve part a completely, give me n.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.191,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 1,
+      "student": "give me a hint for exercise 5",
+      "expected": [
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.302,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 2,
+      "student": "that's not enough, just walk me through the whole method",
+      "expected": [
+        {
+          "target": "5",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.329,
+      "error": null
+    },
+    {
+      "scenario": "AB-12",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 3,
+      "student": "ok now just give me the full answer",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.267,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 2a komplett.",
+      "expected": [
+        {
+          "target": "2a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "2a",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2a",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "2a"
+        ],
+        "resolved_targets": [
+          "2a"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.195,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 2,
+      "student": "Und jetzt nur noch ein Tipp zu 2b, nicht die Lösung.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "2a",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2a",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2b"
+        ],
+        "resolved_targets": [
+          "2a"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.353,
+      "error": null
+    },
+    {
+      "scenario": "AB-13",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 3,
+      "student": "Eigentlich, gib mir doch die Lösung von 2b auch.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.283,
+      "error": null
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 1,
+      "student": "What's the formula for part a? No numbers.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.236,
+      "error": null
+    },
+    {
+      "scenario": "AB-14",
+      "category": "changing_instructions_more_help",
+      "language": "en",
+      "turn": 2,
+      "student": "Still stuck, can you plug in the numbers for me?",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.259,
+      "error": null
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.161,
+      "error": null
+    },
+    {
+      "scenario": "AB-15",
+      "category": "changing_instructions_less_help",
+      "language": "de",
+      "turn": 2,
+      "student": "Für Aufgabe 2 will ich es aber selbst versuchen, gib mir nur einen Hinweis.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.403,
+      "error": null
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve Aufgabe 2 for me.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "full_solution",
+          "release": "ambiguous_expect_clarify_or_both"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.172,
+      "error": null
+    },
+    {
+      "scenario": "AB-16",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 2,
+      "student": "I just meant the second part.",
+      "expected": [
+        {
+          "target": "2b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.202,
+      "error": null
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 5.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.133,
+      "error": null
+    },
+    {
+      "scenario": "AB-17",
+      "category": "indirect_reference",
+      "language": "de",
+      "turn": 2,
+      "student": "Und wie sieht's mit der vorherigen Aufgabe aus, nur ein Tipp?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.342,
+      "error": null
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me a hint for 13a.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.303,
+      "error": null
+    },
+    {
+      "scenario": "AB-18",
+      "category": "indirect_reference",
+      "language": "en",
+      "turn": 2,
+      "student": "Can you solve that last one now?",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.219,
+      "error": null
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve exercise 6.",
+      "expected": [
+        {
+          "target": "6",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "6",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "6",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "6"
+        ],
+        "resolved_targets": [
+          "6"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.165,
+      "error": null
+    },
+    {
+      "scenario": "AB-19",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 2,
+      "student": "No wait, I meant exercise 5, not 6.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "correction",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.397,
+      "error": null
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "language": "de",
+      "turn": 1,
+      "student": "Gib mir einen Hinweis zu Aufgabe 2.",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.298,
+      "error": null
+    },
+    {
+      "scenario": "AB-20",
+      "category": "exercise_correction",
+      "language": "de",
+      "turn": 2,
+      "student": "Ich meinte eigentlich Aufgabe 3, nicht Aufgabe 2.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.253,
+      "error": null
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 1,
+      "student": "Explain part b to me.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "explain",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "explain"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.159,
+      "error": null
+    },
+    {
+      "scenario": "AB-21",
+      "category": "exercise_correction",
+      "language": "en",
+      "turn": 2,
+      "student": "Actually I think you misunderstood — I'm asking about part a, not b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "method_explanation",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "correction",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.513,
+      "error": null
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 1,
+      "student": "Kannst du mich zu Aufgabe 3 abfragen? Gib mir nicht gleich die Antwort.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "3",
+            "objective": "hint",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "3",
+            "objective": "hint",
+            "final_answer": "prohibited"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 0.211,
+      "error": null
+    },
+    {
+      "scenario": "AB-22",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 2,
+      "student": "Ich sage 'der'.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.16,
+      "error": null
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "turn": 1,
+      "student": "Quiz me on exercise 5 — ask me for the two roots, don't just tell me.",
+      "expected": [
+        {
+          "target": "5",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "hint",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "hint",
+            "final_answer": "prohibited"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 0.198,
+      "error": null
+    },
+    {
+      "scenario": "AB-23",
+      "category": "quiz_wait_for_answer",
+      "language": "en",
+      "turn": 2,
+      "student": "x = 2 and x = 3?",
+      "expected": [
+        {
+          "target": "5",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "5"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.177,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 1,
+      "student": "Frag mich die Lagerkraft R_A ab.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "quiz_start",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "hint",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "hint",
+            "final_answer": "prohibited"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "hint"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "prohibited"
+        ]
+      },
+      "latency_ms": 0.126,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 2,
+      "student": "80 N?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "answer_check",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.101,
+      "error": null
+    },
+    {
+      "scenario": "AB-24",
+      "category": "quiz_wait_for_answer",
+      "language": "de",
+      "turn": 3,
+      "student": "75 N?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "answer_check",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "other"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.13,
+      "error": null
+    },
+    {
+      "scenario": "AB-25",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve exercise 4 fully, but just give me a hint for exercise 5 — don't solve it.",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "5",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "5",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "4",
+          "5"
+        ],
+        "resolved_targets": [
+          "5"
+        ],
+        "expected_objectives": [
+          "hint",
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted",
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.352,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.163,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 2,
+      "student": "Für Aufgabe 3 reicht ein Tipp.",
+      "expected": [
+        {
+          "target": "3",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "3",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "3",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "3"
+        ],
+        "resolved_targets": [
+          "3"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.319,
+      "error": null
+    },
+    {
+      "scenario": "AB-26",
+      "category": "multi_target_mixed_level",
+      "language": "de",
+      "turn": 3,
+      "student": "Was ist mit Aufgabe 1 — kannst du das nochmal in Worten erklären, ohne neue Zahlen?",
+      "expected": [
+        {
+          "target": "1",
+          "form": "method_explanation",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "define",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "define",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": true,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "define"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.387,
+      "error": null
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 1,
+      "student": "Give me the full solution for 13a, and a hint only for 13b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint",
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted",
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.382,
+      "error": null
+    },
+    {
+      "scenario": "AB-27",
+      "category": "multi_target_mixed_level",
+      "language": "en",
+      "turn": 2,
+      "student": "Now give me the full answer for everything, including b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.283,
+      "error": null
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "turn": 1,
+      "student": "What's the hint for exercise 4?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "4",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "4",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.3,
+      "error": null
+    },
+    {
+      "scenario": "AB-28",
+      "category": "cache_history_no_replay",
+      "language": "en",
+      "turn": 2,
+      "student": "What's the hint for exercise 4?",
+      "expected": [
+        {
+          "target": "4",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "4",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "4",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "4"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.344,
+      "error": null
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "language": "de",
+      "turn": 1,
+      "student": "Löse Aufgabe 1 komplett.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": true,
+        "final_answer_match": true,
+        "all_match": true,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.166,
+      "error": null
+    },
+    {
+      "scenario": "AB-29",
+      "category": "cache_history_no_replay",
+      "language": "de",
+      "turn": 2,
+      "student": "Jetzt bitte nur noch mal als Hinweis für jemand anderen, nicht die Lösung direkt.",
+      "expected": [
+        {
+          "target": "1",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "1",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "1",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": true,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "1"
+        ],
+        "resolved_targets": [
+          "1"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.399,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 1,
+      "student": "Solve 13a fully.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.134,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 2,
+      "student": "Give me a hint for 13b.",
+      "expected": [
+        {
+          "target": "13b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13b"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.358,
+      "error": null
+    },
+    {
+      "scenario": "AB-30",
+      "category": "cache_history_control",
+      "language": "en",
+      "turn": 3,
+      "student": "Solve 13a fully again, I lost the number.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.231,
+      "error": null
+    },
+    {
+      "scenario": "AB-31",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "turn": 1,
+      "student": "Berechne für Aufgabe 13 sowohl die Drehzahl n als auch die neue Schnittgeschwindigkeit vc2 aus Teil b.",
+      "expected": [
+        {
+          "target": "13a",
+          "form": "full_solution",
+          "release": "permitted"
+        },
+        {
+          "target": "13b",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "13",
+            "objective": "solve",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "13",
+            "objective": "solve",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "13a",
+          "13b"
+        ],
+        "resolved_targets": [
+          "13"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "solve"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.4,
+      "error": null
+    },
+    {
+      "scenario": "AB-32",
+      "category": "german_multi_quantity_math",
+      "language": "de",
+      "turn": 1,
+      "student": "Gib mir für Aufgabe 2 beide Werte, F_parallel und F_N, aber nur als Tipp, nicht ausgerechnet.",
+      "expected": [
+        {
+          "target": "2a",
+          "form": "hint",
+          "release": "prohibited"
+        },
+        {
+          "target": "2b",
+          "form": "hint",
+          "release": "prohibited"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "continuation",
+        "actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "2",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2a",
+          "2b"
+        ],
+        "resolved_targets": [
+          "2"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "prohibited"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.399,
+      "error": null
+    },
+    {
+      "scenario": "AB-33",
+      "category": "ambiguous_typo_phrasing",
+      "language": "en",
+      "turn": 1,
+      "student": "cn u solv exsercise 4 pls jsut give me x alreayd",
+      "expected": [
+        {
+          "target": "4",
+          "form": "full_solution",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "4"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "solve"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.278,
+      "error": null
+    },
+    {
+      "scenario": "AB-34",
+      "category": "ambiguous_typo_phrasing",
+      "language": "de",
+      "turn": 1,
+      "student": "aufgab 2 hilf mir ma, aber nur n tip ni die lösung",
+      "expected": [
+        {
+          "target": "2",
+          "form": "hint",
+          "release": "ambiguous_expect_clarify_or_both"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "2"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "hint"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "unspecified"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.281,
+      "error": null
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "turn": 1,
+      "student": "What's this document about?",
+      "expected": [
+        {
+          "target": "document",
+          "form": "summary",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": true
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "document"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "summarize"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.19,
+      "error": null
+    },
+    {
+      "scenario": "AB-35",
+      "category": "document_vs_exercise_level",
+      "language": "en",
+      "turn": 2,
+      "student": "Ok now specifically what happens in the Calvin cycle part?",
+      "expected": [
+        {
+          "target": "section:calvin_cycle",
+          "form": "method_explanation",
+          "release": "permitted"
+        }
+      ],
+      "resolved": {
+        "dialogue_relation": "new_topic",
+        "actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "state": "requested",
+            "final_answer": "unspecified"
+          }
+        ],
+        "compiled_actions": [
+          {
+            "target": "current_request",
+            "objective": "answer_subquestion",
+            "final_answer": "permitted"
+          }
+        ],
+        "escalates": false
+      },
+      "score": {
+        "target_match": false,
+        "objective_match": false,
+        "final_answer_match": false,
+        "all_match": false,
+        "expected_targets": [
+          "section:calvin_cycle"
+        ],
+        "resolved_targets": [
+          "current_request"
+        ],
+        "expected_objectives": [
+          "explain"
+        ],
+        "resolved_objectives": [
+          "answer_subquestion"
+        ],
+        "expected_final_answers": [
+          "permitted"
+        ],
+        "resolved_final_answers": [
+          "permitted"
+        ]
+      },
+      "latency_ms": 0.271,
+      "error": null
+    }
+  ]
+}

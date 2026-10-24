@@ -229,7 +229,7 @@ def main() -> None:
         },
     }
 
-    out_path = ROOT / "reports" / "semantic-intent-deterministic-baseline-2026-10-23-fixed-transcript.json"
+    out_path = ROOT / "reports" / "semantic-intent-deterministic-baseline-2026-10-24-gold-independent-transcript.json"
     out_path.write_text(json.dumps({"summary": summary, "turns": results}, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
